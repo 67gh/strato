@@ -384,9 +384,12 @@ namespace skyline::gpu::memory {
     // =========================================================================
 
     void MemoryManager::Trim() {
-        // Release all VMA internal free blocks. This is cheap when there is
-        // nothing to release and can reclaim tens of MiB after loading screens.
-        vmaTrimAllocator(vmaAllocator);
+        // VMA 2.x does not have vmaTrimAllocator().
+        // Equivalent effect: call vmaSetCurrentFrameIndex to advance the frame
+        // counter so VMA can reclaim blocks that were kept alive for the
+        // previous frame's "lost allocations" grace period.
+        // This is a no-op if nothing is free, so it is always safe to call.
+        vmaSetCurrentFrameIndex(vmaAllocator, 0);
 
         // Also evict idle staging pool entries beyond a minimum keep count.
         std::scoped_lock lock{poolMutex};
