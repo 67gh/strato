@@ -97,10 +97,9 @@ namespace skyline::kernel {
             std::shared_ptr<Settings> &settings,
             std::string publicAppFilesPath,
             std::string privateAppFilesPath,
-            std::string deviceTimeZone,
             std::string nativeLibraryPath,
-            std::shared_ptr<vfs::FileSystem> assetFileSystem,
-            FirmwareVersion firmwareVersion = FirmwareVersion::Latest()
+            std::string deviceTimeZone,
+            std::shared_ptr<vfs::FileSystem> assetFileSystem
         );
 
         /**
