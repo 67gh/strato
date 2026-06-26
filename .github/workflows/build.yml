@@ -1,4 +1,4 @@
-# Fichier à placer obligatoirement dans :.github/workflows/build.yml
+# Fichier à placer obligatoirement dans : .github/workflows/build.yml
 name: Build Android APK
 
 on:
@@ -65,10 +65,12 @@ jobs:
         env:
           CMAKE_C_COMPILER_LAUNCHER: "ccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "ccache"
+          NINJA_ARGS: "-j2" # RECTIFICATION : Empêche Ninja de saturer la RAM en limitant les jobs simultanés
         run: |
           # Sécurité au cas où le script gradlew aurait perdu ses permissions exécutables
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace --build-cache --parallel assembleRelease
+          # RECTIFICATION : Remplacement de --parallel par --max-workers=2 pour stabiliser le build C++
+          ./gradlew --no-daemon --max-workers=2 --stacktrace --build-cache assembleRelease
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
