@@ -2,6 +2,7 @@
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 #include <dlfcn.h>
+#include <sys/stat.h>
 #include <adrenotools/driver.h>
 #include <os.h>
 #include <jvm.h>
@@ -341,50 +342,117 @@ namespace skyline::gpu {
         });
     }
 
+    // -------------------------------------------------------------------------
+    // Mali GPU detection (MediaTek Dimensity / Samsung Exynos)
+    // Returns true when /dev/mali0..3 is present — no adrenotools needed.
+    // -------------------------------------------------------------------------
+    static bool IsMaliDevice() {
+        for (int i = 0; i < 4; ++i)
+            if (access(fmt::format("/dev/mali{}", i).c_str(), F_OK) == 0)
+                return true;
+        return false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Mali custom driver loader
+    // Loads a Vulkan .so directly via dlopen — compatible with all Mali SoCs.
+    // -------------------------------------------------------------------------
+    static PFN_vkGetInstanceProcAddr LoadMaliCustomDriver(const std::string &driverDir,
+                                                          const std::string &libraryName) {
+        std::string fullPath = driverDir + libraryName;
+
+        struct stat st{};
+        if (stat(fullPath.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+            LOGW("Mali custom driver not found: {}", fullPath);
+            return nullptr;
+        }
+
+        void *handle = dlopen(fullPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (!handle) {
+            LOGW("Mali dlopen failed for {}: {}", fullPath, dlerror() ?: "(unknown)");
+            return nullptr;
+        }
+
+        auto procAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+            dlsym(handle, "vkGetInstanceProcAddr"));
+        if (!procAddr) {
+            LOGW("Mali driver {} missing vkGetInstanceProcAddr — not a valid Vulkan driver", libraryName);
+            dlclose(handle);
+            return nullptr;
+        }
+
+        LOGI("Mali custom Vulkan driver loaded: {}", fullPath);
+        // handle intentionally kept open for the lifetime of the Vulkan instance
+        return procAddr;
+    }
+
+    // -------------------------------------------------------------------------
+    // Main driver loader — supports Adreno (adrenotools) + Mali (dlopen)
+    // -------------------------------------------------------------------------
     static PFN_vkGetInstanceProcAddr LoadVulkanDriver(const DeviceState &state, adrenotools_gpu_mapping *mapping) {
         void *libvulkanHandle{};
+        const bool maliDevice{IsMaliDevice()};
 
-        // If the user has selected a custom driver, try to load it
+        // ── Custom driver path ──────────────────────────────────────────────
         if (!(*state.settings->gpuDriver).empty()) {
-            libvulkanHandle = adrenotools_open_libvulkan(
-                RTLD_NOW,
-                ADRENOTOOLS_DRIVER_FILE_REDIRECT | ADRENOTOOLS_DRIVER_CUSTOM | ADRENOTOOLS_DRIVER_GPU_MAPPING_IMPORT,
-                nullptr, // We require Android 10 so don't need to supply
-                state.os->nativeLibraryPath.c_str(),
-                (state.os->privateAppFilesPath + "gpu_drivers/" + *state.settings->gpuDriver + "/").c_str(),
-                (*state.settings->gpuDriverLibraryName).c_str(),
-                (state.os->publicAppFilesPath + "gpu/vk_file_redirect/").c_str(),
-                mapping
-            );
+            const std::string driverDir{state.os->privateAppFilesPath +
+                                        "gpu_drivers/" + *state.settings->gpuDriver + "/"};
+            const std::string libraryName{*state.settings->gpuDriverLibraryName};
 
-            if (!libvulkanHandle) {
-                char *error = dlerror();
-                LOGW("Failed to load custom Vulkan driver {}/{}: {}", *state.settings->gpuDriver, *state.settings->gpuDriverLibraryName, error ? error : "");
+            if (maliDevice) {
+                // Mali path: direct dlopen — no adrenotools dependency
+                auto procAddr = LoadMaliCustomDriver(driverDir, libraryName);
+                if (procAddr) {
+                    LOGI("Using custom Mali driver: {}/{}", *state.settings->gpuDriver, libraryName);
+                    return procAddr;
+                }
+                LOGW("Mali custom driver failed, falling back to system driver");
+            } else {
+                // Adreno path: adrenotools with file redirect + GPU mapping import
+                libvulkanHandle = adrenotools_open_libvulkan(
+                    RTLD_NOW,
+                    ADRENOTOOLS_DRIVER_FILE_REDIRECT | ADRENOTOOLS_DRIVER_CUSTOM | ADRENOTOOLS_DRIVER_GPU_MAPPING_IMPORT,
+                    nullptr,
+                    state.os->nativeLibraryPath.c_str(),
+                    driverDir.c_str(),
+                    libraryName.c_str(),
+                    (state.os->publicAppFilesPath + "gpu/vk_file_redirect/").c_str(),
+                    mapping
+                );
+                if (!libvulkanHandle)
+                    LOGW("Adreno custom driver {}/{} failed: {}", *state.settings->gpuDriver, libraryName, dlerror() ?: "");
             }
         }
 
+        // ── System / fallback path ──────────────────────────────────────────
         if (!libvulkanHandle) {
-            libvulkanHandle = adrenotools_open_libvulkan(
-                RTLD_NOW,
-                ADRENOTOOLS_DRIVER_FILE_REDIRECT | ADRENOTOOLS_DRIVER_GPU_MAPPING_IMPORT,
-                nullptr, // We require Android 10 so don't need to supply
-                state.os->nativeLibraryPath.c_str(),
-                nullptr,
-                nullptr,
-                (state.os->publicAppFilesPath + "gpu/vk_file_redirect/").c_str(),
-                mapping
-            );
-
-            if (!libvulkanHandle) {
-                char *error = dlerror();
-                LOGW("Failed to load builtin Vulkan driver: {}", error ? error : "");
-            }
-
-            if (!libvulkanHandle)
+            if (maliDevice) {
+                // Mali system driver: plain dlopen of libvulkan.so is sufficient —
+                // the Mali ICD is already registered in the Vulkan loader manifest.
                 libvulkanHandle = dlopen("libvulkan.so", RTLD_NOW);
+                if (!libvulkanHandle)
+                    LOGW("Mali: failed to dlopen system libvulkan.so: {}", dlerror() ?: "");
+            } else {
+                // Adreno system driver via adrenotools (file redirect only)
+                libvulkanHandle = adrenotools_open_libvulkan(
+                    RTLD_NOW,
+                    ADRENOTOOLS_DRIVER_FILE_REDIRECT | ADRENOTOOLS_DRIVER_GPU_MAPPING_IMPORT,
+                    nullptr,
+                    state.os->nativeLibraryPath.c_str(),
+                    nullptr,
+                    nullptr,
+                    (state.os->publicAppFilesPath + "gpu/vk_file_redirect/").c_str(),
+                    mapping
+                );
+                if (!libvulkanHandle) {
+                    LOGW("Adreno system driver failed: {}", dlerror() ?: "");
+                    libvulkanHandle = dlopen("libvulkan.so", RTLD_NOW);
+                }
+            }
         }
 
-        return reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(libvulkanHandle, "vkGetInstanceProcAddr"));
+        return reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+            dlsym(libvulkanHandle, "vkGetInstanceProcAddr"));
     }
 
     GPU::GPU(const DeviceState &state)
