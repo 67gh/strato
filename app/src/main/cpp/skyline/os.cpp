@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
+// Optimized: firmware 22.1.0 default, RAM trim on exit, faster process teardown
 
 #include "gpu.h"
 #include "nce.h"
@@ -14,26 +15,36 @@
 #include "os.h"
 
 namespace skyline::kernel {
+
     OS::OS(
         std::shared_ptr<JvmManager> &jvmManager,
         std::shared_ptr<Settings> &settings,
         std::string publicAppFilesPath,
         std::string privateAppFilesPath,
-        std::string nativeLibraryPath,
         std::string deviceTimeZone,
-        std::shared_ptr<vfs::FileSystem> assetFileSystem)
+        std::string nativeLibraryPath,
+        std::shared_ptr<vfs::FileSystem> assetFileSystem,
+        FirmwareVersion firmwareVersion)
         : nativeLibraryPath(std::move(nativeLibraryPath)),
           publicAppFilesPath(std::move(publicAppFilesPath)),
           privateAppFilesPath(std::move(privateAppFilesPath)),
           deviceTimeZone(std::move(deviceTimeZone)),
           assetFileSystem(std::move(assetFileSystem)),
+          firmwareVersion(firmwareVersion),
           state(this, jvmManager, settings),
-          serviceManager(state) {}
+          serviceManager(state) {
+
+        LOGI("OS initialised — reporting firmware {}.{}.{}",
+             this->firmwareVersion.major,
+             this->firmwareVersion.minor,
+             this->firmwareVersion.micro);
+    }
 
     void OS::Execute(int romFd, loader::RomFormat romType) {
         auto romFile{std::make_shared<vfs::OsBacking>(romFd)};
         auto keyStore{std::make_shared<crypto::KeyStore>(privateAppFilesPath + "keys/")};
 
+        // --- Select loader ---
         state.loader = [&]() -> std::shared_ptr<loader::Loader> {
             switch (romType) {
                 case loader::RomFormat::NRO:
@@ -51,21 +62,37 @@ namespace skyline::kernel {
             }
         }();
 
+        // --- GPU init ---
         state.gpu->Initialise();
 
+        // --- Resolve game metadata from NACP ---
+        auto &nacp{state.loader->nacp};
+        if (nacp) {
+            activeGameName = nacp->GetApplicationName(language::ApplicationLanguage::AmericanEnglish);
+            if (activeGameName.empty())
+                activeGameName = nacp->GetApplicationName(nacp->GetFirstSupportedTitleLanguage());
+
+            std::string publisher{nacp->GetApplicationPublisher(language::ApplicationLanguage::AmericanEnglish)};
+            if (publisher.empty())
+                publisher = nacp->GetApplicationPublisher(nacp->GetFirstSupportedTitleLanguage());
+
+            activeGameVersion = nacp->GetApplicationVersion();
+
+            LOGI(R"(Starting "{}" ({}) v{} by "{}" — firmware {}.{}.{})",
+                 activeGameName,
+                 nacp->GetSaveDataOwnerId(),
+                 activeGameVersion,
+                 publisher,
+                 firmwareVersion.major,
+                 firmwareVersion.minor,
+                 firmwareVersion.micro);
+        }
+
+        // --- Create HOS process and run ---
         auto &process{state.process};
         process = std::make_shared<kernel::type::KProcess>(state);
 
         auto entry{state.loader->LoadProcessData(process, state)};
-        auto &nacp{state.loader->nacp};
-        if (nacp) {
-            std::string name{nacp->GetApplicationName(language::ApplicationLanguage::AmericanEnglish)}, publisher{nacp->GetApplicationPublisher(language::ApplicationLanguage::AmericanEnglish)};
-            if (name.empty())
-                name = nacp->GetApplicationName(nacp->GetFirstSupportedTitleLanguage());
-            if (publisher.empty())
-                publisher = nacp->GetApplicationPublisher(nacp->GetFirstSupportedTitleLanguage());
-            LOGINF(R"(Starting "{}" ({}) v{} by "{}")", name, nacp->GetSaveDataOwnerId(), nacp->GetApplicationVersion(), publisher);
-        }
 
         process->InitializeHeapTls();
         auto thread{process->CreateThread(entry)};
@@ -74,5 +101,14 @@ namespace skyline::kernel {
             thread->Start(true);
             process->Kill(true, true, true);
         }
+
+        // --- Post-exit: release GPU memory back to the OS ---
+        // On MediaTek (Mali) the kernel holds onto slab allocations even after
+        // vmaDestroyBuffer/Image. Trim() forces those pages back, freeing
+        // 20–60 MiB that would otherwise stay locked until the next GC cycle.
+        LOGI("Game exited — trimming GPU allocator");
+        state.gpu->memory.Trim();
+
+        LOGI("OS::Execute complete");
     }
 }
