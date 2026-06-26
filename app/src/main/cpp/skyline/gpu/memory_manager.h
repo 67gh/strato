@@ -229,7 +229,8 @@ namespace skyline::gpu::memory {
         ImportedBuffer ImportBuffer(span<u8> cpuMapping);
 
         /**
-         * @brief Releases all unused VMA internal free blocks back to the OS.
+         * @brief Advances the VMA frame index so it can reclaim unused internal
+         *        free blocks. Compatible with VMA 2.x and 3.x.
          *        Call this when a game's loading screen ends or under low-memory
          *        pressure. Particularly effective on Mali where the kernel
          *        allocator retains large slabs.
