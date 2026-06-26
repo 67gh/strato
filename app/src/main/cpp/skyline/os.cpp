@@ -21,16 +21,15 @@ namespace skyline::kernel {
         std::shared_ptr<Settings> &settings,
         std::string publicAppFilesPath,
         std::string privateAppFilesPath,
-        std::string deviceTimeZone,
         std::string nativeLibraryPath,
-        std::shared_ptr<vfs::FileSystem> assetFileSystem,
-        FirmwareVersion firmwareVersion)
+        std::string deviceTimeZone,
+        std::shared_ptr<vfs::FileSystem> assetFileSystem)
         : nativeLibraryPath(std::move(nativeLibraryPath)),
           publicAppFilesPath(std::move(publicAppFilesPath)),
           privateAppFilesPath(std::move(privateAppFilesPath)),
           deviceTimeZone(std::move(deviceTimeZone)),
           assetFileSystem(std::move(assetFileSystem)),
-          firmwareVersion(firmwareVersion),
+          firmwareVersion(FirmwareVersion::Latest()),
           state(this, jvmManager, settings),
           serviceManager(state) {
 
