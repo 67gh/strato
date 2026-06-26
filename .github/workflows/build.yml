@@ -1,18 +1,51 @@
-# A workflow to verify the build on every push to the master branc
-name: Build
+# Fichier à placer obligatoirement dans : .github/workflows/build.yml
+name: Build Android APK
 
 on:
   push: 
-    branches: [ master ]
+    branches: [ master, main ] # S'active sur master ou main
+  pull_request:
+    branches: [ master, main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Git Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: recursive # Indispensable pour les sous-dossiers de l'émulateur
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Ninja Build & Ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache
+
+      - name: Configure Android SDK & NDK
+        run: |
+          # On utilise le SDK déjà présent sur le serveur GitHub
+          ANDROID_SDK_ROOT="/usr/local/lib/android/sdk"
+          
+          # On injecte proprement les variables pour les étapes suivantes
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          
+          # On ajoute les outils au PATH sans écraser le reste du système
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          
+          # Validation automatique des licences Android
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+          
+          # Installation de la version précise du NDK et des outils requis pour Strato/Skyline
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;21.4.7075529"
 
       - name: Restore CCache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -23,26 +56,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.gradle/
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/build.gradle') }}-${{ hashFiles('app/**/*.xml') }}-${{ hashFiles('app/**.kt', 'app/**.java') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/build.gradle*', '**/build.gradle.kts') }}-${{ hashFiles('app/**/*.xml') }}-${{ hashFiles('app/**.kt', 'app/**.java') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-${{ hashFiles('**/build.gradle') }}-${{ hashFiles('app/**/*.xml') }}-
-            ${{ runner.os }}-gradle-${{ hashFiles('**/build.gradle') }}-
+            ${{ runner.os }}-gradle-${{ hashFiles('**/build.gradle*', '**/build.gradle.kts') }}-
             ${{ runner.os }}-gradle-
 
-      - name: Install Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin' # Temurin should come pre-installed on GitHub-hosted runners
-          java-version: '17'
-
-      - name: Install Ninja Build
-        run: |
-          sudo apt-get install -y ninja-build
-          ln -s /usr/bin/ninja .
-
-      - name: Android Assemble
+      - name: Android Assemble (Compilation de l'APK)
         env:
           CMAKE_C_COMPILER_LAUNCHER: "ccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "ccache"
-          CCACHE_COMPILERCHECK: "string:${{ env.NDK_VERSION }}" # Use NDK version instead of compiler timestamp
-        run: ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleMainlineRelease
+        run: |
+          # Sécurité au cas où le script gradlew aurait perdu ses permissions exécutables
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace --build-cache --parallel assembleRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/outputs/apk/**/release/*.apk
