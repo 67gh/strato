@@ -1,4 +1,4 @@
-# Fichier à placer obligatoirement dans : .github/workflows/build.yml
+# Fichier à placer obligatoirement dans :.github/workflows/build.yml
 name: Build Android APK
 
 on:
