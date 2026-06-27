@@ -17,9 +17,12 @@ namespace skyline::gpu {
 
     static vk::DeviceSize ChooseMegaBufferChunkSize(const GPU &gpu) {
         switch (gpu.traits.vendorId) {
-            case memory::kVendorARM:      return  8u * 1024u * 1024u; //  8 MiB — Mali (MediaTek)
-            case memory::kVendorQualcomm: return 16u * 1024u * 1024u; // 16 MiB — Adreno
-            default:                      return 25u * 1024u * 1024u; // 25 MiB — default
+            // Mali (MediaTek/Exynos): 16 MiB per chunk.
+            // Unity games like Hollow Knight spike to ~40 MiB on scene load.
+            // 3 chunks × 16 MiB = 48 MiB max — stays within budget on 4 GB devices.
+            case memory::kVendorARM:      return 16u * 1024u * 1024u;
+            case memory::kVendorQualcomm: return 16u * 1024u * 1024u; // Adreno
+            default:                      return 25u * 1024u * 1024u; // default
         }
     }
 
@@ -86,14 +89,17 @@ namespace skyline::gpu {
         // Scan existing chunks for a reset-able one.
         activeChunk = ranges::find_if(chunks, [&](auto &chunk) { return chunk.TryReset(); });
         if (activeChunk == chunks.end()) {
-            // Limit pool growth: on Mali keep at most 3 chunks in flight
-            // (= 3 × 8 MiB = 24 MiB max megabuffer RAM).
-            constexpr size_t kMaliMaxChunks{3};
+            // On Mali: allow up to 4 chunks (4 × 16 MiB = 64 MiB max).
+            // Beyond that, stall on the oldest chunk to avoid OOM-kill.
+            // 64 MiB fits comfortably on 4 GB devices with Android's ~1.5 GB
+            // GPU memory budget.
+            constexpr size_t kMaliMaxChunks{4};
             if (gpu.traits.vendorId == memory::kVendorARM &&
                 chunks.size() >= kMaliMaxChunks) {
-                // Stall on the oldest chunk rather than OOM-ing.
+                // Wait for the oldest chunk's fence to complete, then reuse it.
                 activeChunk = chunks.begin();
-                activeChunk->TryReset(); // blocks until GPU signals
+                while (!activeChunk->TryReset())
+                    ; // spin — fence should signal within 1-2 frames
             } else {
                 activeChunk = chunks.emplace(chunks.end(), gpu);
             }
