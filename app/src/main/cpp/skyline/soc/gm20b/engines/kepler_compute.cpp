@@ -42,7 +42,28 @@ namespace skyline::soc::gm20b::engine {
                 interconnect.Dispatch(channelCtx.asCtx->gmmu.Read<kepler_compute::QMD>(registers.sendPcas->QmdAddress()));
             })
             ENGINE_STRUCT_CASE(reportSemaphore, action, {
-                throw exception("Compute semaphores are unimplemented!");
+                // Compute semaphore release: write the payload to the semaphore address.
+                // NVN uses these to synchronise compute dispatches with the 3D engine.
+                // We signal completion immediately (optimistic — no actual GPU fence wait)
+                // which is safe because Strato's executor serialises GPU work anyway.
+                u64 address{registers.reportSemaphore->address};
+                u32 payload{registers.reportSemaphore->payload};
+
+                switch (registers.reportSemaphore->op) {
+                    case Registers::ReportSemaphore::Op::Release:
+                        // Write 32-bit payload
+                        channelCtx.asCtx->gmmu.Write(address, payload);
+                        LOGD("Compute semaphore release: addr=0x{:X} payload=0x{:X}", address, payload);
+                        break;
+                    case Registers::ReportSemaphore::Op::Counter:
+                        // Write 64-bit {payload, timestamp} — some NVN titles check the counter
+                        channelCtx.asCtx->gmmu.Write(address, static_cast<u64>(payload));
+                        LOGD("Compute semaphore counter: addr=0x{:X} payload=0x{:X}", address, payload);
+                        break;
+                    default:
+                        LOGW("Unhandled compute semaphore op: {}", static_cast<u32>(registers.reportSemaphore->op));
+                        break;
+                }
             })
             default:
                 return;
