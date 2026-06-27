@@ -16,7 +16,9 @@ namespace skyline::crypto {
 
         using Key128 = std::array<u8, 16>;
         using Key256 = std::array<u8, 32>;
-        using IndexedKeys128 = std::array<std::optional<Key128>, 20>;
+        // 32 slots covers all key generations up to firmware ~30.x
+        // (firmware 22.1.0 uses key generation 0x16 = 22 — previously hardcoded at 20)
+        using IndexedKeys128 = std::array<std::optional<Key128>, 32>;
 
         std::optional<Key256> headerKey;
 
