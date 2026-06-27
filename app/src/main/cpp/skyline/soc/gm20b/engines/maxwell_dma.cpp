@@ -50,7 +50,58 @@ namespace skyline::soc::gm20b::engine {
                 if (registers.launchDma->srcMemoryLayout == Registers::LaunchDma::MemoryLayout::Pitch) [[likely]] {
                     CopyPitchToPitch();
                 } else {
-                    LOGW("BlockLinear to BlockLinear DMA copies are unimplemented!");
+                    // BlockLinear to BlockLinear copy
+                    // Decompress src to pitch (temp buffer), then recompress to dst BlockLinear.
+                    // This covers mipmap blits, shadow map copies, and render target resolves
+                    // that NVN uses heavily in TOTK and MH Rise.
+                    gpu::texture::Dimensions srcDimensions{registers.srcSurface->width,
+                                                           registers.srcSurface->height,
+                                                           registers.srcSurface->depth};
+                    gpu::texture::Dimensions dstDimensions{registers.dstSurface->width,
+                                                           registers.dstSurface->height,
+                                                           registers.dstSurface->depth};
+
+                    size_t srcLayerStride{gpu::texture::GetBlockLinearLayerSize(
+                        srcDimensions, 1, 1, 1,
+                        registers.srcSurface->blockSize.Height(),
+                        registers.srcSurface->blockSize.Depth())};
+                    size_t dstLayerStride{gpu::texture::GetBlockLinearLayerSize(
+                        dstDimensions, 1, 1, 1,
+                        registers.dstSurface->blockSize.Height(),
+                        registers.dstSurface->blockSize.Depth())};
+
+                    auto srcMappings{channelCtx.asCtx->gmmu.TranslateRange(*registers.offsetIn, srcLayerStride)};
+                    auto dstMappings{channelCtx.asCtx->gmmu.TranslateRange(*registers.offsetOut, dstLayerStride)};
+
+                    // Intermediate pitch buffer
+                    u32 pitchStride{srcDimensions.width}; // 1 byte per pixel (unswizzled)
+                    size_t pitchSize{static_cast<size_t>(pitchStride) * srcDimensions.height * srcDimensions.depth};
+                    std::vector<u8> pitchBuf(pitchSize);
+
+                    auto copyFunc{[&](u8 *src, u8 *dst) {
+                        // Step 1: BlockLinear → pitch
+                        gpu::texture::CopyBlockLinearToPitch(
+                            srcDimensions, 1, 1, 1, pitchStride,
+                            registers.srcSurface->blockSize.Height(),
+                            registers.srcSurface->blockSize.Depth(),
+                            src, pitchBuf.data());
+
+                        // Step 2: pitch → BlockLinear
+                        gpu::texture::CopyPitchToBlockLinear(
+                            dstDimensions, 1, 1, 1, pitchStride,
+                            registers.dstSurface->blockSize.Height(),
+                            registers.dstSurface->blockSize.Depth(),
+                            pitchBuf.data(), dst);
+                    }};
+
+                    LOGD("BlockLinear→BlockLinear: {}x{}x{}@0x{:X} → {}x{}x{}@0x{:X}",
+                         srcDimensions.width, srcDimensions.height, srcDimensions.depth, u64{*registers.offsetIn},
+                         dstDimensions.width, dstDimensions.height, dstDimensions.depth, u64{*registers.offsetOut});
+
+                    if (srcMappings.size() != 1 || dstMappings.size() != 1)
+                        HandleSplitCopy(srcMappings, dstMappings, srcLayerStride, dstLayerStride, copyFunc);
+                    else
+                        copyFunc(srcMappings.front().data(), dstMappings.front().data());
                 }
             } else if (registers.launchDma->srcMemoryLayout == Registers::LaunchDma::MemoryLayout::BlockLinear) {
                 CopyBlockLinearToPitch();
