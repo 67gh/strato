@@ -191,7 +191,13 @@ namespace skyline::gpu::interconnect::maxwell3d {
             // FORMAT_CASE(RF32_AF32, R32A32Float);
             // FORMAT_CASE(B8G8R8A8, A8R8G8B8Unorm)
             default:
-                throw exception("Unsupported colour rendertarget format: 0x{:X}", static_cast<u32>(format));
+                // Unknown colour rendertarget format — fall back to R8G8B8A8Unorm.
+                // This prevents a crash when NVN uses a format that Strato hasn't
+                // mapped yet (e.g. some HDR formats introduced after fw 14.x).
+                // The image may appear with wrong colours but the game won't crash.
+                LOGW("Unsupported colour rendertarget format: 0x{:X} — using R8G8B8A8Unorm fallback",
+                     static_cast<u32>(format));
+                return vk::Format::eR8G8B8A8Unorm;
         }
 
         #undef FORMAT_CASE
@@ -225,7 +231,10 @@ namespace skyline::gpu::interconnect::maxwell3d {
             FORMAT_CASE(ZF32, D32Float);
             FORMAT_CASE(ZF32_X24S8, D32FloatS8Uint);
             default:
-                throw exception("Unsupported depth rendertarget format: 0x{:X}", static_cast<u32>(format));
+                // Unknown depth rendertarget format — fall back to D32Float.
+                LOGW("Unsupported depth rendertarget format: 0x{:X} — using D32Float fallback",
+                     static_cast<u32>(format));
+                return vk::Format::eD32Sfloat;
         }
 
         #undef FORMAT_CASE
@@ -432,20 +441,29 @@ namespace skyline::gpu::interconnect::maxwell3d {
     }
 
     void PackedPipelineState::SetTransformFeedbackVaryings(const engine::StreamOutControl &control, const std::array<u8, engine::StreamOutLayoutSelectAttributeCount> &layoutSelect, size_t buffer) {
-        if (control.streamSelect != 0)
-            throw exception("Geometry streams are unsupported!");
+        if (control.streamSelect != 0) {
+            // Geometry shader streams (StreamSelect != 0) are used by some NVN
+            // titles for particle systems. We skip the setup rather than crashing —
+            // the GPU will ignore the invalid stream binding and render without it.
+            LOGW("Geometry stream {} is unsupported — skipping transform feedback setup", control.streamSelect);
+            return;
+        }
 
         for (size_t i{}; i < control.componentCount; i++) {
             // TODO: We could merge multiple component accesses from the same attribute into one varying as yuzu does
             u8 attributeIndex{layoutSelect[i]};
 
-            if (control.strideBytes > std::numeric_limits<u16>::max())
-                throw exception("Stride too large: {}", control.strideBytes);
+            if (control.strideBytes > std::numeric_limits<u16>::max()) {
+                // Clamp to max u16 rather than crashing — oversized strides
+                // can occur with compute-written vertex buffers in some NVN titles.
+                LOGW("Transform feedback stride too large: {} — clamping to 65535", control.strideBytes);
+            }
+            u16 clampedStride{static_cast<u16>(std::min<u32>(control.strideBytes, std::numeric_limits<u16>::max()))};
 
             transformFeedbackVaryings[attributeIndex] = {
                 .buffer = static_cast<u8>(buffer),
                 .offsetWords = static_cast<u8>(i),
-                .stride = static_cast<u16>(control.strideBytes),
+                .stride = clampedStride,
                 .valid = true
             };
         }
