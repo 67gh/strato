@@ -297,7 +297,17 @@ namespace skyline::gpu::interconnect {
                     guest.layerCount = depth;
                     break;
                 case TextureImageControl::TextureType::e1DBuffer:
-                    throw exception("1D Buffers are not supported");
+                    // 1D Buffer textures (texelFetch from a raw buffer).
+                    // Map to a 1D image view as the closest Vulkan equivalent.
+                    // This avoids crashing on games that bind buffer textures for
+                    // particle systems or skinning data (common in NVN titles).
+                    LOGW("1D Buffer texture type — mapping to 1D image as fallback");
+                    guest.viewType = vk::ImageViewType::e1D;
+                    guest.layerCount = 1;
+                    guest.mipLevelCount = 1;
+                    guest.viewMipBase = 0;
+                    guest.viewMipCount = 1;
+                    break;
 
                 case TextureImageControl::TextureType::e2DNoMipmap:
                     guest.mipLevelCount = 1;
@@ -341,7 +351,16 @@ namespace skyline::gpu::interconnect {
                     .blockDepth = static_cast<u8>(1U << textureHeader.tileConfig.tileDepthGobsLog2),
                 };
             } else {
-                throw exception("Unsupported TIC Header Type: {}", static_cast<u32>(textureHeader.headerType));
+                // Unknown TIC header type — fall back to BlockLinear with safe defaults
+                // rather than crashing. This can occur with newer NVN header types
+                // introduced after firmware 12.x that Strato hasn't mapped yet.
+                LOGW("Unsupported TIC Header Type: 0x{:X} — using BlockLinear fallback",
+                     static_cast<u32>(textureHeader.headerType));
+                guest.tileConfig = {
+                    .mode = texture::TileMode::Block,
+                    .blockHeight = 1,
+                    .blockDepth = 1,
+                };
             }
 
             auto mappings{ctx.channelCtx.asCtx->gmmu.TranslateRange(textureHeader.Iova(), guest.GetSize())};
