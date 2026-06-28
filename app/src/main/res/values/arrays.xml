@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Render scale display labels -->
+    <string-array name="render_scale_entries">
+        <item>0.5× — Low (360p) — Best performance</item>
+        <item>0.75× — Medium-Low (540p)</item>
+        <item>1.0× — Native Switch (720p/1080p) — Default</item>
+        <item>1.5× — High (1080p from 720p)</item>
+        <item>2.0× — Ultra (4K-ish) — Needs powerful GPU</item>
+    </string-array>
+
+    <!-- Render scale float values stored in SharedPreferences -->
+    <string-array name="render_scale_values">
+        <item>0.5</item>
+        <item>0.75</item>
+        <item>1.0</item>
+        <item>1.5</item>
+        <item>2.0</item>
+    </string-array>
+</resources>
