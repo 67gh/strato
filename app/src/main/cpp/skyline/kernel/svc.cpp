@@ -959,6 +959,8 @@ namespace skyline::kernel::svc {
             // 6.0.0+
             TotalMemoryAvailableWithoutSystemResource = 21,
             TotalMemoryUsageWithoutSystemResource = 22,
+            // 19.0.0+
+            IsVammEnabled = 28,
         };
 
         InfoState info{static_cast<u32>(ctx.w1)};
@@ -1052,6 +1054,14 @@ namespace skyline::kernel::svc {
 
             case InfoState::UserExceptionContextAddr:
                 out = reinterpret_cast<u64>(state.process->tlsExceptionContext);
+                break;
+
+            case InfoState::IsVammEnabled:
+                // Virtual Address Memory Manager — introduced in HOS 19.0.0 / SDK 19.x.
+                // Returning 0 (disabled) is correct for Strato since we don't implement VAMM.
+                // VammManager::InitializeIfEnabled() will skip init when this returns 0,
+                // allowing games built with SDK 19.x (e.g. Unity 6) to start normally.
+                out = 0;
                 break;
 
             default:
