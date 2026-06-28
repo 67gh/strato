@@ -80,9 +80,10 @@ class InputManager @Inject constructor(@ApplicationContext private val context :
      */
     private fun autoProfileAllConnectedDevices() {
         InputDevice.getDeviceIds()
-            .mapNotNull { InputDevice.getDevice(it) }
-            .filter { isGamepad(it) }
-            .forEach { applyProfileIfNeeded(it) }
+            .toList()
+            .mapNotNull { id -> InputDevice.getDevice(id) }
+            .filter { device -> isGamepad(device) }
+            .forEach { device -> applyProfileIfNeeded(device) }
     }
 
     /**
