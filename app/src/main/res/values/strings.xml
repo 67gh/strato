@@ -313,4 +313,6 @@
     <string name="global_save_data_zip_name">Strato save data</string>
     <string name="game_crash">The game has crashed</string>
     <string name="game_crash_message">A fatal error occurred. Check the log for details.</string>
+    <string name="render_scale">Render Scale</string>
+    <string name="render_scale_desc">Multiplier applied to the game\'s internal render resolution. Lower = better performance, Higher = sharper image</string>
 </resources>
