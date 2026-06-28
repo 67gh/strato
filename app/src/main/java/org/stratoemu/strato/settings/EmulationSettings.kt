@@ -47,6 +47,22 @@ class EmulationSettings private constructor(context : Context, prefName : String
     var gpuDriver by sharedPreferences(context, SYSTEM_GPU_DRIVER, prefName = prefName)
     var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)
     var disableFrameThrottling by sharedPreferences(context, false, prefName = prefName)
+    /**
+     * Render resolution multiplier:
+     * 0.5  = half resolution  (e.g. 360p from 720p) — for very low-end devices
+     * 0.75 = 75% resolution   (e.g. 540p from 720p) — smooth on mid-range Mali
+     * 1.0  = native Switch    (720p docked / 1080p) — default
+     * 1.5  = 1.5× upscale    (e.g. 1080p from 720p)
+     * 2.0  = 2× upscale      (e.g. 4K-ish from 1080p)
+     *
+     * Stored as a Float in SharedPreferences.
+     */
+    /**
+     * Render resolution multiplier stored as a String (from ListPreference).
+     * Values: "0.5", "0.75", "1.0", "1.5", "2.0"
+     * Parsed to Float in AndroidSettings via GetRenderScaleFactor().
+     */
+    var renderScaleFactor by sharedPreferences(context, "1.0", prefName = prefName)
     var executorSlotCountScale by sharedPreferences(context, 6, prefName = prefName)
     var executorFlushThreshold by sharedPreferences(context, 256, prefName = prefName)
     var useDirectMemoryImport by sharedPreferences(context, false, prefName = prefName)
