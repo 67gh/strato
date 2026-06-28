@@ -102,6 +102,14 @@
         <org.stratoemu.strato.preference.GpuDriverPreference
             app:key="gpu_driver"
             app:title="@string/gpu_driver_config" />
+        <ListPreference
+            android:defaultValue="1.0"
+            android:entries="@array/render_scale_entries"
+            android:entryValues="@array/render_scale_values"
+            android:summary="%s"
+            app:key="renderScaleFactor"
+            app:title="@string/render_scale"
+            app:useSimpleSummaryProvider="false" />
         <SwitchPreferenceCompat
             android:defaultValue="true"
             android:summaryOff="@string/triple_buffering_disabled"
