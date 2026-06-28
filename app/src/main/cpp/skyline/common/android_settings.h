@@ -39,6 +39,13 @@ namespace skyline {
             isInternetEnabled = ktSettings.GetBool("isInternetEnabled");
             forceTripleBuffering = ktSettings.GetBool("forceTripleBuffering");
             disableFrameThrottling = ktSettings.GetBool("disableFrameThrottling");
+            // renderScaleFactor is stored as a String in SharedPreferences (ListPreference)
+            // Parse it to float, defaulting to 1.0 on failure
+            try {
+                renderScaleFactor = std::stof(std::string(ktSettings.GetString("renderScaleFactor")));
+            } catch (...) {
+                renderScaleFactor = 1.0f;
+            }
             gpuDriver = ktSettings.GetString("gpuDriver");
             gpuDriverLibraryName = ktSettings.GetString("gpuDriverLibraryName");
             executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");
