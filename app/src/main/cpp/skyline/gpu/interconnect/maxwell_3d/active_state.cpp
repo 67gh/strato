@@ -248,13 +248,13 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
     ViewportState::ViewportState(dirty::Handle dirtyHandle, DirtyManager &manager, const EngineRegisters &engine, u32 index) : engine{manager, dirtyHandle, engine}, index{index} {}
 
-    static vk::Viewport ConvertViewport(const engine::Viewport &viewport, const engine::ViewportClip &viewportClip, const engine::WindowOrigin &windowOrigin, bool viewportScaleOffsetEnable) {
+    static vk::Viewport ConvertViewport(const engine::Viewport &viewport, const engine::ViewportClip &viewportClip, const engine::WindowOrigin &windowOrigin, bool viewportScaleOffsetEnable, float renderScale = 1.0f) {
         vk::Viewport vkViewport{};
 
-        vkViewport.x = viewport.offsetX - viewport.scaleX; // Counteract the addition of the half of the width (o_x) to the host translation
-        vkViewport.width = viewport.scaleX * 2.0f; // Counteract the division of the width (p_x) by 2 for the host scale
-        vkViewport.y = viewport.offsetY - viewport.scaleY; // Counteract the addition of the half of the height (p_y/2 is center) to the host translation (o_y)
-        vkViewport.height = viewport.scaleY * 2.0f; // Counteract the division of the height (p_y) by 2 for the host scale
+        vkViewport.x = (viewport.offsetX - viewport.scaleX) * renderScale;
+        vkViewport.width = viewport.scaleX * 2.0f * renderScale;
+        vkViewport.y = (viewport.offsetY - viewport.scaleY) * renderScale;
+        vkViewport.height = viewport.scaleY * 2.0f * renderScale;
 
         using CoordinateSwizzle = engine::Viewport::CoordinateSwizzle;
         if (viewport.swizzle.x != CoordinateSwizzle::PosX &&
@@ -298,9 +298,9 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 .maxDepth = 1.0f,
             });
         } else if (engine->viewport.scaleX == 0.0f || engine->viewport.scaleY == 0.0f) {
-            builder.SetViewport(index, ConvertViewport(engine->viewport0, engine->viewportClip0, engine->windowOrigin, engine->viewportScaleOffsetEnable));
+            builder.SetViewport(index, ConvertViewport(engine->viewport0, engine->viewportClip0, engine->windowOrigin, engine->viewportScaleOffsetEnable, gpu.state.settings->renderScaleFactor > 0.0f ? *gpu.state.settings->renderScaleFactor : 1.0f));
         } else {
-            builder.SetViewport(index, ConvertViewport(engine->viewport, engine->viewportClip, engine->windowOrigin, engine->viewportScaleOffsetEnable));
+            builder.SetViewport(index, ConvertViewport(engine->viewport, engine->viewportClip, engine->windowOrigin, engine->viewportScaleOffsetEnable, gpu.state.settings->renderScaleFactor > 0.0f ? *gpu.state.settings->renderScaleFactor : 1.0f));
         }
     }
 
