@@ -298,9 +298,9 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 .maxDepth = 1.0f,
             });
         } else if (engine->viewport.scaleX == 0.0f || engine->viewport.scaleY == 0.0f) {
-            builder.SetViewport(index, ConvertViewport(engine->viewport0, engine->viewportClip0, engine->windowOrigin, engine->viewportScaleOffsetEnable, gpu.state.settings->renderScaleFactor > 0.0f ? *gpu.state.settings->renderScaleFactor : 1.0f));
+            builder.SetViewport(index, ConvertViewport(engine->viewport0, engine->viewportClip0, engine->windowOrigin, engine->viewportScaleOffsetEnable, ctx.gpu.state.settings->renderScaleFactor > 0.0f ? *ctx.gpu.state.settings->renderScaleFactor : 1.0f));
         } else {
-            builder.SetViewport(index, ConvertViewport(engine->viewport, engine->viewportClip, engine->windowOrigin, engine->viewportScaleOffsetEnable, gpu.state.settings->renderScaleFactor > 0.0f ? *gpu.state.settings->renderScaleFactor : 1.0f));
+            builder.SetViewport(index, ConvertViewport(engine->viewport, engine->viewportClip, engine->windowOrigin, engine->viewportScaleOffsetEnable, ctx.gpu.state.settings->renderScaleFactor > 0.0f ? *ctx.gpu.state.settings->renderScaleFactor : 1.0f));
         }
     }
 
