@@ -281,6 +281,38 @@ namespace skyline::service::hid {
         return {};
     }
 
+    Result IHidServer::AcquireNpadSystemCommonStateUpdateEventHandle(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
+        // 0xD2 — Returns an event handle that signals when the Npad system common state changes.
+        // Mario Party calls this repeatedly waiting for a controller to be assigned.
+        // We return Player1's update event and immediately signal it so the game stops waiting
+        // and proceeds without blocking on a physical controller connection.
+        auto id{request.Pop<NpadId>()};
+
+        auto &npad{state.input->npad.at(NpadId::Player1)};
+        auto handle{state.process->InsertItem(npad.updateEvent)};
+
+        // Signal immediately so the game can proceed even without a physical controller
+        npad.updateEvent->Signal();
+
+        LOGD("AcquireNpadSystemCommonStateUpdateEventHandle: NpadId={}, handle=0x{:X}", id, handle);
+        response.copyHandles.push_back(handle);
+        return {};
+    }
+
+    Result IHidServer::GetNpadSystemExtStyle(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
+        // 0x12D — Returns the extended Npad style set for system use.
+        // Mario Party polls this to detect controller connection state.
+        // Return the current supported style set; returning 0 causes infinite retry loops.
+        auto id{request.Pop<NpadId>()};
+
+        std::scoped_lock lock{state.input->npad.mutex};
+        auto styleSet{state.input->npad.supportedStyleSet};
+
+        LOGD("GetNpadSystemExtStyle: NpadId={}, styleSet=0x{:X}", id, static_cast<u32>(styleSet));
+        response.Push<NpadStyleSet>(styleSet);
+        return {};
+    }
+
     Result IHidServer::IsVibrationDeviceMounted(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
         auto vibrationDeviceHandle{request.Pop<u32>()};
         auto appletResourceUserId{request.Pop<u64>()};
