@@ -99,9 +99,14 @@
     <PreferenceCategory
         android:key="category_gpu"
         android:title="@string/gpu">
-        <org.stratoemu.strato.preference.GpuDriverPreference
-            app:key="gpu_driver"
-            app:title="@string/gpu_driver_config" />
+        <ListPreference
+            android:defaultValue="0"
+            android:entries="@array/performance_mode_entries"
+            android:entryValues="@array/performance_mode_values"
+            android:summary="%s"
+            app:key="performanceMode"
+            app:title="@string/performance_mode"
+            app:useSimpleSummaryProvider="false" />
         <ListPreference
             android:defaultValue="1.0"
             android:entries="@array/render_scale_entries"
@@ -110,6 +115,9 @@
             app:key="renderScaleFactor"
             app:title="@string/render_scale"
             app:useSimpleSummaryProvider="false" />
+        <org.stratoemu.strato.preference.GpuDriverPreference
+            app:key="gpu_driver"
+            app:title="@string/gpu_driver_config" />
         <SwitchPreferenceCompat
             android:defaultValue="true"
             android:summaryOff="@string/triple_buffering_disabled"
