@@ -261,7 +261,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
             viewport.swizzle.y != CoordinateSwizzle::PosY && viewport.swizzle.y != CoordinateSwizzle::NegY &&
             viewport.swizzle.z != CoordinateSwizzle::PosZ &&
             viewport.swizzle.w != CoordinateSwizzle::PosW)
-            throw exception("Unsupported viewport swizzle: {}x{}x{}x{}", engine::Viewport::ToString(viewport.swizzle.x),
+            LOGW("Unsupported viewport swizzle: {}x{}x{}x{} — using identity", engine::Viewport::ToString(viewport.swizzle.x),
                             engine::Viewport::ToString(viewport.swizzle.y),
                             engine::Viewport::ToString(viewport.swizzle.z),
                             engine::Viewport::ToString(viewport.swizzle.w));
