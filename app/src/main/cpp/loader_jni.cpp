@@ -95,15 +95,24 @@ extern "C" JNIEXPORT jstring Java_org_stratoemu_strato_preference_FirmwareImport
     auto keyStore{std::make_shared<skyline::crypto::KeyStore>(skyline::JniString(env, keysPathJstring))};
 
     for (const auto &entry : systemArchives->Read()) {
-        std::shared_ptr<skyline::vfs::Backing> backing{systemArchivesFileSystem->OpenFile(entry.name)};
-        auto nca{skyline::vfs::NCA(backing, keyStore)};
+        try {
+            std::shared_ptr<skyline::vfs::Backing> backing{systemArchivesFileSystem->OpenFile(entry.name)};
+            auto nca{skyline::vfs::NCA(backing, keyStore)};
 
-        if (nca.header.programId == systemVersionProgramId && nca.romFs != nullptr) {
-            auto controlRomFs{std::make_shared<skyline::vfs::RomFileSystem>(nca.romFs)};
-            auto file{controlRomFs->OpenFile("file")};
-            SystemVersion systemVersion;
-            file->Read<SystemVersion>(systemVersion);
-            return env->NewStringUTF(reinterpret_cast<char *>(systemVersion.displayVersion));
+            if (nca.header.programId == systemVersionProgramId && nca.romFs != nullptr) {
+                auto controlRomFs{std::make_shared<skyline::vfs::RomFileSystem>(nca.romFs)};
+                auto file{controlRomFs->OpenFile("file")};
+                SystemVersion systemVersion;
+                file->Read<SystemVersion>(systemVersion);
+                return env->NewStringUTF(reinterpret_cast<char *>(systemVersion.displayVersion));
+            }
+        } catch (const std::exception &e) {
+            // Skip NCAs that cannot be parsed or decrypted with the current key set.
+            // This is expected for NCAs encrypted with key generations that are higher
+            // than what the prod.keys supports, or for corrupted/partial firmware files.
+            continue;
+        } catch (...) {
+            continue;
         }
     }
 
