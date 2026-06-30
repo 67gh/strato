@@ -49,7 +49,9 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 polygonMode = static_cast<u8>(vk::PolygonMode::ePoint);
                 break;
             default:
-                throw exception("Invalid polygon mode: 0x{:X}", static_cast<u32>(mode));
+                LOGW("Unknown polygon mode 0x{:X} — falling back to Fill", static_cast<u32>(mode));
+                polygonMode = static_cast<u8>(vk::PolygonMode::eFill);
+                break;
         }
     }
 
@@ -74,13 +76,17 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 cullMode = VK_CULL_MODE_FRONT_BIT | VK_CULL_MODE_BACK_BIT;
                 break;
             default:
-                throw exception("Invalid cull mode: 0x{:X}", static_cast<u32>(mode));
+                LOGW("Unknown cull mode 0x{:X} — falling back to None", static_cast<u32>(mode));
+                cullMode = VK_CULL_MODE_NONE;
+                break;
         }
     }
 
     static u8 ConvertCompareFunc(engine::CompareFunc func) {
-        if (func < engine::CompareFunc::D3DNever || func > engine::CompareFunc::OglAlways || (func > engine::CompareFunc::D3DAlways && func < engine::CompareFunc::OglNever))
-            throw exception("Invalid comparision function: 0x{:X}", static_cast<u32>(func));
+        if (func < engine::CompareFunc::D3DNever || func > engine::CompareFunc::OglAlways || (func > engine::CompareFunc::D3DAlways && func < engine::CompareFunc::OglNever)) {
+            LOGW("Unknown comparison function 0x{:X} — falling back to Always", static_cast<u32>(func));
+            return static_cast<u8>(vk::CompareOp::eAlways);
+        }
 
         u32 val{static_cast<u32>(func)};
 
@@ -97,8 +103,11 @@ namespace skyline::gpu::interconnect::maxwell3d {
     }
 
     void PackedPipelineState::SetLogicOp(engine::LogicOp::Func op) {
-        if (op < engine::LogicOp::Func::Clear || op > engine::LogicOp::Func::Set)
-            throw exception("Invalid logical operation: 0x{:X}", static_cast<u32>(op));
+        if (op < engine::LogicOp::Func::Clear || op > engine::LogicOp::Func::Set) {
+            LOGW("Unknown logical operation 0x{:X} — falling back to NoOp", static_cast<u32>(op));
+            logicOp = static_cast<u8>(static_cast<u32>(vk::LogicOp::eNoOp));
+            return;
+        }
 
         // VK LogicOp values match 1:1 with Maxwell
         logicOp = static_cast<u8>(static_cast<u32>(op) - static_cast<u32>(engine::LogicOp::Func::Clear));
@@ -191,9 +200,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
             // FORMAT_CASE(RF32_AF32, R32A32Float);
             // FORMAT_CASE(B8G8R8A8, A8R8G8B8Unorm)
             default:
-                // Unknown colour RT format — fall back to R8G8B8A8Unorm.
-                // Image may appear with wrong colours but the game won't crash.
-                LOGW("Unsupported colour rendertarget format: 0x{:X} — using R8G8B8A8Unorm fallback", static_cast<u32>(format));
+                LOGW("Unsupported colour RT format 0x{:X} — using R8G8B8A8Unorm fallback", static_cast<u32>(format));
                 return skyline::gpu::format::R8G8B8A8Unorm;
         }
 
@@ -228,8 +235,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
             FORMAT_CASE(ZF32, D32Float);
             FORMAT_CASE(ZF32_X24S8, D32FloatS8Uint);
             default:
-                // Unknown depth RT format — fall back to D32Float.
-                LOGW("Unsupported depth rendertarget format: 0x{:X} — using D32Float fallback", static_cast<u32>(format));
+                LOGW("Unsupported depth RT format 0x{:X} — using D32Float fallback", static_cast<u32>(format));
                 return skyline::gpu::format::D32Float;
         }
 
@@ -264,7 +270,8 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 case engine::StencilOps::Op::OglDecr:
                     return vk::StencilOp::eDecrementAndWrap;
                 default:
-                    throw exception("Invalid stencil operation: 0x{:X}", static_cast<u32>(op));
+                    LOGW("Unknown stencil op 0x{:X} — falling back to Keep", static_cast<u32>(op));
+                    return vk::StencilOp::eKeep;
             }
         }};
 
@@ -311,7 +318,8 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 case engine::BlendOp::OglMax:
                     return vk::BlendOp::eMax;
                 default:
-                    throw exception("Invalid blend operation: 0x{:X}", static_cast<u32>(op));
+                    LOGW("Unknown blend op 0x{:X} — falling back to Add", static_cast<u32>(op));
+                    return vk::BlendOp::eAdd;
             }
         }};
 
@@ -377,7 +385,8 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 case engine::BlendCoeff::D3DInvSrc1Alpha:
                     return vk::BlendFactor::eOneMinusSrc1Alpha;
                 default:
-                    throw exception("Invalid blend coefficient type: 0x{:X}", static_cast<u32>(coeff));
+                    LOGW("Unknown blend coeff 0x{:X} — falling back to One", static_cast<u32>(coeff));
+                    return vk::BlendFactor::eOne;
             }
         }};
 
@@ -438,7 +447,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
     void PackedPipelineState::SetTransformFeedbackVaryings(const engine::StreamOutControl &control, const std::array<u8, engine::StreamOutLayoutSelectAttributeCount> &layoutSelect, size_t buffer) {
         if (control.streamSelect != 0) {
-            LOGW("Geometry stream {} is unsupported — skipping transform feedback setup", control.streamSelect);
+            LOGW("Geometry stream {} unsupported — skipping transform feedback setup", control.streamSelect);
             return;
         }
 
@@ -447,7 +456,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
             u8 attributeIndex{layoutSelect[i]};
 
             if (control.strideBytes > std::numeric_limits<u16>::max())
-                LOGW("Transform feedback stride too large: {} — clamping to 65535", control.strideBytes);
+                LOGW("Transform feedback stride {} too large — clamping to 65535", control.strideBytes);
 
             transformFeedbackVaryings[attributeIndex] = {
                 .buffer = static_cast<u8>(buffer),
