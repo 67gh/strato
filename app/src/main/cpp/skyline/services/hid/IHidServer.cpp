@@ -308,8 +308,8 @@ namespace skyline::service::hid {
         std::scoped_lock lock{state.input->npad.mutex};
         auto styleSet{state.input->npad.styles};
 
-        LOGD("GetNpadSystemExtStyle: NpadId={}, styleSet=0x{:X}", id, static_cast<u32>(styleSet));
-        response.Push<NpadStyleSet>(styleSet);
+        LOGD("GetNpadSystemExtStyle: NpadId={}, styleSet=0x{:X}", id, styleSet.raw);
+        response.Push(styleSet);
         return {};
     }
 
