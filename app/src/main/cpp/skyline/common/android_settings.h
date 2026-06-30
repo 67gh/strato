@@ -39,13 +39,6 @@ namespace skyline {
             isInternetEnabled = ktSettings.GetBool("isInternetEnabled");
             forceTripleBuffering = ktSettings.GetBool("forceTripleBuffering");
             disableFrameThrottling = ktSettings.GetBool("disableFrameThrottling");
-            // renderScaleFactor is stored as a String in SharedPreferences (ListPreference)
-            // Parse it to float, defaulting to 1.0 on failure
-            try {
-                renderScaleFactor = std::stof(std::string(ktSettings.GetString("renderScaleFactor")));
-            } catch (...) {
-                renderScaleFactor = 1.0f;
-            }
             gpuDriver = ktSettings.GetString("gpuDriver");
             gpuDriverLibraryName = ktSettings.GetString("gpuDriverLibraryName");
             executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");
@@ -60,6 +53,48 @@ namespace skyline {
             isAudioOutputDisabled = ktSettings.GetBool("isAudioOutputDisabled");
             logLevel = ktSettings.GetInt<skyline::AsyncLogger::LogLevel>("logLevel");
             validationLayer = ktSettings.GetBool("validationLayer");
+
+            // Render scale is stored as a String (from a ListPreference: "0.5", "0.75", "1.0", "1.5", "2.0")
+            try {
+                renderScaleFactor = std::stof(std::string(ktSettings.GetString("renderScaleFactor")));
+            } catch (...) {
+                renderScaleFactor = 1.0f;
+            }
+
+            // Performance mode is stored as a String (ListPreference): "0", "1", or "2"
+            try {
+                performanceMode = static_cast<u32>(std::stoul(std::string(ktSettings.GetString("performanceMode"))));
+            } catch (...) {
+                performanceMode = 0;
+            }
+
+            // Apply performance mode overrides last so they take priority over individual
+            // toggles without altering how those toggles are read above.
+            switch (*performanceMode) {
+                case 1: // Extreme Compatibility — survive on the weakest possible GPU
+                    executorSlotCountScale = 2;        // Fewer parallel GPU submissions, less memory pressure
+                    executorFlushThreshold = 64;        // Flush often, smaller command buffers
+                    freeGuestTextureMemory = true;      // Aggressively reclaim texture RAM
+                    enableFastGpuReadbackHack = false;  // Correctness over speed
+                    enableFastReadbackWrites = false;
+                    disableSubgroupShuffle = true;      // Best Mali compatibility
+                    forceTripleBuffering = true;        // Smooth presentation even at very low FPS
+                    disableFrameThrottling = false;
+                    forceMaxGpuClocks = false;
+                    break;
+                case 2: // Extreme Performance — maximise GPU throughput at any cost
+                    executorFlushThreshold = 512;       // Batch more commands before flush
+                    freeGuestTextureMemory = false;      // Keep textures resident, avoid re-upload stalls
+                    enableFastGpuReadbackHack = true;
+                    enableFastReadbackWrites = true;
+                    disableSubgroupShuffle = false;
+                    forceTripleBuffering = false;        // Double buffer, lower latency
+                    disableFrameThrottling = true;       // No vsync cap
+                    forceMaxGpuClocks = true;
+                    break;
+                default: // Normal — respect individual user toggles as read above
+                    break;
+            }
         };
     };
 }
