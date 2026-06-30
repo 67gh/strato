@@ -297,13 +297,7 @@ namespace skyline::gpu::interconnect {
                     guest.layerCount = depth;
                     break;
                 case TextureImageControl::TextureType::e1DBuffer:
-                    LOGW("1D Buffer texture — falling back to 1D image view");
-                    guest.viewType = vk::ImageViewType::e1D;
-                    guest.layerCount = 1;
-                    guest.mipLevelCount = 1;
-                    guest.viewMipBase = 0;
-                    guest.viewMipCount = 1;
-                    break;
+                    throw exception("1D Buffers are not supported");
 
                 case TextureImageControl::TextureType::e2DNoMipmap:
                     guest.mipLevelCount = 1;
@@ -347,12 +341,7 @@ namespace skyline::gpu::interconnect {
                     .blockDepth = static_cast<u8>(1U << textureHeader.tileConfig.tileDepthGobsLog2),
                 };
             } else {
-                LOGW("Unsupported TIC Header Type 0x{:X} — using BlockLinear fallback", static_cast<u32>(textureHeader.headerType));
-                guest.tileConfig = {
-                    .mode = texture::TileMode::Block,
-                    .blockHeight = static_cast<u8>(1U),
-                    .blockDepth = static_cast<u8>(1U),
-                };
+                throw exception("Unsupported TIC Header Type: {}", static_cast<u32>(textureHeader.headerType));
             }
 
             auto mappings{ctx.channelCtx.asCtx->gmmu.TranslateRange(textureHeader.Iova(), guest.GetSize())};
