@@ -69,7 +69,8 @@ namespace skyline::gpu::interconnect {
                 FORMAT_CASE(R32G32B32X32, R32G32B32A32, Float);
 
                 default:
-                    throw exception("Cannot translate the supplied surface format: 0x{:X}", static_cast<u32>(format));
+                    LOGW("Cannot translate surface format 0x{:X} — using R8G8B8A8Unorm fallback", static_cast<u32>(format));
+                    return skyline::gpu::format::R8G8B8A8Unorm;
             }
 
             #undef FORMAT_CASE
