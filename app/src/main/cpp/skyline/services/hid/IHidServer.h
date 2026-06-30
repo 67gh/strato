@@ -207,18 +207,6 @@ namespace skyline::service::hid {
         Result IsVibrationPermitted(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
 
         /**
-         * @brief AcquireNpadSystemCommonStateUpdateEventHandle (0xD2)
-         * @url https://switchbrew.org/wiki/HID_services#AcquireNpadSystemCommonStateUpdateEventHandle
-         */
-        Result AcquireNpadSystemCommonStateUpdateEventHandle(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
-
-        /**
-         * @brief GetNpadSystemExtStyle (0x12D)
-         * @url https://switchbrew.org/wiki/HID_services#GetNpadSystemExtStyle
-         */
-        Result GetNpadSystemExtStyle(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
-
-        /**
          * @url https://switchbrew.org/wiki/HID_services#IsVibrationDeviceMounted
          */
         Result IsVibrationDeviceMounted(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
@@ -278,10 +266,8 @@ namespace skyline::service::hid {
             SFUNC(0xC9, IHidServer, SendVibrationValue),
             SFUNC(0xCE, IHidServer, SendVibrationValues),
             SFUNC(0xCD, IHidServer, IsVibrationPermitted),
-            SFUNC(0xD2, IHidServer, AcquireNpadSystemCommonStateUpdateEventHandle),
             SFUNC(0xD3, IHidServer, IsVibrationDeviceMounted),
             SFUNC(0x12C, IHidServer, ActivateConsoleSixAxisSensor),
-            SFUNC(0x12D, IHidServer, GetNpadSystemExtStyle),
             SFUNC(0x132, IHidServer, InitializeSevenSixAxisSensor),
             SFUNC(0x136, IHidServer, ResetSevenSixAxisSensorTimestamp),
             SFUNC(0x20D, IHidServer, SetPalmaBoostMode)
