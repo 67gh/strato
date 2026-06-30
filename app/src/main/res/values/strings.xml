@@ -313,6 +313,23 @@
     <string name="global_save_data_zip_name">Strato save data</string>
     <string name="game_crash">The game has crashed</string>
     <string name="game_crash_message">A fatal error occurred. Check the log for details.</string>
+    <string name="performance_mode">Performance Mode</string>
     <string name="render_scale">Render Scale</string>
-    <string name="render_scale_desc">Multiplier applied to the game\'s internal render resolution. Lower = better performance, Higher = sharper image</string>
+    <string name="render_scale_desc">Multiplier applied to the game\'s internal render resolution</string>
+    <string name="auto_bind">Auto-Bind Controller</string>
+    <string name="auto_bind_description">Detect and map all buttons automatically in one session</string>
+    <string name="auto_bind_detect_title">Press any button on your controller</string>
+    <string name="auto_bind_detect_subtitle">Your controller will be identified automatically</string>
+    <string name="auto_bind_device_detected">Detected: %s</string>
+    <string name="auto_bind_device_locked">Controller locked — let\'s map your buttons</string>
+    <string name="auto_bind_press_button">Press this button on your controller</string>
+    <string name="auto_bind_push_stick">Push the stick %s</string>
+    <string name="auto_bind_rumble_title">Rumble Test</string>
+    <string name="auto_bind_rumble_subtitle">Your controller should vibrate now. Confirm to finish.</string>
+    <string name="auto_bind_rumble_detected">Vibration detected on %s</string>
+    <string name="auto_bind_rumble_not_found">No vibration found on this controller</string>
+    <string name="auto_bind_rumble_builtin_selected">Using phone vibrator</string>
+    <string name="use_builtin_vibrator">Use Phone Vibrator</string>
+    <string name="finish">Finish</string>
+    <string name="skip">Skip</string>
 </resources>
