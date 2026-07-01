@@ -27,6 +27,19 @@ namespace skyline::kernel::svc {
             return;
         }
 
+        // In Extreme Compatibility mode (performanceMode == 1), cap the heap size the
+        // guest can allocate to protect against OOM-kills on low-RAM devices.
+        // Mali G57 MC2 devices typically have 6 GB shared between CPU and GPU;
+        // Android + GPU driver already consume ~2.5 GB, leaving ~3.5 GB for the game.
+        // We cap at 1.5 GB (0x60000000) so there is always headroom for the system.
+        if (*state.settings->performanceMode == 1U) {
+            constexpr u32 kCompatHeapCap{0x60000000}; // 1.5 GiB
+            if (size > kCompatHeapCap) {
+                LOGW("Extreme Compatibility: capping heap request 0x{:X} → 0x{:X}", size, kCompatHeapCap);
+                size = kCompatHeapCap;
+            }
+        }
+
         size_t heapCurrSize{state.process->memory.processHeapSize};
         u8 *heapBaseAddr{state.process->memory.heap.guest.data()};
 
@@ -959,8 +972,6 @@ namespace skyline::kernel::svc {
             // 6.0.0+
             TotalMemoryAvailableWithoutSystemResource = 21,
             TotalMemoryUsageWithoutSystemResource = 22,
-            // 19.0.0+
-            IsVammEnabled = 28,
         };
 
         InfoState info{static_cast<u32>(ctx.w1)};
@@ -1054,14 +1065,6 @@ namespace skyline::kernel::svc {
 
             case InfoState::UserExceptionContextAddr:
                 out = reinterpret_cast<u64>(state.process->tlsExceptionContext);
-                break;
-
-            case InfoState::IsVammEnabled:
-                // Virtual Address Memory Manager — introduced in HOS 19.0.0 / SDK 19.x.
-                // Returning 0 (disabled) is correct for Strato since we don't implement VAMM.
-                // VammManager::InitializeIfEnabled() will skip init when this returns 0,
-                // allowing games built with SDK 19.x (e.g. Unity 6) to start normally.
-                out = 0;
                 break;
 
             default:
