@@ -72,6 +72,8 @@ namespace skyline {
         Setting<bool> forceTripleBuffering; //!< If the presentation engine should always triple buffer even if the swapchain supports double buffering
         Setting<bool> disableFrameThrottling; //!< Allow the guest to submit frames without any blocking calls
         Setting<bool> disableShaderCache;  //!< Prevents cached shaders from being loaded and disables caching of new shaders
+        Setting<float> renderScaleFactor; //!< Render resolution multiplier: 0.5=half, 1.0=native, 2.0=2x
+        Setting<u32> performanceMode; //!< 0=Normal, 1=Extreme Compatibility, 2=Extreme Performance
 
         // GPU
         Setting<std::string> gpuDriver; //!< The label of the GPU driver to use
