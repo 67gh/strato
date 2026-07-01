@@ -101,8 +101,25 @@ namespace skyline::gpu {
         std::scoped_lock textureLock(*frame.textureView);
 
         auto texture{frame.textureView->texture};
-        if (frame.textureView->format != swapchainFormat || texture->dimensions != swapchainExtent)
-            UpdateSwapchain(frame.textureView->format, texture->dimensions);
+        if (frame.textureView->format != swapchainFormat || texture->dimensions != swapchainExtent) {
+            // Apply render scale factor to swapchain dimensions.
+            // renderScaleFactor < 1.0 = lower resolution (better perf)
+            // renderScaleFactor > 1.0 = higher resolution (sharper image)
+            float scale{*state.settings->renderScaleFactor > 0.0f ? *state.settings->renderScaleFactor : 1.0f};
+            texture::Dimensions scaledDimensions{
+                std::max(1U, static_cast<u32>(static_cast<float>(texture->dimensions.width)  * scale)),
+                std::max(1U, static_cast<u32>(static_cast<float>(texture->dimensions.height) * scale)),
+                texture->dimensions.depth
+            };
+            // Clamp to surface capabilities to avoid swapchain creation failures
+            if (vkSurfaceCapabilities.maxImageExtent.width > 0) {
+                scaledDimensions.width  = std::min(scaledDimensions.width,  vkSurfaceCapabilities.maxImageExtent.width);
+                scaledDimensions.height = std::min(scaledDimensions.height, vkSurfaceCapabilities.maxImageExtent.height);
+                scaledDimensions.width  = std::max(scaledDimensions.width,  vkSurfaceCapabilities.minImageExtent.width);
+                scaledDimensions.height = std::max(scaledDimensions.height, vkSurfaceCapabilities.minImageExtent.height);
+            }
+            UpdateSwapchain(frame.textureView->format, scaledDimensions);
+        }
 
         int result;
         if (frame.crop && frame.crop != windowCrop) {
