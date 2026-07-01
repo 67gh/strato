@@ -64,6 +64,14 @@ namespace skyline::service::am {
         Result GetSaveDataSize(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
 
         /**
+         * @brief RequestToGetForeground (0x1B)
+         * @url https://switchbrew.org/wiki/Applet_Manager_services#RequestToGetForeground
+         * Called by games to request foreground focus before rendering.
+         * Returning success signals to the game it has screen ownership.
+         */
+        Result RequestToGetForeground(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
+
+        /**
          * @url https://switchbrew.org/wiki/Applet_Manager_services#GetSaveDataSizeMax
          */
         Result GetSaveDataSizeMax(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
@@ -157,6 +165,7 @@ namespace skyline::service::am {
             SFUNC(0x16, IApplicationFunctions, SetTerminateResult),
             SFUNC(0x17, IApplicationFunctions, GetDisplayVersion),
             SFUNC(0x1A, IApplicationFunctions, GetSaveDataSize),
+            SFUNC(0x1B, IApplicationFunctions, RequestToGetForeground),
             SFUNC(0x1C, IApplicationFunctions, GetSaveDataSizeMax),
             SFUNC(0x28, IApplicationFunctions, NotifyRunning),
             SFUNC(0x32, IApplicationFunctions, GetPseudoDeviceId),
