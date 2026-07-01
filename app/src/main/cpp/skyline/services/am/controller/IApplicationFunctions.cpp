@@ -200,6 +200,15 @@ namespace skyline::service::am {
         return result::NotAvailable;
     }
 
+    Result IApplicationFunctions::RequestToGetForeground(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
+        // Tell the game it has foreground ownership so it starts rendering.
+        // MK11 (and other NRS games) call this before submitting any GPU frames.
+        // Without a success response the game assumes it is running in the background
+        // and never presents anything, resulting in a permanently black screen.
+        LOGD("RequestToGetForeground: granted");
+        return {};
+    }
+
     Result IApplicationFunctions::GetNotificationStorageChannelEvent(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
         auto handle{state.process->InsertItem(notificationStorageChannelEvent)};
         LOGW("Notification Storage Channel Event Handle: 0x{:X}", handle);
