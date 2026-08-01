@@ -5,6 +5,7 @@
 #pragma once
 
 #include <kernel/ipc.h>
+#include <cxxabi.h>
 
 constexpr static skyline::u32 TipcFunctionIdFlag{1U << 31}; //!< Flag applied to the stored service function ID to differentiate between TIPC and HIPC functions
 #define SERVICE_STRINGIFY(string) #string
@@ -17,7 +18,7 @@ constexpr static skyline::u32 TipcFunctionIdFlag{1U << 31}; //!< Flag applied to
  * @brief SERVICE_DECL now uses find() instead of at() and falls back to a stub
  *        function that returns ResultNotImplemented instead of crashing.
  */
-#define SERVICE_DECL(...)                                                                                      private:                                                                                                       template<typename BaseClass, typename BaseFunctionType, BaseFunctionType BaseFunction>                         Result CallBaseFunction(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {           return (static_cast<BaseClass *>(this)->*BaseFunction)(session, request, response);                        }                                                                                                              SERVICE_DECL_AUTO(functions, frozen::make_unordered_map({__VA_ARGS__}));                                       protected:                                                                                                     ServiceFunctionDescriptor GetServiceFunction(u32 id, bool isTipc) override {                                       u32 key{(isTipc ? TipcFunctionIdFlag : 0U) | id};                                                              auto it{functions.find(key)};                                                                                  if (it == functions.end()) [[unlikely]] {                                                                          LOGW("[STUB] Missing function in service '{}': cmdId=0x{:X} (tipc={})", GetName(), id, isTipc);               static auto stub = [](type::KSession&, ipc::IpcRequest&, ipc::IpcResponse&)->Result {                               return Result{0xF601}; /* NotImplemented */                                                                };                                                                                                             return ServiceFunctionDescriptor{                                                                                  reinterpret_cast<DerivedService*>(this),                                                                       reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(stub),                                         "StubFunction"                                                                                             };                                                                                                         }                                                                                                              auto& function{it->second};                                                                                    return ServiceFunctionDescriptor{                                                                                  reinterpret_cast<DerivedService*>(this),                                                                       reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(function.first),                               function.second                                                                                            };                                                                                                         }
+#define SERVICE_DECL(...)                                                                                      private:                                                                                                       template<typename BaseClass, typename BaseFunctionType, BaseFunctionType BaseFunction>                         Result CallBaseFunction(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {           return (static_cast<BaseClass *>(this)->*BaseFunction)(session, request, response);                        }                                                                                                              SERVICE_DECL_AUTO(functions, frozen::make_unordered_map({__VA_ARGS__}));                                       protected:                                                                                                     ServiceFunctionDescriptor GetServiceFunction(u32 id, bool isTipc) override {                                       u32 key{(isTipc ? TipcFunctionIdFlag : 0U) | id};                                                              auto it{functions.find(key)};                                                                                  if (it == functions.end()) [[unlikely]] {                                                                          LOGW("[STUB] Missing function in service '{}': cmdId=0x{:X} (tipc={})", GetName(), id, isTipc);               return ServiceFunctionDescriptor{                                                                                  reinterpret_cast<DerivedService*>(this),                                                                       reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(&BaseService::StubFunction),                  "StubFunction"                                                                                             };                                                                                                         }                                                                                                              auto& function{it->second};                                                                                    return ServiceFunctionDescriptor{                                                                                  reinterpret_cast<DerivedService*>(this),                                                                       reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(function.first),                               function.second                                                                                            };                                                                                                         }
 #define SRVREG(class, ...) std::make_shared<class>(state, manager, ##__VA_ARGS__)
 
 namespace skyline::kernel::type {
@@ -56,6 +57,16 @@ namespace skyline::service {
             }
         };
 
+      protected:
+        /**
+         * @brief Generic stub implementation used for missing/unimplemented IPC functions.
+         * @note This must be a real member function (not a lambda) since only pointer-to-member-function
+         *       values can be reinterpret_cast to another pointer-to-member-function type per the standard.
+         */
+        Result StubFunction(type::KSession &, ipc::IpcRequest &, ipc::IpcResponse &) {
+            return Result{0xF601}; // NotImplemented
+        }
+
       public:
         BaseService(const DeviceState &state, ServiceManager &manager) : state(state), manager(manager) {}
 
@@ -66,12 +77,9 @@ namespace skyline::service {
 
         virtual ServiceFunctionDescriptor GetServiceFunction(u32 id, bool isTipc) {
             LOGW("[STUB] BaseService::GetServiceFunction called (cmdId=0x{:X}, tipc={})", id, isTipc);
-            static auto stub = [](type::KSession&, ipc::IpcRequest&, ipc::IpcResponse&)->Result {
-                return Result{0xF601};
-            };
             return ServiceFunctionDescriptor{
-                nullptr,
-                reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(stub),
+                reinterpret_cast<DerivedService*>(this),
+                reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(&BaseService::StubFunction),
                 "BaseService::Stub"
             };
         }
