@@ -57,11 +57,14 @@ namespace skyline::service {
             }
         };
 
-      protected:
+      public:
         /**
          * @brief Generic stub implementation used for missing/unimplemented IPC functions.
          * @note This must be a real member function (not a lambda) since only pointer-to-member-function
          *       values can be reinterpret_cast to another pointer-to-member-function type per the standard.
+         * @note Must be public: forming a pointer-to-member to an inherited protected member from the
+         *       SERVICE_DECL macro (expanded in each derived service class) requires the member to be
+         *       named via the current derived class, which the macro cannot do generically.
          */
         Result StubFunction(type::KSession &, ipc::IpcRequest &, ipc::IpcResponse &) {
             return Result{0xF601}; // NotImplemented
