@@ -55,19 +55,29 @@ extern "C" JNIEXPORT jint JNICALL Java_org_stratoemu_strato_loader_RomFile_popul
     jfieldID applicationVersionField{env->GetFieldID(clazz, "applicationVersion", "Ljava/lang/String;")};
 
     if (loader->nacp) {
-        auto language{skyline::language::GetApplicationLanguage(static_cast<skyline::language::SystemLanguage>(systemLanguage))};
-        if (((1 << static_cast<skyline::u32>(language)) & loader->nacp->supportedTitleLanguages) == 0)
-            language = loader->nacp->GetFirstSupportedTitleLanguage();
+        try {
+            auto language{skyline::language::GetApplicationLanguage(static_cast<skyline::language::SystemLanguage>(systemLanguage))};
+            if (((1 << static_cast<skyline::u32>(language)) & loader->nacp->supportedTitleLanguages) == 0)
+                language = loader->nacp->GetFirstSupportedTitleLanguage();
 
-        env->SetObjectField(thiz, applicationNameField, env->NewStringUTF(loader->nacp->GetApplicationName(language).c_str()));
-        env->SetObjectField(thiz, applicationVersionField, env->NewStringUTF(loader->nacp->GetApplicationVersion().c_str()));
-        env->SetObjectField(thiz, applicationTitleIdField, env->NewStringUTF(loader->nacp->GetSaveDataOwnerId().c_str()));
-        env->SetObjectField(thiz, applicationAuthorField, env->NewStringUTF(loader->nacp->GetApplicationPublisher(language).c_str()));
+            env->SetObjectField(thiz, applicationNameField, env->NewStringUTF(loader->nacp->GetApplicationName(language).c_str()));
+            env->SetObjectField(thiz, applicationVersionField, env->NewStringUTF(loader->nacp->GetApplicationVersion().c_str()));
+            env->SetObjectField(thiz, applicationTitleIdField, env->NewStringUTF(loader->nacp->GetSaveDataOwnerId().c_str()));
+            env->SetObjectField(thiz, applicationAuthorField, env->NewStringUTF(loader->nacp->GetApplicationPublisher(language).c_str()));
 
-        auto icon{loader->GetIcon(language)};
-        jbyteArray iconByteArray{env->NewByteArray(static_cast<jsize>(icon.size()))};
-        env->SetByteArrayRegion(iconByteArray, 0, static_cast<jsize>(icon.size()), reinterpret_cast<const jbyte *>(icon.data()));
-        env->SetObjectField(thiz, rawIconField, iconByteArray);
+            auto icon{loader->GetIcon(language)};
+            jbyteArray iconByteArray{env->NewByteArray(static_cast<jsize>(icon.size()))};
+            env->SetByteArrayRegion(iconByteArray, 0, static_cast<jsize>(icon.size()), reinterpret_cast<const jbyte *>(icon.data()));
+            env->SetObjectField(thiz, rawIconField, iconByteArray);
+        } catch (const std::exception &e) {
+            // A malformed NACP/icon in a single ROM must not crash the whole app during a
+            // library scan. A C++ exception that escapes a JNI-called function past this
+            // point would call std::terminate() and kill the process with no catchable
+            // Java-side error. Instead, report this ROM as unparseable and keep scanning.
+            return static_cast<jint>(skyline::loader::LoaderResult::ParsingError);
+        } catch (...) {
+            return static_cast<jint>(skyline::loader::LoaderResult::ParsingError);
+        }
     }
 
     return static_cast<jint>(skyline::loader::LoaderResult::Success);
@@ -95,15 +105,24 @@ extern "C" JNIEXPORT jstring Java_org_stratoemu_strato_preference_FirmwareImport
     auto keyStore{std::make_shared<skyline::crypto::KeyStore>(skyline::JniString(env, keysPathJstring))};
 
     for (const auto &entry : systemArchives->Read()) {
-        std::shared_ptr<skyline::vfs::Backing> backing{systemArchivesFileSystem->OpenFile(entry.name)};
-        auto nca{skyline::vfs::NCA(backing, keyStore)};
+        try {
+            std::shared_ptr<skyline::vfs::Backing> backing{systemArchivesFileSystem->OpenFile(entry.name)};
+            auto nca{skyline::vfs::NCA(backing, keyStore)};
 
-        if (nca.header.programId == systemVersionProgramId && nca.romFs != nullptr) {
-            auto controlRomFs{std::make_shared<skyline::vfs::RomFileSystem>(nca.romFs)};
-            auto file{controlRomFs->OpenFile("file")};
-            SystemVersion systemVersion;
-            file->Read<SystemVersion>(systemVersion);
-            return env->NewStringUTF(reinterpret_cast<char *>(systemVersion.displayVersion));
+            if (nca.header.programId == systemVersionProgramId && nca.romFs != nullptr) {
+                auto controlRomFs{std::make_shared<skyline::vfs::RomFileSystem>(nca.romFs)};
+                auto file{controlRomFs->OpenFile("file")};
+                SystemVersion systemVersion;
+                file->Read<SystemVersion>(systemVersion);
+                return env->NewStringUTF(reinterpret_cast<char *>(systemVersion.displayVersion));
+            }
+        } catch (const std::exception &e) {
+            // Skip NCAs that cannot be parsed or decrypted with the current key set.
+            // This is expected for NCAs encrypted with key generations that are higher
+            // than what the prod.keys supports, or for corrupted/partial firmware files.
+            continue;
+        } catch (...) {
+            continue;
         }
     }
 
