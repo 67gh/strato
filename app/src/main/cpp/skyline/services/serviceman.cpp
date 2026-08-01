@@ -193,9 +193,8 @@ namespace skyline::service {
             case util::MakeMagic<ServiceName>("lg"):
             case util::MakeMagic<ServiceName>("ldn:m"):
             case util::MakeMagic<ServiceName>("ldn:s"):
-            case util::MakeMagic<ServiceName>("bsdsocket"):
-            case util::MakeMagic<ServiceName>("bsdsocket:s"):
-            case util::MakeMagic<ServiceName>("bsdsocket:a"): {
+            case util::MakeMagic<ServiceName>("bsd:s"):
+            case util::MakeMagic<ServiceName>("bsd:u"): {
                 std::string_view nameString(span(reinterpret_cast<char *>(&name), sizeof(name)).as_string(true));
                 LOGW("[STUB] Creating stub for service: '{}'", nameString);
                 auto stubService{std::make_shared<StubService>(state, *this, std::string(nameString))};

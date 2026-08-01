@@ -11,10 +11,10 @@ namespace skyline::service {
         return Result{0xF601};
     }
 
-    ServiceFunctionDescriptor StubService::GetServiceFunction(u32 id, bool isTipc) {
-        return ServiceFunctionDescriptor{
-            reinterpret_cast<DerivedService*>(this),
-            reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(&StubService::StubFunction),
+    BaseService::ServiceFunctionDescriptor StubService::GetServiceFunction(u32 id, bool isTipc) {
+        return BaseService::ServiceFunctionDescriptor{
+            reinterpret_cast<BaseService::DerivedService*>(this),
+            reinterpret_cast<decltype(BaseService::ServiceFunctionDescriptor::function)>(&StubService::StubFunction),
             "StubService::StubFunction"
         };
     }
