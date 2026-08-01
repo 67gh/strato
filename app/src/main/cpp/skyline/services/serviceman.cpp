@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
+// Modified 2024: Strato Revival Project — added TOTK support + StubService fallback
 
 #include <kernel/types/KProcess.h>
 #include <common/trace.h>
@@ -62,6 +63,7 @@
 #include "ts/IMeasurementServer.h"
 #include "psm/IPsmServer.h"
 #include "ntc/IEnsureNetworkClockAvailabilityService.h"
+#include "stub_service.h"
 #include "serviceman.h"
 
 #define SERVICE_CASE(class, name, ...) \
@@ -101,7 +103,7 @@ namespace skyline::service {
             SERVICE_CASE(codec::IHardwareOpusDecoderManager, "hwopus")
             SERVICE_CASE(hid::IHidServer, "hid")
             SERVICE_CASE(irs::IIrSensorServer, "irs", globalServiceState->sharedIirCore)
-            SERVICE_CASE(timesrv::IStaticService, "time:s", globalServiceState->timesrv, timesrv::constant::StaticServiceSystemPermissions) // Both of these would be registered after TimeServiceManager::Setup normally but we call that in the GlobalServiceState constructor so can just list them here directly
+            SERVICE_CASE(timesrv::IStaticService, "time:s", globalServiceState->timesrv, timesrv::constant::StaticServiceSystemPermissions)
             SERVICE_CASE(timesrv::IStaticService, "time:su", globalServiceState->timesrv, timesrv::constant::StaticServiceSystemUpdatePermissions)
             SERVICE_CASE(glue::IStaticService, "time:a", globalServiceState->timesrv.managerServer.GetStaticServiceAsAdmin(state, *this), globalServiceState->timesrv, timesrv::constant::StaticServiceAdminPermissions)
             SERVICE_CASE(glue::IStaticService, "time:r", globalServiceState->timesrv.managerServer.GetStaticServiceAsRepair(state, *this), globalServiceState->timesrv, timesrv::constant::StaticServiceRepairPermissions)
@@ -155,9 +157,59 @@ namespace skyline::service {
             SERVICE_CASE(ts::IMeasurementServer, "ts")
             SERVICE_CASE(psm::IPsmServer, "psm")
             SERVICE_CASE(ntc::IEnsureNetworkClockAvailabilityService, "ntc")
-            default:
+
+            /* ── TOTK / Modern games support ── */
+            SERVICE_CASE(settings::ISystemSettingsServer, "set:cal")
+            SERVICE_CASE(settings::ISystemSettingsServer, "set:fd")
+            SERVICE_CASE(apm::IManager, "apm:p")
+            SERVICE_CASE(apm::IManager, "apm:sys")
+            SERVICE_CASE(psm::IPsmServer, "spsm")
+            SERVICE_CASE(nifm::IStaticService, "nifm:s")
+            SERVICE_CASE(nifm::IStaticService, "nifm:a")
+            SERVICE_CASE(socket::IClient, "bsdcfg")
+            SERVICE_CASE(fssrv::IFileSystemProxy, "fsp-ldr")
+            SERVICE_CASE(fssrv::IFileSystemProxy, "fsp-pr")
+
+            /* ── Stubs for services not yet implemented ── */
+            case util::MakeMagic<ServiceName>("pm:shell"):
+            case util::MakeMagic<ServiceName>("pm:dmnt"):
+            case util::MakeMagic<ServiceName>("pm:info"):
+            case util::MakeMagic<ServiceName>("pm:bm"):
+            case util::MakeMagic<ServiceName>("psc:c"):
+            case util::MakeMagic<ServiceName>("usb:ds"):
+            case util::MakeMagic<ServiceName>("usb:hs"):
+            case util::MakeMagic<ServiceName>("usb:pd"):
+            case util::MakeMagic<ServiceName>("usb:pm"):
+            case util::MakeMagic<ServiceName>("ethc:c"):
+            case util::MakeMagic<ServiceName>("ethc:i"):
+            case util::MakeMagic<ServiceName>("ns"):
+            case util::MakeMagic<ServiceName>("ns:am"):
+            case util::MakeMagic<ServiceName>("ns:web"):
+            case util::MakeMagic<ServiceName>("nim"):
+            case util::MakeMagic<ServiceName>("nim:shp"):
+            case util::MakeMagic<ServiceName>("es"):
+            case util::MakeMagic<ServiceName>("lcs"):
+            case util::MakeMagic<ServiceName>("lr"):
+            case util::MakeMagic<ServiceName>("lg"):
+            case util::MakeMagic<ServiceName>("ldn:m"):
+            case util::MakeMagic<ServiceName>("ldn:s"):
+            case util::MakeMagic<ServiceName>("bsdsocket"):
+            case util::MakeMagic<ServiceName>("bsdsocket:s"):
+            case util::MakeMagic<ServiceName>("bsdsocket:a"): {
                 std::string_view nameString(span(reinterpret_cast<char *>(&name), sizeof(name)).as_string(true));
-                throw std::out_of_range(fmt::format("CreateService called with an unknown service name: {}", nameString));
+                LOGW("[STUB] Creating stub for service: '{}'", nameString);
+                auto stubService{std::make_shared<StubService>(state, *this, std::string(nameString))};
+                serviceMap[name] = stubService;
+                return stubService;
+            }
+
+            default: {
+                std::string_view nameString(span(reinterpret_cast<char *>(&name), sizeof(name)).as_string(true));
+                LOGW("[STUB] Unknown service requested: '{}'. Creating StubService.", nameString);
+                auto stubService{std::make_shared<StubService>(state, *this, std::string(nameString))};
+                serviceMap[name] = stubService;
+                return stubService;
+            }
         }
     }
 
@@ -177,7 +229,7 @@ namespace skyline::service {
         return serviceObject;
     }
 
-    void ServiceManager::RegisterService(std::shared_ptr<BaseService> serviceObject, type::KSession &session, ipc::IpcResponse &response) { // NOLINT(performance-unnecessary-value-param)
+    void ServiceManager::RegisterService(std::shared_ptr<BaseService> serviceObject, type::KSession &session, ipc::IpcResponse &response) {
         std::scoped_lock serviceGuard{mutex};
         KHandle handle{};
 

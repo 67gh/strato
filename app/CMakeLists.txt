@@ -246,6 +246,8 @@ add_library(skyline SHARED
         ${source_DIR}/skyline/vfs/ticket.cpp
         ${source_DIR}/skyline/services/serviceman.cpp
         ${source_DIR}/skyline/services/base_service.cpp
+        ${source_DIR}/skyline/services/stub_service.cpp
+        services/stub_service.cpp
         ${source_DIR}/skyline/services/sm/IUserInterface.cpp
         ${source_DIR}/skyline/services/fatalsrv/IService.cpp
         ${source_DIR}/skyline/services/audio/IAudioInManager.cpp

@@ -1,35 +1,24 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
+// Modified 2024: Strato Revival Project — removed exception-based crash paths
 
 #include <cxxabi.h>
 #include <common/trace.h>
 #include "base_service.h"
 
 namespace skyline::service {
-    const std::string &BaseService::GetName() {
-        if (name.empty()) {
-            auto mangledName{typeid(*this).name()};
-
-            int status{};
-            size_t length{};
-            std::unique_ptr<char, decltype(&std::free)> demangled{abi::__cxa_demangle(mangledName, nullptr, &length, &status), std::free};
-
-            name = (status == 0) ? std::string(demangled.get() + std::char_traits<char>::length("skyline::service::")) : mangledName;
-        }
-        return name;
-    }
-
     Result service::BaseService::HandleRequest(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
         ServiceFunctionDescriptor function;
         u32 functionId{request.isTipc ? static_cast<u32>(request.header->type) : request.payload->value};
 
-        try {
-            function = GetServiceFunction(functionId, request.isTipc);
-            LOGDNF("Service: {}", function.name);
-        } catch (const std::out_of_range &) {
-            LOGW("Cannot find {0} function in service '{1}': 0x{2:X} ({2})", request.isTipc ? "TIPC" : "HIPC", GetName(), static_cast<u32>(functionId));
-            return {};
+        function = GetServiceFunction(functionId, request.isTipc);
+        if (function.clazz == nullptr) {
+            LOGW("[STUB] No valid function found in service '{}' for {} cmdId=0x{:X} ({})",
+                 GetName(), request.isTipc ? "TIPC" : "HIPC", functionId, functionId);
+            return Result{0xF601};
         }
+
+        LOGDNF("Service: {}", function.name);
         TRACE_EVENT("service", perfetto::StaticString{function.name});
         try {
             return function(session, request, response);
@@ -38,6 +27,11 @@ namespace skyline::service {
             std::rethrow_exception(std::current_exception());
         } catch (const std::exception &e) {
             throw exception("{} (Service: {})", e.what(), function.name);
+        } catch (...) {
+            // Anti-crash: catch any non-std::exception (e.g. thrown from driver/vendor code) instead of
+            // letting it propagate to std::terminate() and killing the whole emulator process.
+            LOGE("[STUB] Unknown non-standard exception caught in service '{}' (Function: {}) — returning NotImplemented instead of crashing", GetName(), function.name);
+            return Result{0xF601};
         }
     }
 }
