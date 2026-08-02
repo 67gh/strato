@@ -2,7 +2,7 @@
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 #include "skyline/crypto/key_store.h"
-#incauto keylude "skyline/vfs/nca.h"
+#include "skyline/vfs/nca.h"
 #include "skyline/vfs/os_backing.h"
 #include "skyline/vfs/os_filesystem.h"
 #include "skyline/loader/nro.h"
@@ -16,6 +16,7 @@ extern "C" JNIEXPORT jint JNICALL Java_org_stratoemu_strato_loader_RomFile_popul
     skyline::signal::ScopedStackBlocker stackBlocker;
 
     skyline::loader::RomFormat format{static_cast<skyline::loader::RomFormat>(jformat)};
+
     std::shared_ptr<skyline::crypto::KeyStore> keyStore;
     std::unique_ptr<skyline::loader::Loader> loader;
     try {
