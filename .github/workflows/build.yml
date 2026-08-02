@@ -32,7 +32,7 @@ jobs:
       - name: Install Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin' # Temurin should come pre-installed on GitHub-hosted runners
+          distribution: 'temurin'
           java-version: '17'
 
       - name: Install Ninja Build
@@ -44,5 +44,12 @@ jobs:
         env:
           CMAKE_C_COMPILER_LAUNCHER: "ccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "ccache"
-          CCACHE_COMPILERCHECK: "string:${{ env.NDK_VERSION }}" # Use NDK version instead of compiler timestamp
+          CCACHE_COMPILERCHECK: "string:${{ env.NDK_VERSION }}"
         run: ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleMainlineRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mainline-release-apk
+          path: app/build/outputs/apk/mainline/release/*.apk
+          if-no-files-found: warn

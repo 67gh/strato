@@ -21,12 +21,25 @@ namespace skyline::crypto {
         std::vector<char>::iterator lineEnd;
         while ((lineEnd = std::find(lineStart, fileContent.end(), '\n')) != fileContent.end()) {
             auto keyEnd{std::find(lineStart, lineEnd, '=')};
-            if (keyEnd == lineEnd)
-                throw exception("Invalid key file");
+            // Skip blank lines, comment lines (#...), or any other line that doesn't
+            // contain a key=value pair instead of throwing. Newer key-dump tools
+            // sometimes add trailing blank lines or comments that older parsers
+            // never had to deal with; failing to tolerate them previously caused
+            // an uncaught exception to cross the JNI boundary and crash the app.
+            if (keyEnd == lineEnd || lineStart == lineEnd || *lineStart == '#') {
+                lineStart = lineEnd + 1;
+                continue;
+            }
 
             std::string_view key(&*lineStart, static_cast<size_t>(keyEnd - lineStart));
             std::string_view value(&*(keyEnd + 1), static_cast<size_t>(lineEnd - keyEnd - 1));
-            (this->*callback)(key, value);
+            try {
+                (this->*callback)(key, value);
+            } catch (const std::exception &) {
+                // Skip any single malformed/unrecognized key entry (e.g. an index
+                // format the parser doesn't expect) rather than aborting the whole
+                // key file — and never let it become an uncaught exception.
+            }
 
             lineStart = lineEnd + 1;
         }
@@ -56,7 +69,8 @@ namespace skyline::crypto {
             auto it{indexedKey128Names.find(keyName.substr(0, keyName.size() - 2))};
             if (it != indexedKey128Names.end()) {
                 size_t index{std::stoul(std::string(keyName.substr(it->first.size())), nullptr, 16)};
-                it->second[index] = util::HexStringToArray<16>(value);
+                if (index < it->second.size())
+                    it->second[index] = util::HexStringToArray<16>(value);
             }
         }
     }
