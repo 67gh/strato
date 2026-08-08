@@ -17,8 +17,16 @@
         <item name="android:widgetLayout">@layout/preference_widget_material_switch</item>
     </style>
 
-    <!-- Override the default divider used in PreferenceScreen -->
+    <!-- Premium redesign: bold, uppercase, colored section headers (Spotify/Netflix-style) -->
+    <style name="App.Preference.Category.Material3" parent="Preference.Category.Material">
+        <item name="android:layout">@layout/preference_category_material3</item>
+    </style>
+
+    <!-- Premium redesign: no hairline dividers, more breathing room -->
     <style name="App.PreferenceFragment.Material" parent="PreferenceFragment.Material">
-        <item name="android:divider">@drawable/preference_list_divider_m3</item>
+        <item name="android:divider">@null</item>
+        <item name="android:dividerHeight">0dp</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">32dp</item>
     </style>
 </resources>

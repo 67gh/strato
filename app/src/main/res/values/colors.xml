@@ -67,4 +67,7 @@
     <color name="md_theme_dark_surfaceTint">#ACC7FF</color>
     <color name="md_theme_dark_outlineVariant">#44474F</color>
     <color name="md_theme_dark_scrim">#000000</color>
+<!-- Light-mode fallback: Settings screen uses the normal MD3 surface, unchanged -->
+    <color name="premium_background">@color/md_theme_light_background</color>
+    <color name="premium_surface">@color/md_theme_light_surface</color>
 </resources>
