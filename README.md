@@ -1,42 +1,110 @@
-<h1 align="center">
-    <a href="https://github.com/strato-emu/strato" target="_blank">
-        <img height="60%" width="60%" src="https://raw.github.com/strato-emu/branding/master/banner/strato-banner-rounded.png"><br>
-    </a>
-    <a href="https://discord.gg/YhpdhVBmXX" target="_blank">
-        <img src="https://img.shields.io/discord/1104386300750082081.svg?label=&logo=discord&logoColor=ffffff&color=5865F2&labelColor=404EED">
-    </a>
-    <a href="https://github.com/strato-emu/strato/actions/workflows/ci.yml" target="_blank">
-        <img src="https://github.com/strato-emu/strato/actions/workflows/ci.yml/badge.svg"><br>
-    </a>
-</h1>
+# Strato Release Publisher
 
-<p align="center">
-    <b><a href="CONTRIBUTING.md">Contributing Guide</a> • <a href="BUILDING.md">Building Guide</a></b>
-</p>
+Workflow GitHub Actions pour publier automatiquement les builds Strato dans la section **Releases**.
 
-<p align="center">
-    <b>Strato</b> is an experimental emulator that runs on <b>ARMv8 Android™</b> devices and emulates the functionality of a <b>Nintendo Switch™</b> system, licensed under <a href="https://github.com/strato-emu/strato/blob/master/LICENSE.md"><b>GNU General Public License v3.0 or later</b></a>
-</p>
+## 📁 Structure
 
----
+```
+.github/workflows/
+├── android_ci.yml      # Build Gradle + upload artifacts
+└── release.yml         # Récupère l'artifact + publie en Release
+```
 
-### Contact
-You can contact the core developers of Strato at our **[Discord](https://discord.gg/YhpdhVBmXX)**. If you have any questions, feel free to ask. It's also a good place to just keep up with the emulator, as most talk regarding development goes on over there.
+## 🚀 Utilisation
 
----
+### Méthode 1 : Déclenchement manuel (recommandé)
 
-### Special Thanks
-A few noteworthy teams/projects who've helped us along the way are:
-* **[Skyline](https://skyline-emu.one/):** Strato builds on top of Skyline and is meant as a continuation of that project.
+1. Va dans l'onglet **Actions** de ton repo GitHub
+2. Clique sur **"Strato Release Publisher"** dans la liste des workflows
+3. Clique sur le bouton **"Run workflow"** (en haut à droite)
+4. Remplis les options :
+   - **build_workflow** : nom du workflow de build (défaut : `Android CI`)
+   - **artifact_name** : laisse vide pour auto-détection, ou précise `strato-debug-apk`
+   - **prerelease** : coche pour une release candidate
+   - **release_title** : titre personnalisé (optionnel)
+5. Clique **"Run workflow"**
 
-* **[Ryujinx](https://ryujinx.org/):** We've used Ryujinx for reference throughout the project, the accuracy of their HLE implementations of Switch subsystems make it an amazing reference. The team behind the project has been extremely helpful with any queries we've had and have constantly helped us with any issues we've come across. **It should be noted that Strato is not based on Ryujinx**.
+### Méthode 2 : Automatique après build
 
-* **[yuzu](https://yuzu-emu.org/):** Strato's shader compiler is a **fork** of *yuzu*'s shader compiler with Strato-specific changes, using it allowed us to focus on the parts of GPU emulation that we could specifically optimize for mobile while having a high-quality shader compiler implementation as a base.
+Le workflow `release.yml` s'exécute **automatiquement** dès que le workflow `Android CI` réussit sur les branches `main`, `master` ou `dev`.
 
-* **[Switchbrew](https://github.com/switchbrew/):** We've extensively used Switchbrew whether that be their **[wiki](https://switchbrew.org/)** with its colossal amount of information on the Switch that has saved us countless hours of time or **[libnx](https://github.com/switchbrew/libnx)** which was crucial to initial development of the emulator to ensure that our HLE kernel and sysmodule implementations were accurate.
+```yaml
+on:
+  workflow_run:
+    workflows: ["Android CI"]
+    types: [completed]
+    branches: [main, master, dev]
+```
 
----
+### Méthode 3 : Trigger via API / CLI
 
-### Disclaimer
-* **Nintendo Switch** is a trademark of **Nintendo Co., Ltd**
-* **Android** is a trademark of **Google LLC**
+```bash
+# Via GitHub CLI
+gh workflow run release.yml   -f build_workflow="Android CI"   -f prerelease=true   -f release_title="Strato TOTK Preview"
+
+# Via API REST
+curl -X POST   -H "Authorization: token $GITHUB_TOKEN"   -H "Accept: application/vnd.github.v3+json"   https://api.github.com/repos/OWNER/REPO/actions/workflows/release.yml/dispatches   -d '{"ref":"main","inputs":{"prerelease":"true"}}'
+```
+
+## 📦 Ce qui est publié
+
+| Fichier | Description |
+|---------|-------------|
+| `*.apk` | L'APK Android de Strato |
+| `*.zip` | Archive du build (si présent) |
+| `*.so` | Librairies natives (si uploadées) |
+
+## 🏷️ Format des releases
+
+- **Tag** : `v2024.08.08-a1b2c3d` (date + hash court du commit)
+- **Titre** : `Strato Build 2024.08.08-a1b2c3d` ou titre personnalisé
+- **Pré-release** : Oui par défaut (décocher pour une release stable)
+- **Notes** : Générées automatiquement avec les 10 derniers commits
+
+## ⚙️ Prérequis
+
+1. Le workflow de build (`android_ci.yml`) doit produire des **artifacts** avec `actions/upload-artifact`
+2. Le repo doit avoir les **permissions** `contents: write` et `actions: read`
+3. `GITHUB_TOKEN` est fourni automatiquement par GitHub Actions
+
+## 🔧 Personnalisation
+
+### Changer le chemin de l'APK
+
+Dans `android_ci.yml`, modifie :
+```yaml
+path: app/build/outputs/apk/debug/*.apk
+```
+
+### Changer le format du tag
+
+Dans `release.yml`, modifie la section `Generate version` :
+```bash
+VERSION="${DATE}-${SHORT_SHA}"
+# ou
+VERSION="r$(git rev-list --count HEAD)"
+```
+
+### Ajouter des fichiers à la release
+
+Dans `release.yml`, ajoute des patterns dans `files:` :
+```yaml
+files: |
+  ./artifacts/**/*.apk
+  ./artifacts/**/*.zip
+  ./artifacts/**/*.so
+  ./artifacts/**/CHANGELOG.md
+```
+
+## 🐛 Dépannage
+
+| Problème | Solution |
+|----------|----------|
+| "Aucun artifact trouvé" | Vérifie que le workflow de build a bien uploadé un artifact avec `actions/upload-artifact` |
+| "Permission denied" | Va dans Settings → Actions → General → Workflow permissions → coche "Read and write permissions" |
+| "Tag déjà existant" | Le tag est basé sur la date + hash. Si tu relances le même jour avec le même commit, change le format du tag. |
+| Release vide | Vérifie que les artifacts contiennent bien des fichiers (pas des dossiers vides) |
+
+## 📜 Licence
+
+GPL-3.0 — même licence que Strato.
