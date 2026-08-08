@@ -13,6 +13,28 @@ idea.module {
 }
 
 android {
+    signingConfigs {
+    release {
+        storeFile file("strato-release.keystore")
+        storePassword "strato2024"
+        keyAlias "strato-key"
+        keyPassword "strato2024"
+        enableV1Signing true
+        enableV2Signing true
+    }
+}
+
+buildTypes {
+    release {
+        signingConfig signingConfigs.release
+        minifyEnabled false
+        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+    }
+    debug {
+        signingConfig signingConfigs.release
+    }
+}
+
     namespace 'org.stratoemu.strato'
     compileSdk 34
 
