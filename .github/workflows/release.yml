@@ -4,20 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       prerelease:
-        description: "Marquer comme pré-release ?"
+        description: "Pré-release ?"
         required: true
         default: true
         type: boolean
       release_title:
-        description: "Titre personnalisé (laisser vide pour génération auto)"
+        description: "Titre (vide = auto)"
         required: false
         default: ""
         type: string
 
   workflow_run:
     workflows: ["Build"]
-    types:
-      - completed
+    types: [completed]
     branches: [master]
 
 jobs:
@@ -29,13 +28,12 @@ jobs:
       actions: read
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ── Mode 1: Déclenché par workflow_run (Build terminé) ──
-      - name: Download artifact from workflow run
+      - name: Download artifact (workflow_run)
         if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
@@ -44,122 +42,59 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Mode 2: Déclenchement manuel → chercher le dernier Build réussi ──
-      - name: Download artifact from latest successful Build
+      - name: Download artifact (manual)
         if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "=== Recherche du dernier workflow Build réussi ==="
-          gh run list \
-            --repo ${{ github.repository }} \
-            --workflow=Build \
-            --status=success \
-            --branch=master \
-            --limit=1 \
-            --json databaseId,headSha,createdAt \
-            --jq '.[0] | "RUN_ID=\(.databaseId)\nSHA=\(.headSha)\nDATE=\(.createdAt)"' \
-            > run_info.txt
-          
-          cat run_info.txt
-          source run_info.txt
-          
-          echo "run_id=$RUN_ID" >> $GITHUB_ENV
-          echo "build_sha=$SHA" >> $GITHUB_ENV
-          
-          echo "=== Téléchargement de l'artifact ==="
-          gh run download $RUN_ID \
-            --repo ${{ github.repository }} \
-            --name mainline-release-apk \
-            --dir ./artifacts
+          gh run list --repo ${{ github.repository }} --workflow=Build --status=success --branch=master --limit=1 --json databaseId --jq '.[0].databaseId' > run_id.txt
+          RUN_ID=$(cat run_id.txt)
+          gh run download $RUN_ID --repo ${{ github.repository }} --name mainline-release-apk --dir ./artifacts
 
-      - name: Inspect artifact
+      - name: Inspect
         id: inspect
         run: |
-          echo "=== Artifact downloaded ==="
           ls -lh ./artifacts/
-
           APK=$(find ./artifacts -name "*.apk" | head -n 1)
-          if [ -z "$APK" ]; then
-            echo "❌ No APK found in artifact"
-            exit 1
-          fi
-
+          [ -z "$APK" ] && exit 1
           echo "apk_path=$APK" >> $GITHUB_OUTPUT
-
-          if [ "${{ github.event_name }}" == "workflow_run" ]; then
-            BUILD_SHA="${{ github.event.workflow_run.head_sha }}"
-          else
-            BUILD_SHA="${{ env.build_sha }}"
-          fi
-          
-          # Fallback sur le SHA actuel si pas trouvé
-          if [ -z "$BUILD_SHA" ]; then
-            BUILD_SHA=$(git rev-parse HEAD)
-          fi
-          
-          SHORT_SHA=$(echo $BUILD_SHA | cut -c1-7)
+          SHORT_SHA=$(git rev-parse --short HEAD)
           DATE=$(date +'%Y.%m.%d')
-          VERSION="${DATE}-${SHORT_SHA}"
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
-          echo "build_sha=$BUILD_SHA" >> $GITHUB_OUTPUT
+          echo "version=${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "tag_name=v${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
 
-      - name: Generate release notes
+      - name: Release notes
         id: notes
         run: |
-          VERSION="${{ steps.inspect.outputs.version }}"
-          SHA="${{ steps.inspect.outputs.build_sha }}"
-          APK_NAME=$(basename "${{ steps.inspect.outputs.apk_path }}")
-
           if [ -n "${{ github.event.inputs.release_title }}" ]; then
             TITLE="${{ github.event.inputs.release_title }}"
           else
-            TITLE="Strato Build ${VERSION}"
+            TITLE="Strato Build ${{ steps.inspect.outputs.version }}"
           fi
           echo "title=$TITLE" >> $GITHUB_OUTPUT
-
           cat > RELEASE_NOTES.md << 'EOF'
           ## ${TITLE}
-
-          **Date:** $(date +'%d %B %Y')  
-          **Commit:** `${SHA}`  
-          **Branch:** master
-
+          **Date:** $(date +'%d %B %Y') | **Commit:** ${{ github.sha }}
           ### Download
-          - `${APK_NAME}`
-
+          Artifact ci-dessous.
           ### Warning
-          This is an **experimental** build for testing purposes.
-
-          ### Recent changes
+          Build expérimentale.
           EOF
-
           echo "\`\`\`" >> RELEASE_NOTES.md
-          git log --oneline -10 $SHA >> RELEASE_NOTES.md || git log --oneline -10 >> RELEASE_NOTES.md
+          git log --oneline -10 >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
 
-          echo "" >> RELEASE_NOTES.md
-          echo "---" >> RELEASE_NOTES.md
-          echo "*Automatically generated by GitHub Actions*" >> RELEASE_NOTES.md
-
-      - name: Create Git tag
+      - name: Create tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
           TAG="${{ steps.inspect.outputs.tag_name }}"
-          SHA="${{ steps.inspect.outputs.build_sha }}"
-          
-          # Supprimer le tag s'il existe déjà (pour les relances)
           git push origin :refs/tags/$TAG 2>/dev/null || true
           git tag -d $TAG 2>/dev/null || true
-          
-          git tag -a $TAG $SHA -m "Release $TAG"
+          git tag -a $TAG -m "Release $TAG"
           git push origin $TAG
 
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.inspect.outputs.tag_name }}
@@ -169,16 +104,3 @@ jobs:
           files: ./artifacts/**/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Summary
-        run: |
-          echo "## ✅ Release published!"
-          echo ""
-          echo "| Champ | Valeur |"
-          echo "|-------|--------|"
-          echo "| Tag | ${{ steps.inspect.outputs.tag_name }} |"
-          echo "| APK | $(basename ${{ steps.inspect.outputs.apk_path }}) |"
-          echo "| Commit | ${{ steps.inspect.outputs.build_sha }} |"
-          echo "| Pré-release | ${{ github.event.inputs.prerelease || true }} |"
-          echo ""
-          echo "🔗 https://github.com/${{ github.repository }}/releases/tag/${{ steps.inspect.outputs.tag_name }}"
