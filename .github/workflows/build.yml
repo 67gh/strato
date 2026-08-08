@@ -22,10 +22,14 @@ jobs:
 
       - name: Auto-increment versionCode
         run: |
-          CURRENT_CODE=$(grep -oP 'versionCode\s+\d+' app/build.gradle | grep -oP '\d+')
+          CURRENT_CODE=$(perl -ne 'print $1 if /versionCode\s+(\d+)/' app/build.gradle)
+          if [ -z "$CURRENT_CODE" ]; then
+            echo "ERROR: versionCode not found in app/build.gradle"
+            exit 1
+          fi
           NEW_CODE=$((CURRENT_CODE + 1))
-          sed -i "s/versionCode\s\+$CURRENT_CODE/versionCode $NEW_CODE/" app/build.gradle
-          echo "VersionCode: $CURRENT_CODE → $NEW_CODE"
+          sed -i "s/versionCode[[:space:]]\+$CURRENT_CODE/versionCode $NEW_CODE/" app/build.gradle
+          echo "VersionCode: $CURRENT_CODE -> $NEW_CODE"
 
       - name: Restore CCache
         uses: hendrikmuhs/ccache-action@v1.2
