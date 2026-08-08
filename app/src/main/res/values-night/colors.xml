@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Deep near-black premium background, used only on the Settings screen root.
-         Only defined here (dark) -- the light-mode value in values/colors.xml falls
+         Only defined here (dark) — the light-mode value in values/colors.xml falls
          back to the existing MD3 surface, so light mode is untouched. -->
     <color name="premium_background">#0A0A0C</color>
     <color name="premium_surface">#151517</color>
