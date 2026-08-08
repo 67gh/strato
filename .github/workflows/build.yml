@@ -1,9 +1,15 @@
-# A workflow to verify the build on every push to the master branch
 name: Build
 
 on:
-  push: 
+  push:
     branches: [ master ]
+  workflow_dispatch:
+
+env:
+  KEYSTORE_B64: MIIKTAIBAzCCCfYGCSqGSIb3DQEHAaCCCecEggnjMIIJ3zCCBbYGCSqGSIb3DQEHAaCCBacEggWjMIIFnzCCBZcGCyqGSIb3DQEMCgECoIIFOTCCBTUwKQYKKoZIhvcNAQwBAzAbBBR9qPq+3g8P3w0JhH1m6Q2Q2Q2Q2Q2Qg==
+  KEYSTORE_PASS: strato2024
+  KEY_ALIAS: strato-key
+  KEY_PASS: strato2024
 
 jobs:
   build:
@@ -13,6 +19,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Auto-increment versionCode
+        run: |
+          CURRENT_CODE=$(grep -oP 'versionCode\s+\d+' app/build.gradle | grep -oP '\d+')
+          NEW_CODE=$((CURRENT_CODE + 1))
+          sed -i "s/versionCode\s\+$CURRENT_CODE/versionCode $NEW_CODE/" app/build.gradle
+          echo "VersionCode: $CURRENT_CODE → $NEW_CODE"
 
       - name: Restore CCache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -40,16 +53,26 @@ jobs:
           sudo apt-get install -y ninja-build
           ln -s /usr/bin/ninja .
 
-      - name: Android Assemble
+      - name: Decode keystore
+        run: |
+          echo "$KEYSTORE_B64" | tr -d '\n' | base64 -d > strato-release.keystore
+          ls -lh strato-release.keystore
+
+      - name: Android Assemble Signed
         env:
           CMAKE_C_COMPILER_LAUNCHER: "ccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "ccache"
-          CCACHE_COMPILERCHECK: "string:${{ env.NDK_VERSION }}"
-        run: ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleMainlineRelease
+        run: |
+          ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand \
+            assembleMainlineRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/strato-release.keystore \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASS \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASS
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mainline-release-apk
           path: app/build/outputs/apk/mainline/release/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error
