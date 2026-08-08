@@ -1,36 +1,24 @@
-name: Strato Release Publisher
+name: Release Publisher
 
 on:
-  # Déclenchement manuel (bouton "Run workflow" dans l'onglet Actions)
   workflow_dispatch:
     inputs:
-      build_workflow:
-        description: 'Nom du workflow de build à surveiller'
-        required: true
-        default: 'Android CI'
-        type: string
-      artifact_name:
-        description: 'Nom de l'artifact à publier (laisser vide pour auto-détection)'
-        required: false
-        default: ''
-        type: string
       prerelease:
-        description: 'Release candidate (pré-release) ?'
+        description: "Marquer comme pré-release ?"
         required: true
         default: true
         type: boolean
       release_title:
-        description: 'Titre de la release (laisser vide pour génération auto)'
+        description: "Titre personnalisé (laisser vide pour génération auto)"
         required: false
-        default: ''
+        default: ""
         type: string
 
-  # Déclenchement automatique après succès du workflow de build
   workflow_run:
-    workflows: ["Android CI", "Build", "CI"]
+    workflows: ["Build"]
     types:
       - completed
-    branches: [main, master, dev]
+    branches: [master]
 
 jobs:
   publish-release:
@@ -41,71 +29,48 @@ jobs:
       actions: read
 
     steps:
-      # ── 1. Checkout du repo (pour les notes de release et le tag) ──
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Historique complet pour les notes de release
+          fetch-depth: 0
 
-      # ── 2. Récupérer le dernier artifact du workflow de build ──
-      - name: Download latest build artifact
+      - name: Download build artifact
         id: download
         uses: dawidd6/action-download-artifact@v3
         with:
-          workflow: ${{ github.event.inputs.build_workflow || 'Android CI' }}
+          workflow: Build
           workflow_conclusion: success
-          name: ${{ github.event.inputs.artifact_name || '' }}
-          name_is_regexp: ${{ github.event.inputs.artifact_name == '' }}
+          name: mainline-release-apk
           if_no_artifact_found: fail
           path: ./artifacts
-          search_artifacts: true
 
-      # ── 3. Lister et préparer les fichiers ──
-      - name: Inspect artifacts
+      - name: Inspect artifact
         id: inspect
         run: |
-          echo "=== Artifacts téléchargés ==="
-          find ./artifacts -type f -exec ls -lh {} \;
+          echo "=== Artifact downloaded ==="
+          ls -lh ./artifacts/
 
-          # Détecter l'APK ou le ZIP principal
-          APK_PATH=$(find ./artifacts -name "*.apk" | head -n 1)
-          ZIP_PATH=$(find ./artifacts -name "*.zip" | head -n 1)
-
-          if [ -n "$APK_PATH" ]; then
-            echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-            echo "main_file=$APK_PATH" >> $GITHUB_OUTPUT
-            echo "content_type=application/vnd.android.package-archive" >> $GITHUB_OUTPUT
-            echo "📦 APK détecté : $APK_PATH"
-          elif [ -n "$ZIP_PATH" ]; then
-            echo "zip_path=$ZIP_PATH" >> $GITHUB_OUTPUT
-            echo "main_file=$ZIP_PATH" >> $GITHUB_OUTPUT
-            echo "content_type=application/zip" >> $GITHUB_OUTPUT
-            echo "📦 ZIP détecté : $ZIP_PATH"
-          else
-            echo "❌ Aucun APK ou ZIP trouvé dans les artifacts"
+          APK=$(find ./artifacts -name "*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "No APK found in artifact"
             exit 1
           fi
 
-          # Générer un nom de version
+          echo "apk_path=$APK" >> $GITHUB_OUTPUT
+
           SHORT_SHA=$(git rev-parse --short HEAD)
           DATE=$(date +'%Y.%m.%d')
           VERSION="${DATE}-${SHORT_SHA}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
 
-          # Compter le nombre de fichiers
-          FILE_COUNT=$(find ./artifacts -type f | wc -l)
-          echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT
-
-      # ── 4. Générer les notes de release ──
       - name: Generate release notes
         id: notes
         run: |
           VERSION="${{ steps.inspect.outputs.version }}"
-          TAG="${{ steps.inspect.outputs.tag_name }}"
           SHA="${{ github.sha }}"
+          APK_NAME=$(basename "${{ steps.inspect.outputs.apk_path }}")
 
-          # Titre
           if [ -n "${{ github.event.inputs.release_title }}" ]; then
             TITLE="${{ github.event.inputs.release_title }}"
           else
@@ -113,38 +78,30 @@ jobs:
           fi
           echo "title=$TITLE" >> $GITHUB_OUTPUT
 
-          # Notes de release auto-générées
-          cat > RELEASE_NOTES.md << 'EOF'
-          ## Strato Build ${VERSION}
+          cat > RELEASE_NOTES.md << EOF
+          ## ${TITLE}
 
-          **Date** : $(date +'%d %B %Y')  
-          **Commit** : \`${SHA}\`  
-          **Branche** : ${{ github.ref_name }}  
+          **Date:** $(date +'%d %B %Y')  
+          **Commit:** \`${SHA}\`  
+          **Branch:** master
 
-          ### 📥 Téléchargement
+          ### Download
+          - \`${APK_NAME}\`
 
-          L'artifact principal est attaché ci-dessous.
+          ### Warning
+          This is an **experimental** build for testing purposes.
 
-          ### ⚠️ Avertissement
-
-          Cette build est **expérimentale** et destinée aux tests.  
-          Elle inclut le support TOTK via stubs de services et le système anti-crash.
-
-          ### 📝 Changements récents
+          ### Recent changes
           EOF
 
-          # Ajouter les 10 derniers commits
-          echo "" >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
           git log --oneline -10 >> RELEASE_NOTES.md
           echo "\`\`\`" >> RELEASE_NOTES.md
 
-          # Ajouter le hash du build
           echo "" >> RELEASE_NOTES.md
           echo "---" >> RELEASE_NOTES.md
-          echo "*Build généré automatiquement par GitHub Actions*" >> RELEASE_NOTES.md
+          echo "*Automatically generated by GitHub Actions*" >> RELEASE_NOTES.md
 
-      # ── 5. Créer le tag Git ──
       - name: Create Git tag
         run: |
           git config user.name "github-actions[bot]"
@@ -152,7 +109,6 @@ jobs:
           git tag -a "${{ steps.inspect.outputs.tag_name }}" -m "Release ${{ steps.inspect.outputs.tag_name }}"
           git push origin "${{ steps.inspect.outputs.tag_name }}"
 
-      # ── 6. Créer la Release GitHub ──
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -160,24 +116,13 @@ jobs:
           name: ${{ steps.notes.outputs.title }}
           body_path: RELEASE_NOTES.md
           prerelease: ${{ github.event.inputs.prerelease || true }}
-          files: |
-            ./artifacts/**/*.apk
-            ./artifacts/**/*.zip
-            ./artifacts/**/*.so
-            ./artifacts/**/*.txt
+          files: ./artifacts/**/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 7. Notification (optionnel) ──
       - name: Summary
         run: |
-          echo "## ✅ Release publiée avec succès !"
-          echo ""
-          echo "| Champ | Valeur |"
-          echo "|-------|--------|"
-          echo "| Tag | ${{ steps.inspect.outputs.tag_name }} |"
-          echo "| Version | ${{ steps.inspect.outputs.version }} |"
-          echo "| Fichiers | ${{ steps.inspect.outputs.file_count }} |"
-          echo "| Pré-release | ${{ github.event.inputs.prerelease || true }} |"
-          echo ""
-          echo "🔗 URL : https://github.com/${{ github.repository }}/releases/tag/${{ steps.inspect.outputs.tag_name }}"
+          echo "## Release published!"
+          echo "Tag: ${{ steps.inspect.outputs.tag_name }}"
+          echo "APK: $(basename ${{ steps.inspect.outputs.apk_path }})"
+          echo "URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.inspect.outputs.tag_name }}"
