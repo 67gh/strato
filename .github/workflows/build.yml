@@ -25,6 +25,14 @@ jobs:
           sed -i "s/versionCode[[:space:]]\+$CURRENT_CODE/versionCode $NEW_CODE/" app/build.gradle
           echo "VersionCode: $CURRENT_CODE -> $NEW_CODE"
 
+      - name: Commit versionCode update
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add app/build.gradle
+          git commit -m "Bump versionCode"
+          git push
+
       - name: Restore CCache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
