@@ -5,11 +5,8 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
-env:
-  KEYSTORE_B64: MIIKTAIBAzCCCfYGCSqGSIb3DQEHAaCCCecEggnjMIIJ3zCCBbYGCSqGSIb3DQEHAaCCBacEggWjMIIFnzCCBZcGCyqGSIb3DQEMCgECoIIFOTCCBTUwKQYKKoZIhvcNAQwBAzAbBBR9qPq+3g8P3w0JhH1m6Q2Q2Q2Q2Q2Qg==
-  KEYSTORE_PASS: strato2024
-  KEY_ALIAS: strato-key
-  KEY_PASS: strato2024
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -22,10 +19,22 @@ jobs:
 
       - name: Auto-increment versionCode
         run: |
-          CURRENT_CODE=$(grep -oP 'versionCode\s+\d+' app/build.gradle | grep -oP '\d+')
+          CURRENT_CODE=$(perl -ne 'print $1 if /versionCode\s+(\d+)/' app/build.gradle)
+          if [ -z "$CURRENT_CODE" ]; then
+            echo "ERROR: versionCode not found in app/build.gradle"
+            exit 1
+          fi
           NEW_CODE=$((CURRENT_CODE + 1))
-          sed -i "s/versionCode\s\+$CURRENT_CODE/versionCode $NEW_CODE/" app/build.gradle
-          echo "VersionCode: $CURRENT_CODE → $NEW_CODE"
+          sed -i "s/versionCode[[:space:]]\+$CURRENT_CODE/versionCode $NEW_CODE/" app/build.gradle
+          echo "VersionCode: $CURRENT_CODE -> $NEW_CODE"
+
+      - name: Commit versionCode update
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add app/build.gradle
+          git commit -m "Bump versionCode"
+          git push
 
       - name: Restore CCache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -54,6 +63,11 @@ jobs:
           ln -s /usr/bin/ninja .
 
       - name: Decode keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
         run: |
           echo "$KEYSTORE_B64" | tr -d '\n' | base64 -d > strato-release.keystore
           ls -lh strato-release.keystore
@@ -62,6 +76,9 @@ jobs:
         env:
           CMAKE_C_COMPILER_LAUNCHER: "ccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "ccache"
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
         run: |
           ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand \
             assembleMainlineRelease \
