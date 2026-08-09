@@ -5,12 +5,6 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
-env:
-  KEYSTORE_B64: MIIKTAIBAzCCCfYGCSqGSIb3DQEHAaCCCecEggnjMIIJ3zCCBbYGCSqGSIb3DQEHAaCCBacEggWjMIIFnzCCBZcGCyqGSIb3DQEMCgECoIIFOTCCBTUwKQYKKoZIhvcNAQwBAzAbBBR9qPq+3g8P3w0JhH1m6Q2Q2Q2Q2Q2Qg==
-  KEYSTORE_PASS: strato2024
-  KEY_ALIAS: strato-key
-  KEY_PASS: strato2024
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -58,6 +52,11 @@ jobs:
           ln -s /usr/bin/ninja .
 
       - name: Decode keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
         run: |
           echo "$KEYSTORE_B64" | tr -d '\n' | base64 -d > strato-release.keystore
           ls -lh strato-release.keystore
@@ -66,6 +65,9 @@ jobs:
         env:
           CMAKE_C_COMPILER_LAUNCHER: "ccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "ccache"
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
         run: |
           ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand \
             assembleMainlineRelease \
