@@ -44,7 +44,7 @@ buildTypes {
         minSdk 29
         targetSdk 33
 
-        versionCode getGitVersionCode()
+        versionCode 1
         versionName getGitVersionName()
 
         ndk {
