@@ -22,11 +22,16 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.stratoemu.strato.adapter.*
 import org.stratoemu.strato.data.AppItem
 import org.stratoemu.strato.data.AppItemTag
@@ -45,6 +50,11 @@ import com.google.android.material.R as MaterialR
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
+    companion object {
+        // Repository checked for updates -- change these if you fork this project further
+        private const val UPDATE_REPO_OWNER = "67gh"
+        private const val UPDATE_REPO_NAME = "strato"
+    }
 
     private val binding by lazy { MainActivityBinding.inflate(layoutInflater) }
 
@@ -128,6 +138,8 @@ class MainActivity : AppCompatActivity() {
 
         viewModel.stateData.observe(this, ::handleState)
         loadRoms(!appSettings.refreshRequired)
+
+        checkForUpdate()
 
         binding.searchBar.apply {
             binding.logIcon.setOnClickListener {
@@ -276,6 +288,30 @@ class MainActivity : AppCompatActivity() {
         }
         viewModel.loadRoms(this, loadFromFile, Uri.parse(appSettings.searchLocation), EmulationSettings.global.systemLanguage)
         appSettings.refreshRequired = false
+    }
+
+    /**
+     * @brief Silently checks GitHub for a newer release than the one currently installed and,
+     *        if one exists, shows a dialog offering to open the release page. Shows nothing at
+     *        all if already up to date or if the check fails for any reason (e.g. no network).
+     */
+    private fun checkForUpdate() {
+        lifecycleScope.launch {
+            val updateInfo = withContext(Dispatchers.IO) {
+                UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, BuildConfig.VERSION_NAME)
+            } ?: return@launch
+
+            if (isFinishing || isDestroyed) return@launch
+
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle(getString(R.string.update_available_title))
+                .setMessage(getString(R.string.update_available_message, updateInfo.tagName))
+                .setPositiveButton(getString(R.string.update_available_action)) { _, _ ->
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.apkDownloadUrl ?: updateInfo.releaseUrl)))
+                }
+                .setNegativeButton(getString(R.string.update_available_dismiss), null)
+                .show()
+        }
     }
 
     private fun populateAdapter() {
