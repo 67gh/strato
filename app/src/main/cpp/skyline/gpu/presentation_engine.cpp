@@ -121,32 +121,7 @@ namespace skyline::gpu {
             throw exception("Setting the buffer transform to '{}' failed with {}", ToString(frame.transform), result);
         windowTransform = frame.transform;
 
-        auto &acquireSemaphore{acquireSemaphores[frameIndex]};
-        auto &frameFence{frameFences[frameIndex]};
-        if (frameFence)
-            frameFence->Wait();
-
-        frameIndex = (frameIndex + 1) % swapchainImageCount;
-
-        std::pair<vk::Result, u32> nextImage;
-        while (nextImage = vkSwapchain->acquireNextImage(std::numeric_limits<u64>::max(), *acquireSemaphore, {}), nextImage.first != vk::Result::eSuccess) [[unlikely]] {
-            if (nextImage.first == vk::Result::eSuboptimalKHR)
-                surfaceCondition.wait(lock, [this]() { return vkSurface.has_value(); });
-            else
-                throw exception("vkAcquireNextImageKHR returned an unhandled result '{}'", vk::to_string(nextImage.first));
-        }
-
-        auto &nextImageTexture{images.at(nextImage.second)};
-        auto &presentSemaphore{presentSemaphores[nextImage.second]};
-
         texture->SynchronizeHost();
-        nextImageTexture->CopyFrom(texture, *acquireSemaphore, *presentSemaphore, swapchainFormat, vk::ImageSubresourceRange{
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .levelCount = 1,
-            .layerCount = 1,
-        });
-
-        frameFence = nextImageTexture->cycle;
 
         auto getMonotonicNsNow{[]() -> i64 {
             timespec time;
@@ -191,16 +166,14 @@ namespace skyline::gpu {
         if ((result = window->perform(window, NATIVE_WINDOW_GET_NEXT_FRAME_ID, &frameId)))
             throw exception("Retrieving the next frame's ID failed with {}", result);
 
-        {
-            std::scoped_lock queueLock{gpu.queueMutex};
-            std::ignore = gpu.vkQueue.presentKHR(vk::PresentInfoKHR{
-                .swapchainCount = 1,
-                .pSwapchains = &**vkSwapchain,
-                .pImageIndices = &nextImage.second,
-                .waitSemaphoreCount = 1,
-                .pWaitSemaphores = &*presentSemaphore,
-            }); // We don't care about suboptimal images as they are caused by not respecting the transform hint, we handle transformations externally
-        }
+        PresentSwapchainImage(lock, *frame.textureView, timestamp);
+
+        // Frame generation runs after the real frame has been submitted for presentation: it interpolates
+        // between the previous real frame and this one, then presents the results, effectively multiplying
+        // the perceived framerate without affecting emulation/input timing (which only ever sees real frames)
+        GenerateAndPresentIntermediateFrames(lock, frame.textureView, timestamp);
+        lastRealFrame = frame.textureView;
+        lastRealFrameTimestamp = timestamp;
 
         timestamp = (timestamp && !*state.settings->disableFrameThrottling) ? timestamp : getMonotonicNsNow(); // We tie FPS to the submission time rather than presentation timestamp, if we don't have the presentation timestamp available or if frame throttling is disabled as we want the maximum measured FPS to not be restricted to the refresh rate
         if (frameTimestamp) {
@@ -225,6 +198,73 @@ namespace skyline::gpu {
             frameTimestamp = timestamp;
         } else {
             frameTimestamp = timestamp;
+        }
+    }
+
+    void PresentationEngine::PresentSwapchainImage(std::unique_lock<std::mutex> &lock, TextureView &view, i64 timestamp) {
+        auto &acquireSemaphore{acquireSemaphores[frameIndex]};
+        auto &frameFence{frameFences[frameIndex]};
+        if (frameFence)
+            frameFence->Wait();
+
+        frameIndex = (frameIndex + 1) % swapchainImageCount;
+
+        std::pair<vk::Result, u32> nextImage;
+        while (nextImage = vkSwapchain->acquireNextImage(std::numeric_limits<u64>::max(), *acquireSemaphore, {}), nextImage.first != vk::Result::eSuccess) [[unlikely]] {
+            if (nextImage.first == vk::Result::eSuboptimalKHR)
+                surfaceCondition.wait(lock, [this]() { return vkSurface.has_value(); });
+            else
+                throw exception("vkAcquireNextImageKHR returned an unhandled result '{}'", vk::to_string(nextImage.first));
+        }
+
+        auto &nextImageTexture{images.at(nextImage.second)};
+        auto &presentSemaphore{presentSemaphores[nextImage.second]};
+
+        nextImageTexture->CopyFrom(view.texture, *acquireSemaphore, *presentSemaphore, swapchainFormat, vk::ImageSubresourceRange{
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .levelCount = 1,
+            .layerCount = 1,
+        });
+
+        frameFence = nextImageTexture->cycle;
+
+        int result;
+        if (timestamp && (result = window->perform(window, NATIVE_WINDOW_SET_BUFFERS_TIMESTAMP, timestamp)))
+            throw exception("Setting the buffer timestamp to {} failed with {}", timestamp, result);
+
+        std::scoped_lock queueLock{gpu.queueMutex};
+        std::ignore = gpu.vkQueue.presentKHR(vk::PresentInfoKHR{
+            .swapchainCount = 1,
+            .pSwapchains = &**vkSwapchain,
+            .pImageIndices = &nextImage.second,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &*presentSemaphore,
+        });
+    }
+
+    void PresentationEngine::GenerateAndPresentIntermediateFrames(std::unique_lock<std::mutex> &lock, const std::shared_ptr<TextureView> &currentFrame, i64 currentTimestamp) {
+        auto mode{static_cast<FrameGenerator::Mode>(*state.settings->frameGenerationMode)};
+        if (mode == FrameGenerator::Mode::Stable || !lastRealFrame || lastRealFrame->texture == currentFrame->texture)
+            return; // Frame generation disabled, or there's no previous frame yet to interpolate from
+
+        if (!frameGenerator)
+            frameGenerator.emplace(gpu, state.os->assetFileSystem);
+
+        u32 extraFrames{FrameGenerator::FrameMultiplier(mode) - 1};
+        std::vector<std::shared_ptr<TextureView>> generated;
+
+        auto cycle{gpu.scheduler.Submit([&](vk::raii::CommandBuffer &cmd) {
+            generated = frameGenerator->GenerateFrames(cmd, lastRealFrame.get(), currentFrame.get(), mode);
+        })};
+        for (auto &view : generated)
+            cycle->AttachObject(view->texture); // Keep the generated frame textures alive until the GPU has finished writing/reading them
+        cycle->Wait(); // Frame generation must complete before we can present the generated frames; this trades a bit of latency for correctness in this first implementation
+
+        // Space the generated frames evenly between the previous real frame's timestamp and this one's
+        i64 span{currentTimestamp && lastRealFrameTimestamp ? (currentTimestamp - lastRealFrameTimestamp) : 0};
+        for (u32 i{0}; i < generated.size() && i < extraFrames; i++) {
+            i64 generatedTimestamp{span ? lastRealFrameTimestamp + (span * static_cast<i64>(i + 1)) / static_cast<i64>(extraFrames + 1) : 0};
+            PresentSwapchainImage(lock, *generated[i], generatedTimestamp);
         }
     }
 

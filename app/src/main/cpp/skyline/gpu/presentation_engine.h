@@ -10,6 +10,7 @@
 #include <kernel/types/KEvent.h>
 #include <services/hosbinder/GraphicBufferProducer.h>
 #include "texture/texture.h"
+#include "frame_generation/frame_generator.h"
 
 struct ANativeWindow;
 
@@ -50,6 +51,22 @@ namespace skyline::gpu {
         i64 averageFrametimeNs{}; //!< The average time between frames in nanoseconds
         i64 averageFrametimeDeviationNs{}; //!< The average deviation of frametimes in nanoseconds
         perfetto::Track presentationTrack; //!< Perfetto track used for presentation events
+
+        std::optional<FrameGenerator> frameGenerator; //!< Generates intermediate frames when frame generation is enabled, lazily constructed on first use
+        std::shared_ptr<TextureView> lastRealFrame; //!< The texture of the last real (non-generated) frame that was presented, used as the interpolation source for the next one
+        i64 lastRealFrameTimestamp{}; //!< The presentation timestamp of 'lastRealFrame', used to space out generated frames evenly
+
+        /**
+         * @brief Presents a single already-composited swapchain-format texture, without any of the crop/scaling/timestamp bookkeeping done for real frames
+         * @note Used both directly for generated frames and as the final step of PresentFrame for real ones
+         * @param lock The lock on 'mutex' held by the calling PresentFrame, passed through so we can wait on 'surfaceCondition' correctly if the surface is lost mid-acquire
+         */
+        void PresentSwapchainImage(std::unique_lock<std::mutex> &lock, TextureView &view, i64 timestamp);
+
+        /**
+         * @brief If frame generation is enabled, generates and presents the intermediate frames between 'lastRealFrame' and 'currentFrame'
+         */
+        void GenerateAndPresentIntermediateFrames(std::unique_lock<std::mutex> &lock, const std::shared_ptr<TextureView> &currentFrame, i64 currentTimestamp);
 
       public:
         std::atomic<bool> skipSignal; //!< If true, the next signal will be skipped by the choreographer thread

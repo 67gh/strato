@@ -148,6 +148,8 @@
     <string name="shader_cache">Disable Shader Cache</string>
     <string name="shader_cache_disabled">Cached shaders won\'t be loaded, will cause stutters</string>
     <string name="shader_cache_enabled">Cached shaders will be loaded, can heavily reduce stuttering</string>
+    <string name="frame_generation">Frame Generation</string>
+    <string name="frame_generation_desc">Generates intermediate frames to smooth out motion (Stable = off). Higher modes use more GPU time and may increase input-to-photon latency slightly</string>
     <!-- Settings - Hacks -->
     <string name="hacks">Hacks</string>
     <string name="enable_fast_gpu_readback">Enable Fast GPU Readback</string>

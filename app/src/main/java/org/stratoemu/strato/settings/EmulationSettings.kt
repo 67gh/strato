@@ -53,6 +53,7 @@ class EmulationSettings private constructor(context : Context, prefName : String
     var forceMaxGpuClocks by sharedPreferences(context, false, prefName = prefName)
     var freeGuestTextureMemory by sharedPreferences(context, true, prefName = prefName)
     var disableShaderCache by sharedPreferences(context, false, prefName = prefName)
+    var frameGenerationMode by sharedPreferences(context, 0, prefName = prefName) // 0 = Stable, 1 = 2x, 2 = 3x, 3 = 4x
 
     // Hacks
     var enableFastGpuReadbackHack by sharedPreferences(context, false, prefName = prefName)

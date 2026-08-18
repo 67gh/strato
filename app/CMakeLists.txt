@@ -12,6 +12,40 @@ set(source_DIR ${CMAKE_SOURCE_DIR}/src/main/cpp)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing -Wno-unused-command-line-argument -fwrapv")
 set(CMAKE_CXX_FLAGS_RELEASE "-Ofast -flto=full -fno-stack-protector -DNDEBUG")
 
+# Compile frame generation compute shaders to SPIR-V
+# NOTE: if the existing blit/clear .vert/.frag shaders are compiled to .spv via some external/manual
+# step rather than a CMake rule, the fg_*.comp shaders below should be moved to follow the same
+# process instead so all shaders stay consistent - this rule is a self-contained fallback.
+find_program(GLSLC_EXECUTABLE glslc HINTS "$ENV{VULKAN_SDK}/bin" "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}")
+if(GLSLC_EXECUTABLE)
+    set(FRAME_GEN_SHADER_SRC_DIR ${CMAKE_SOURCE_DIR}/src/main/shaders)
+    set(FRAME_GEN_SHADER_OUT_DIR ${CMAKE_SOURCE_DIR}/src/main/assets/shaders)
+    file(MAKE_DIRECTORY ${FRAME_GEN_SHADER_OUT_DIR})
+
+    set(FRAME_GEN_SHADER_SOURCES
+        fg_motion_estimate.comp
+        fg_frame_interpolate.comp
+    )
+
+    set(FRAME_GEN_SHADER_OUTPUTS "")
+    foreach(shaderSrc ${FRAME_GEN_SHADER_SOURCES})
+        set(shaderIn "${FRAME_GEN_SHADER_SRC_DIR}/${shaderSrc}")
+        set(shaderOut "${FRAME_GEN_SHADER_OUT_DIR}/${shaderSrc}.spv")
+        add_custom_command(
+            OUTPUT ${shaderOut}
+            COMMAND ${GLSLC_EXECUTABLE} -O --target-env=vulkan1.1 -o ${shaderOut} ${shaderIn}
+            DEPENDS ${shaderIn}
+            COMMENT "Compiling ${shaderSrc} to SPIR-V"
+        )
+        list(APPEND FRAME_GEN_SHADER_OUTPUTS ${shaderOut})
+    endforeach()
+
+    add_custom_target(frame_gen_shaders DEPENDS ${FRAME_GEN_SHADER_OUTPUTS})
+else()
+    message(WARNING "glslc not found - frame generation shaders will not be compiled, the feature will fail to initialize at runtime. Install the Vulkan SDK or set VULKAN_SDK.")
+    add_custom_target(frame_gen_shaders)
+endif()
+
 # Build all libraries with -Ofast but with default debug data (-g) for debug and reldebug builds
 set(CMAKE_CXX_FLAGS_DEBUG "-Ofast")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-Ofast")
@@ -171,6 +205,7 @@ add_library(skyline SHARED
         ${source_DIR}/skyline/gpu/buffer.cpp
         ${source_DIR}/skyline/gpu/megabuffer.cpp
         ${source_DIR}/skyline/gpu/presentation_engine.cpp
+        ${source_DIR}/skyline/gpu/frame_generation/frame_generator.cpp
         ${source_DIR}/skyline/gpu/shader_manager.cpp
         ${source_DIR}/skyline/gpu/pipeline_cache_manager.cpp
         ${source_DIR}/skyline/gpu/graphics_pipeline_assembler.cpp
@@ -400,3 +435,4 @@ target_compile_options(skyline PRIVATE -Wall -Wno-unknown-attributes -Wno-c++20-
 
 target_link_libraries(skyline PRIVATE shader_recompiler audio_core)
 target_link_libraries_system(skyline android perfetto fmt lz4_static tzcode vkma mbedcrypto opus Boost::intrusive Boost::container Boost::preprocessor Boost::regex range-v3 adrenotools tsl::robin_map)
+add_dependencies(skyline frame_gen_shaders)

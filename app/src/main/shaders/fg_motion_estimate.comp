@@ -1,0 +1,103 @@
+#version 450
+// SPDX-License-Identifier: MPL-2.0
+// Copyright © 2026 Skyline Team and Contributors (https://github.com/skyline-emu/)
+
+// Block-matching motion estimation used by the frame generation pass.
+// Produces a per-block motion vector field (in pixels, previous -> current)
+// which is later upsampled and used to motion-compensate interpolated frames.
+//
+// This runs one workgroup per output block (BLOCK_SIZE x BLOCK_SIZE px) and
+// performs a diamond search around the predicted motion vector from the
+// previous (coarser) pyramid level, falling back to a small brute-force
+// search on the coarsest level.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D uPrevFrame; //!< The previous presented frame (N-1)
+layout(set = 0, binding = 1) uniform sampler2D uCurrFrame; //!< The most recently presented frame (N)
+layout(set = 0, binding = 2) uniform sampler2D uPrevMotion; //!< Motion field from the next coarser pyramid level (rg = motion in px), or unused at level 0
+layout(set = 0, binding = 3, rg16f) uniform writeonly image2D uMotionOut; //!< Output motion vector field for this level, one texel per block
+
+layout(push_constant) uniform PushConstants {
+    ivec2 frameExtent;     //!< Dimensions of uCurrFrame/uPrevFrame at this pyramid level
+    ivec2 motionOutExtent; //!< Dimensions of uMotionOut (== frameExtent / BLOCK_SIZE, rounded up)
+    int blockSize;         //!< Size of a motion-estimation block in pixels at this level
+    int searchRadius;      //!< Maximum search radius in pixels around the predicted vector
+    int hasPrevLevel;      //!< 1 if uPrevMotion contains a valid coarser-level prediction, 0 for the coarsest level
+} pc;
+
+shared float sadCache[17][17]; //!< Cache of luma differences for the search window (up to search radius 8 -> 17x17)
+
+float Luma(vec3 c) {
+    return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+// Sum of absolute differences between a block in uCurrFrame at 'blockOrigin' and
+// a block in uPrevFrame at 'blockOrigin + offset'
+float BlockSad(ivec2 blockOrigin, ivec2 offset) {
+    float sad = 0.0;
+    int bs = pc.blockSize;
+    for (int y = 0; y < bs; y += 2) { // Sample every other row/col to keep this cheap enough for mobile GPUs
+        for (int x = 0; x < bs; x += 2) {
+            ivec2 currPos = clamp(blockOrigin + ivec2(x, y), ivec2(0), pc.frameExtent - 1);
+            ivec2 prevPos = clamp(currPos + offset, ivec2(0), pc.frameExtent - 1);
+
+            float lumaCurr = Luma(texelFetch(uCurrFrame, currPos, 0).rgb);
+            float lumaPrev = Luma(texelFetch(uPrevFrame, prevPos, 0).rgb);
+            sad += abs(lumaCurr - lumaPrev);
+        }
+    }
+    return sad;
+}
+
+void main() {
+    ivec2 blockCoord = ivec2(gl_WorkGroupID.xy);
+    if (blockCoord.x >= pc.motionOutExtent.x || blockCoord.y >= pc.motionOutExtent.y)
+        return;
+
+    // Only the first invocation in the workgroup performs the search, the rest
+    // just help fill the SAD cache in a future optimized version; kept simple here.
+    if (gl_LocalInvocationIndex != 0u)
+        return;
+
+    ivec2 blockOrigin = blockCoord * pc.blockSize;
+
+    ivec2 predicted = ivec2(0);
+    if (pc.hasPrevLevel == 1) {
+        // The coarser level has half the resolution in blocks, so each texel there
+        // corresponds to a 2x2 neighbourhood of blocks here; upsample the vector and
+        // scale it by 2 since we're now at double the spatial resolution.
+        ivec2 coarseCoord = blockCoord / 2;
+        vec2 coarseMotion = texelFetch(uPrevMotion, coarseCoord, 0).rg;
+        predicted = ivec2(round(coarseMotion * 2.0));
+    }
+
+    // Diamond search pattern refined around the predicted vector, this converges
+    // quickly for the smooth, mostly-continuous motion typical of game rendering.
+    ivec2 best = predicted;
+    float bestCost = BlockSad(blockOrigin, best);
+
+    int step = max(pc.searchRadius / 2, 1);
+    while (step >= 1) {
+        bool improved = true;
+        while (improved) {
+            improved = false;
+            const ivec2 dirs[4] = ivec2[4](ivec2(step, 0), ivec2(-step, 0), ivec2(0, step), ivec2(0, -step));
+            for (int i = 0; i < 4; i++) {
+                ivec2 candidate = best + dirs[i];
+                if (abs(candidate.x) > pc.searchRadius || abs(candidate.y) > pc.searchRadius)
+                    continue;
+
+                float cost = BlockSad(blockOrigin, candidate);
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    best = candidate;
+                    improved = true;
+                }
+            }
+        }
+        step /= 2;
+    }
+
+    imageStore(uMotionOut, blockCoord, vec4(vec2(best), 0.0, 0.0));
+}

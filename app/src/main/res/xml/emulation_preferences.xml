@@ -152,6 +152,13 @@
             android:summaryOn="@string/shader_cache_disabled"
             app:key="disable_shader_cache"
             app:title="@string/shader_cache" />
+        <org.stratoemu.strato.preference.IntegerListPreference
+            android:defaultValue="0"
+            android:entries="@array/frame_generation_modes"
+            android:summary="@string/frame_generation_desc"
+            app:key="frame_generation_mode"
+            app:title="@string/frame_generation"
+            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
     <PreferenceCategory
         android:key="category_hacks"
