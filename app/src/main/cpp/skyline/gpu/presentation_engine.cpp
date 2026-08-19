@@ -6,6 +6,7 @@
 #include <common/settings.h>
 #include <common/signal.h>
 #include <jvm.h>
+#include <os.h>
 #include <gpu.h>
 #include <soc.h>
 #include <loader/loader.h>

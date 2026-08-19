@@ -123,7 +123,7 @@ namespace skyline::gpu {
             return;
         cachedExtent = extent;
 
-        constexpr texture::Format MotionFormat{format::R16G16Sfloat};
+        constexpr texture::Format MotionFormat{format::R16G16Float};
         constexpr texture::Format FrameFormat{format::R8G8B8A8Unorm};
 
         texture::Dimensions coarseExtent{util::AlignUp(extent.width, BaseBlockSize * 2) / (BaseBlockSize * 2), util::AlignUp(extent.height, BaseBlockSize * 2) / (BaseBlockSize * 2), 1};
@@ -148,17 +148,17 @@ namespace skyline::gpu {
         auto prevLevelView{(prevLevelMotion ? prevLevelMotion : motionOut)->GetView(vk::ImageViewType::e2D, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1})};
 
         std::array<vk::DescriptorImageInfo, 4> imageInfos{{
-            {*linearSampler, prevFrame->GetView(), vk::ImageLayout::eGeneral},
-            {*linearSampler, currFrame->GetView(), vk::ImageLayout::eGeneral},
-            {*linearSampler, prevLevelView->GetView(), vk::ImageLayout::eGeneral},
-            {nullptr, motionOutView->GetView(), vk::ImageLayout::eGeneral},
+            {.sampler = *linearSampler, .imageView = prevFrame->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
+            {.sampler = *linearSampler, .imageView = currFrame->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
+            {.sampler = *linearSampler, .imageView = prevLevelView->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
+            {.sampler = nullptr, .imageView = motionOutView->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
         }};
 
         std::array<vk::WriteDescriptorSet, 4> writes{{
-            {*set, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfos[0]},
-            {*set, 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfos[1]},
-            {*set, 2, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfos[2]},
-            {*set, 3, 0, 1, vk::DescriptorType::eStorageImage, &imageInfos[3]},
+            {.dstSet = *set, .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[0]},
+            {.dstSet = *set, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[1]},
+            {.dstSet = *set, .dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[2]},
+            {.dstSet = *set, .dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &imageInfos[3]},
         }};
         gpu.vkDevice.updateDescriptorSets(writes, nullptr);
 
@@ -195,17 +195,17 @@ namespace skyline::gpu {
         auto motionView{motionField->GetView(vk::ImageViewType::e2D, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1})};
 
         std::array<vk::DescriptorImageInfo, 4> imageInfos{{
-            {*linearSampler, prevFrame->GetView(), vk::ImageLayout::eGeneral},
-            {*linearSampler, currFrame->GetView(), vk::ImageLayout::eGeneral},
-            {*linearSampler, motionView->GetView(), vk::ImageLayout::eGeneral},
-            {nullptr, outputView->GetView(), vk::ImageLayout::eGeneral},
+            {.sampler = *linearSampler, .imageView = prevFrame->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
+            {.sampler = *linearSampler, .imageView = currFrame->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
+            {.sampler = *linearSampler, .imageView = motionView->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
+            {.sampler = nullptr, .imageView = outputView->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
         }};
 
         std::array<vk::WriteDescriptorSet, 4> writes{{
-            {*set, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfos[0]},
-            {*set, 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfos[1]},
-            {*set, 2, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfos[2]},
-            {*set, 3, 0, 1, vk::DescriptorType::eStorageImage, &imageInfos[3]},
+            {.dstSet = *set, .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[0]},
+            {.dstSet = *set, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[1]},
+            {.dstSet = *set, .dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[2]},
+            {.dstSet = *set, .dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &imageInfos[3]},
         }};
         gpu.vkDevice.updateDescriptorSets(writes, nullptr);
 

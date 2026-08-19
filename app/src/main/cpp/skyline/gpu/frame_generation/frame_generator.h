@@ -12,7 +12,7 @@ namespace skyline::vfs {
 
 namespace skyline::gpu {
     class GPU;
-    class FenceCycle;
+    struct FenceCycle;
 
     /**
      * @brief Implements host-side motion-compensated frame generation, interpolating N-1 extra
