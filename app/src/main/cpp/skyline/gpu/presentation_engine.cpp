@@ -257,8 +257,14 @@ namespace skyline::gpu {
         auto cycle{gpu.scheduler.Submit([&](vk::raii::CommandBuffer &cmd) {
             generated = frameGenerator->GenerateFrames(cmd, lastRealFrame.get(), currentFrame.get(), mode);
         })};
-        for (auto &view : generated)
-            cycle->AttachObject(view->texture); // Keep the generated frame textures alive until the GPU has finished writing/reading them
+        for (auto &view : generated) {
+            // Chain onto any previous cycle this texture was used in (e.g. the last time it was read by
+            // PresentSwapchainImage's CopyFrom) and then become its new cycle, matching the pattern used by
+            // Texture::SynchronizeHost - this is what lets CopyFrom's internal source->cycle->WaitSubmit()
+            // guard actually prevent the next frame's compute dispatch from racing a still-in-flight copy
+            cycle->ChainCycle(view->texture->cycle);
+            view->texture->cycle = cycle;
+        }
         cycle->Wait(); // Frame generation must complete before we can present the generated frames; this trades a bit of latency for correctness in this first implementation
 
         // Space the generated frames evenly between the previous real frame's timestamp and this one's

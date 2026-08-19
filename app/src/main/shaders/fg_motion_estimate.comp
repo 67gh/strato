@@ -22,11 +22,16 @@ layout(push_constant) uniform PushConstants {
     ivec2 frameExtent;     //!< Dimensions of uCurrFrame/uPrevFrame at this pyramid level
     ivec2 motionOutExtent; //!< Dimensions of uMotionOut (== frameExtent / BLOCK_SIZE, rounded up)
     int blockSize;         //!< Size of a motion-estimation block in pixels at this level
-    int searchRadius;      //!< Maximum search radius in pixels around the predicted vector
+    int searchRadius;      //!< Maximum search radius in pixels around the predicted vector (fixed at 4 - matches the 8x8 candidate grid below)
     int hasPrevLevel;      //!< 1 if uPrevMotion contains a valid coarser-level prediction, 0 for the coarsest level
 } pc;
 
-shared float sadCache[17][17]; //!< Cache of luma differences for the search window (up to search radius 8 -> 17x17)
+// One workgroup handles one output block. Every one of the 64 invocations tests a different
+// candidate motion vector in parallel (an 8x8 grid of offsets around the predicted vector), then
+// a shared-memory reduction picks the cheapest candidate. This keeps the whole workgroup busy
+// instead of a single thread doing a serial search, which is essential for real-time performance.
+shared float sCost[64];
+shared ivec2 sOffset[64];
 
 float Luma(vec3 c) {
     return dot(c, vec3(0.299, 0.587, 0.114));
@@ -37,8 +42,8 @@ float Luma(vec3 c) {
 float BlockSad(ivec2 blockOrigin, ivec2 offset) {
     float sad = 0.0;
     int bs = pc.blockSize;
-    for (int y = 0; y < bs; y += 2) { // Sample every other row/col to keep this cheap enough for mobile GPUs
-        for (int x = 0; x < bs; x += 2) {
+    for (int y = 0; y < bs; y += 4) { // Sparse sampling keeps the per-invocation cost low since we now have 64x more parallel candidates than before
+        for (int x = 0; x < bs; x += 4) {
             ivec2 currPos = clamp(blockOrigin + ivec2(x, y), ivec2(0), pc.frameExtent - 1);
             ivec2 prevPos = clamp(currPos + offset, ivec2(0), pc.frameExtent - 1);
 
@@ -55,11 +60,6 @@ void main() {
     if (blockCoord.x >= pc.motionOutExtent.x || blockCoord.y >= pc.motionOutExtent.y)
         return;
 
-    // Only the first invocation in the workgroup performs the search, the rest
-    // just help fill the SAD cache in a future optimized version; kept simple here.
-    if (gl_LocalInvocationIndex != 0u)
-        return;
-
     ivec2 blockOrigin = blockCoord * pc.blockSize;
 
     ivec2 predicted = ivec2(0);
@@ -72,32 +72,26 @@ void main() {
         predicted = ivec2(round(coarseMotion * 2.0));
     }
 
-    // Diamond search pattern refined around the predicted vector, this converges
-    // quickly for the smooth, mostly-continuous motion typical of game rendering.
-    ivec2 best = predicted;
-    float bestCost = BlockSad(blockOrigin, best);
+    // This invocation's candidate: predicted vector + a unique offset from the 8x8 grid,
+    // scaled by the step size so the whole grid covers +/- searchRadius pixels
+    ivec2 localId = ivec2(gl_LocalInvocationID.xy) - ivec2(4); // -4..3 in each axis
+    int step = max(pc.searchRadius / 4, 1);
+    ivec2 candidate = predicted + localId * step;
 
-    int step = max(pc.searchRadius / 2, 1);
-    while (step >= 1) {
-        bool improved = true;
-        while (improved) {
-            improved = false;
-            const ivec2 dirs[4] = ivec2[4](ivec2(step, 0), ivec2(-step, 0), ivec2(0, step), ivec2(0, -step));
-            for (int i = 0; i < 4; i++) {
-                ivec2 candidate = best + dirs[i];
-                if (abs(candidate.x) > pc.searchRadius || abs(candidate.y) > pc.searchRadius)
-                    continue;
+    uint idx = gl_LocalInvocationIndex;
+    sCost[idx] = BlockSad(blockOrigin, candidate);
+    sOffset[idx] = candidate;
+    barrier();
 
-                float cost = BlockSad(blockOrigin, candidate);
-                if (cost < bestCost) {
-                    bestCost = cost;
-                    best = candidate;
-                    improved = true;
-                }
-            }
+    // Parallel reduction to find the minimum-cost candidate across all 64 invocations
+    for (uint activeCount = 32u; activeCount > 0u; activeCount >>= 1u) {
+        if (idx < activeCount && sCost[idx + activeCount] < sCost[idx]) {
+            sCost[idx] = sCost[idx + activeCount];
+            sOffset[idx] = sOffset[idx + activeCount];
         }
-        step /= 2;
+        barrier();
     }
 
-    imageStore(uMotionOut, blockCoord, vec4(vec2(best), 0.0, 0.0));
+    if (idx == 0u)
+        imageStore(uMotionOut, blockCoord, vec4(vec2(sOffset[0]), 0.0, 0.0));
 }
