@@ -29,6 +29,9 @@
     <string name="update_available_message">A new version (%1$s) is available. Would you like to download it?</string>
     <string name="update_available_action">Download</string>
     <string name="update_available_dismiss">Not now</string>
+    <string name="update_downloading_title">Downloading Strato update</string>
+    <string name="update_download_failed">Update download failed, please try again</string>
+    <string name="update_install_failed">Couldn\'t open the installer for the downloaded update</string>
     <string name="invalid_file">Invalid file</string>
     <string name="missing_title_key">Missing title key</string>
     <string name="incomplete_prod_keys">Incomplete production keys</string>

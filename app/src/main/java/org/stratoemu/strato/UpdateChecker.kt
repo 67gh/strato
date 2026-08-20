@@ -7,6 +7,9 @@ import android.util.Log
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * @brief Result of a successful update check where a newer release than the currently
@@ -19,14 +22,16 @@ data class UpdateInfo(
 )
 
 /**
- * @brief Queries the GitHub Releases API for the given repository and compares the latest
- *        published release's date-based tag (e.g. "2026.08.09") against the date embedded
- *        in the currently installed build's version name.
+ * @brief Queries the GitHub Releases API for the given repository and compares the release's
+ *        publish timestamp against the currently installed APK's install/update timestamp.
  *
- * The release workflow is expected to tag releases as "YYYY.MM.DD". Comparing these directly
- * as strings already sorts correctly chronologically, but we still extract them into a plain
- * YYYYMMDD integer for a clearer, format-tolerant comparison (also correctly ignores any
- * "git describe" suffix like "-3-gabc1234" that may be appended to the local version name).
+ * NOTE: this repo's release tags are always "0.0.0-<hash>" (a fixed "0.0.0" prefix followed by
+ * a changing alphanumeric suffix), so there is no usable version or date to parse out of the
+ * tag name itself - comparing tag strings or extracting a date from them will never work here.
+ * Instead we compare the release's "published_at" timestamp (always present and reliable on the
+ * GitHub API) against [currentInstallTimeMs], which the caller should obtain via
+ * `packageManager.getPackageInfo(packageName, 0).lastUpdateTime` - a genuinely local, reliable
+ * signal for "when was the app I'm currently running actually installed/updated".
  *
  * This never throws: any network failure, malformed response, or parsing error results in
  * `null` being returned so that a failed check is silently ignored rather than shown to
@@ -35,18 +40,15 @@ data class UpdateInfo(
 object UpdateChecker {
     private const val TAG = "UpdateChecker"
     private const val TIMEOUT_MS = 8000
-    private val DATE_TAG_REGEX = Regex("""(\d{4})[.\-](\d{2})[.\-](\d{2})""")
 
     /**
      * @param owner The GitHub username/organization that owns the repository (e.g. "67gh")
      * @param repo The repository name (e.g. "strato")
-     * @param currentVersionName The version name of the currently installed build, normally
-     *                           [org.stratoemu.strato.BuildConfig.VERSION_NAME]. If it doesn't
-     *                           contain a parseable date (e.g. a "0.0.0" dev/untagged build),
-     *                           any valid remote release is treated as newer.
+     * @param currentInstallTimeMs Epoch milliseconds of when the currently running APK was
+     *                             installed/last updated on this device (see note above)
      * @return Information about the newer release if one exists, otherwise `null`
      */
-    fun checkForUpdate(owner : String, repo : String, currentVersionName : String) : UpdateInfo? {
+    fun checkForUpdate(owner : String, repo : String, currentInstallTimeMs : Long) : UpdateInfo? {
         return try {
             val url = URL("https://api.github.com/repos/$owner/$repo/releases/latest")
             val connection = url.openConnection() as HttpURLConnection
@@ -64,14 +66,14 @@ object UpdateChecker {
                 val json = JSONObject(body)
 
                 val tagName = json.optString("tag_name", "")
-                val remoteDateKey = parseDateKey(tagName) ?: run {
-                    Log.w(TAG, "Could not parse a date from release tag '$tagName', skipping update check")
+                val publishedAt = json.optString("published_at", "")
+                val remoteTimeMs = parseIso8601(publishedAt) ?: run {
+                    Log.w(TAG, "Could not parse published_at '$publishedAt', skipping update check")
                     return null
                 }
-                val localDateKey = parseDateKey(currentVersionName) ?: 0L // Untagged/dev build: always offer the update
 
-                if (remoteDateKey <= localDateKey)
-                    return null // Already up to date
+                if (remoteTimeMs <= currentInstallTimeMs)
+                    return null // Already up to date (or somehow newer, e.g. a local dev build)
 
                 val releaseUrl = json.optString("html_url", "https://github.com/$owner/$repo/releases/latest")
 
@@ -102,14 +104,17 @@ object UpdateChecker {
     }
 
     /**
-     * @brief Extracts a "YYYY.MM.DD"-style date found anywhere in the given string into a
-     *        directly comparable YYYYMMDD integer (e.g. "2026.08.09" -> 20260809L). Works
-     *        just as well on a bare release tag ("2026.08.09") as on a git-describe-style
-     *        version name that has extra suffixes ("2026.08.09-3-gabc1234").
+     * @brief Parses a GitHub API ISO-8601 UTC timestamp (e.g. "2026-08-09T14:03:21Z") into
+     *        epoch milliseconds, or null if it doesn't match the expected format.
      */
-    private fun parseDateKey(version : String) : Long? {
-        val match = DATE_TAG_REGEX.find(version) ?: return null
-        val (year, month, day) = match.destructured
-        return "$year$month$day".toLongOrNull()
+    private fun parseIso8601(value : String) : Long? {
+        if (value.isEmpty()) return null
+        return try {
+            val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+            format.timeZone = TimeZone.getTimeZone("UTC")
+            format.parse(value)?.time
+        } catch (e : Exception) {
+            null
+        }
     }
 }

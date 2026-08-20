@@ -297,17 +297,31 @@ class MainActivity : AppCompatActivity() {
      */
     private fun checkForUpdate() {
         lifecycleScope.launch {
+            val currentInstallTimeMs = try {
+                packageManager.getPackageInfo(packageName, 0).lastUpdateTime
+            } catch (e : Exception) {
+                return@launch // Can't reliably compare without this, so don't check at all
+            }
+
             val updateInfo = withContext(Dispatchers.IO) {
-                UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, BuildConfig.VERSION_NAME)
+                UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, currentInstallTimeMs)
             } ?: return@launch
 
             if (isFinishing || isDestroyed) return@launch
 
+            val apkUrl = updateInfo.apkDownloadUrl
             MaterialAlertDialogBuilder(this@MainActivity)
                 .setTitle(getString(R.string.update_available_title))
                 .setMessage(getString(R.string.update_available_message, updateInfo.tagName))
                 .setPositiveButton(getString(R.string.update_available_action)) { _, _ ->
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.apkDownloadUrl ?: updateInfo.releaseUrl)))
+                    if (apkUrl != null) {
+                        // Real in-app update: downloads the APK and prompts the system installer directly
+                        UpdateInstaller.downloadAndInstall(this@MainActivity, apkUrl, updateInfo.tagName)
+                    } else {
+                        // No .apk asset on the release (e.g. source-only release) - nothing to
+                        // download in-app, fall back to sending the user to the release page
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.releaseUrl)))
+                    }
                 }
                 .setNegativeButton(getString(R.string.update_available_dismiss), null)
                 .show()
