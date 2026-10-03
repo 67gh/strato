@@ -129,6 +129,15 @@ add_subdirectory("libraries/adrenotools")
 # Tessil Robin Map
 add_subdirectory("libraries/robin-map")
 
+# Dynarmic JIT used to execute guest instructions that NCE can't run natively (see skyline/nce/jit_fallback.h)
+option(STRATO_JIT_FALLBACK "Enable the Dynarmic JIT fallback for instructions NCE fails on" OFF)
+if (STRATO_JIT_FALLBACK)
+    set(DYNARMIC_TESTS OFF CACHE BOOL "" FORCE)
+    set(DYNARMIC_FRONTENDS "A64" CACHE STRING "" FORCE)
+    set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
+    add_subdirectory("libraries/dynarmic")
+endif ()
+
 # Renderdoc in-app API
 include_directories("libraries/renderdoc")
 
@@ -179,6 +188,7 @@ add_library(skyline SHARED
         ${source_DIR}/skyline/logger/logger.cpp
         ${source_DIR}/skyline/nce/guest.S
         ${source_DIR}/skyline/nce.cpp
+        ${source_DIR}/skyline/nce/jit_fallback.cpp
         ${source_DIR}/skyline/jvm.cpp
         ${source_DIR}/skyline/os.cpp
         ${source_DIR}/skyline/kernel/memory.cpp
@@ -434,5 +444,9 @@ target_include_directories(skyline PRIVATE ${source_DIR}/skyline)
 target_compile_options(skyline PRIVATE -Wall -Wno-unknown-attributes -Wno-c++20-extensions -Wno-c++17-extensions -Wno-c99-designator -Wno-reorder -Wno-missing-braces -Wno-unused-variable -Wno-unused-private-field -Wno-dangling-else -Wconversion -fsigned-bitfields)
 
 target_link_libraries(skyline PRIVATE shader_recompiler audio_core)
+if (STRATO_JIT_FALLBACK)
+    target_link_libraries(skyline PRIVATE dynarmic)
+    target_compile_definitions(skyline PRIVATE STRATO_JIT_FALLBACK=1)
+endif ()
 target_link_libraries_system(skyline android perfetto fmt lz4_static tzcode vkma mbedcrypto opus Boost::intrusive Boost::container Boost::preprocessor Boost::regex range-v3 adrenotools tsl::robin_map)
 add_dependencies(skyline frame_gen_shaders)

@@ -4,6 +4,7 @@
 #include "gpu.h"
 #include "nce.h"
 #include "nce/guest.h"
+#include "nce/jit_fallback.h"
 #include "kernel/types/KProcess.h"
 #include "vfs/os_backing.h"
 #include "loader/nro.h"
@@ -65,6 +66,11 @@ namespace skyline::kernel {
             if (publisher.empty())
                 publisher = nacp->GetApplicationPublisher(nacp->GetFirstSupportedTitleLanguage());
             LOGINF(R"(Starting "{}" ({}) v{} by "{}")", name, nacp->GetSaveDataOwnerId(), nacp->GetApplicationVersion(), publisher);
+        }
+
+        {
+            std::string gameName{nacp ? nacp->GetApplicationName(nacp->GetFirstSupportedTitleLanguage()) : "unknown"};
+            nce::JitFallback::Initialize(state, publicAppFilesPath + "nce_fallback.jsonl", gameName);
         }
 
         process->InitializeHeapTls();

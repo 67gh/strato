@@ -13,6 +13,7 @@
 #include "nce/guest.h"
 #include "nce/instructions.h"
 #include "nce.h"
+#include "nce/jit_fallback.h"
 
 namespace skyline::nce {
     NCE::ExitException::ExitException(bool killAllThreads) : killAllThreads(killAllThreads) {}
@@ -152,6 +153,10 @@ namespace skyline::nce {
             // If we get a guest access violation then we want to handle any accesses that may be from a trapped region
             if (TrapManager::TrapHandler(reinterpret_cast<u8 *>(info->si_addr), true))
                 return;
+
+        // Log every guest fault and, for SIGILL, let the JIT execute the instruction so emulation can continue
+        if (signal != SIGINT && signal != SIGTRAP && JitFallback::HandleFault(signal, info, ctx, *reinterpret_cast<ThreadContext *>(*tls)))
+            return;
 
         if (signal != SIGINT) {
             signal::StackFrame topFrame{.lr = reinterpret_cast<void *>(ctx->uc_mcontext.pc), .next = reinterpret_cast<signal::StackFrame *>(ctx->uc_mcontext.regs[29])};
