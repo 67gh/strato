@@ -34,6 +34,17 @@ class StratoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // Writes any uncaught exception to crash.log in the public files directory, then lets Android handle the crash as usual
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                File(getPublicFilesDir(), "crash.log").appendText("=== ${java.util.Date()} thread '${thread.name}'\n${throwable.stackTraceToString()}\n")
+            } catch (_ : Throwable) {
+            }
+            previousHandler?.uncaughtException(thread, throwable)
+        }
+
         System.loadLibrary("skyline")
 
         val dynamicColorsOptions = DynamicColorsOptions.Builder().setPrecondition { _, _ -> getSettings().useMaterialYou }.build()

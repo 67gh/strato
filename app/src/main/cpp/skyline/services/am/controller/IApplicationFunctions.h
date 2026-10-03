@@ -66,6 +66,13 @@ namespace skyline::service::am {
         /**
          * @url https://switchbrew.org/wiki/Applet_Manager_services#GetSaveDataSizeMax
          */
+        /**
+         * @brief Ensures that the application's cache storage exists, returns where it was created
+         * @note The cache storage is always reported as existing on the SD card, the filesystem service creates the directories on demand
+         * @url https://switchbrew.org/wiki/Applet_Manager_services#CreateCacheStorage
+         */
+        Result CreateCacheStorage(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
+
         Result GetSaveDataSizeMax(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
 
         /**
@@ -157,6 +164,7 @@ namespace skyline::service::am {
             SFUNC(0x16, IApplicationFunctions, SetTerminateResult),
             SFUNC(0x17, IApplicationFunctions, GetDisplayVersion),
             SFUNC(0x1A, IApplicationFunctions, GetSaveDataSize),
+            SFUNC(0x1B, IApplicationFunctions, CreateCacheStorage),
             SFUNC(0x1C, IApplicationFunctions, GetSaveDataSizeMax),
             SFUNC(0x28, IApplicationFunctions, NotifyRunning),
             SFUNC(0x32, IApplicationFunctions, GetPseudoDeviceId),

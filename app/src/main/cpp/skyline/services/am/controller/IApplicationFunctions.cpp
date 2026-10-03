@@ -58,6 +58,21 @@ namespace skyline::service::am {
         return {};
     }
 
+    Result IApplicationFunctions::CreateCacheStorage(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
+        struct Parameters {
+            u16 index;
+            u16 _pad_[3];
+            i64 size;
+            i64 journalSize;
+        };
+        auto parameters{request.Pop<Parameters>()};
+        LOGD("Cache storage requested: index: {}, size: 0x{:X}, journal size: 0x{:X}", parameters.index, parameters.size, parameters.journalSize);
+
+        response.Push<u32>(2); // CacheStorageTarget::SdCard
+        response.Push<u64>(0); // Required size for the creation to succeed, none is ever needed
+        return {};
+    }
+
     Result IApplicationFunctions::SetTerminateResult(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
         auto result{request.Pop<Result>()};
         LOGI("App set termination result: {}", result.raw);

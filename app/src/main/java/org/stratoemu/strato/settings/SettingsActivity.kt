@@ -37,6 +37,11 @@ import org.stratoemu.strato.utils.WindowInsetsHelper
 private const val PREFERENCE_DIALOG_FRAGMENT_TAG = "androidx.preference.PreferenceFragment.DIALOG"
 
 class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPreferenceDisplayDialogCallback {
+    companion object {
+        const val EXTRA_TITLE = "settings_title" //!< The string resource used as the title of a category page
+        const val EXTRA_CATEGORIES = "settings_categories" //!< The keys of the preference categories to show in a category page
+    }
+
     val binding by lazy { SettingsActivityBinding.inflate(layoutInflater) }
     val hiddenCategoriesFromSearch = if (BuildConfig.BUILD_TYPE == "release") {
         arrayOf("category_debug", "category_credits", "category_licenses")
@@ -45,11 +50,15 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
     }
 
     /**
-     * The fragment shown first inside [R.id.settings]: the settings of a single game if the intent has one, otherwise the home list of categories
+     * The fragment shown inside [R.id.settings]: the settings of a single game if the intent has one, a page with some categories of the global settings
+     * if the intent lists them, otherwise the home list of categories
      */
     private val initialFragment by lazy {
+        val categories = intent.getStringArrayExtra(EXTRA_CATEGORIES)
         if (intent.hasExtra(AppItemTag))
             GameSettingsFragment().apply { arguments = intent.extras }
+        else if (categories != null)
+            GlobalSettingsFragment.newInstance(intent.getIntExtra(EXTRA_TITLE, R.string.settings), categories)
         else
             SettingsHomeFragment()
     }
@@ -58,21 +67,6 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
      * The [PreferenceFragmentCompat] currently displayed, null while the home list is displayed
      */
     private val currentPreferenceFragment get() = supportFragmentManager.findFragmentById(R.id.settings) as? PreferenceFragmentCompat
-
-    /**
-     * Updates the title and the search action to match the page being displayed
-     */
-    private fun updateToolbar() {
-        when (val fragment = supportFragmentManager.findFragmentById(R.id.settings)) {
-            is GlobalSettingsFragment -> {
-                val title = fragment.arguments?.getInt(GlobalSettingsFragment.ARG_TITLE) ?: 0
-                supportActionBar?.setTitle(if (title != 0) title else R.string.settings)
-            }
-
-            is SettingsHomeFragment -> supportActionBar?.setTitle(R.string.settings)
-        }
-        invalidateOptionsMenu()
-    }
 
     /**
      * This initializes all of the elements in the activity and displays the settings fragment
@@ -136,22 +130,22 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
         // Reset the subtitle to null
         supportActionBar?.subtitle = null
 
+        if (intent.hasExtra(EXTRA_TITLE))
+            supportActionBar?.setTitle(intent.getIntExtra(EXTRA_TITLE, R.string.settings))
+
         if (savedInstanceState == null) {
             supportFragmentManager
                 .beginTransaction()
                 .replace(R.id.settings, initialFragment)
                 .commitNow()
         }
-
-        supportFragmentManager.addOnBackStackChangedListener { updateToolbar() }
-        updateToolbar()
     }
 
     /**
-     * The up arrow goes back one page (from a category to the home list) rather than leaving the settings
+     * The up arrow closes the page, which goes back to the home list when this is a category page
      */
     override fun onSupportNavigateUp() : Boolean {
-        onBackPressedDispatcher.onBackPressed()
+        finish()
         return true
     }
 

@@ -4,6 +4,7 @@
 
 package org.stratoemu.strato.settings
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -24,7 +25,7 @@ import org.xmlpull.v1.XmlPullParser
 
 /**
  * The landing page of the settings, a list of categories that each open their own page
- * The page of a category is a [GlobalSettingsFragment] filtered down to the preference categories listed in the entry
+ * The page of a category is a [SettingsActivity] showing a [GlobalSettingsFragment] filtered down to the preference categories listed in the entry
  */
 class SettingsHomeFragment : Fragment() {
     /**
@@ -59,11 +60,10 @@ class SettingsHomeFragment : Fragment() {
             return
         }
 
-        parentFragmentManager.beginTransaction()
-            .setReorderingAllowed(true)
-            .replace(R.id.settings, GlobalSettingsFragment.newInstance(entry.title, categories))
-            .addToBackStack(null)
-            .commit()
+        startActivity(Intent(requireContext(), SettingsActivity::class.java).apply {
+            putExtra(SettingsActivity.EXTRA_TITLE, entry.title)
+            putExtra(SettingsActivity.EXTRA_CATEGORIES, categories)
+        })
     }
 
     private fun confirmReset(entry : Entry) {
