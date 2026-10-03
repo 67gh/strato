@@ -8,6 +8,8 @@ package org.stratoemu.strato.settings
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import androidx.annotation.StringRes
+import androidx.core.os.bundleOf
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
@@ -29,6 +31,18 @@ import kotlinx.coroutines.withContext
  * This fragment is used to display the global preferences
  */
 class GlobalSettingsFragment : PreferenceFragmentCompat() {
+    companion object {
+        const val ARG_TITLE = "title" //!< The string resource used as the title of the page
+        const val ARG_CATEGORIES = "categories" //!< The keys of the preference categories to show, every category is shown if absent
+
+        /**
+         * @return A page that only shows the given preference categories
+         */
+        fun newInstance(@StringRes title : Int, categories : Array<String>) = GlobalSettingsFragment().apply {
+            arguments = bundleOf(ARG_TITLE to title, ARG_CATEGORIES to categories)
+        }
+    }
+
     override fun onViewCreated(view : View, savedInstanceState : Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val recyclerView = view.findViewById<View>(androidx.preference.R.id.recycler_view)
@@ -77,6 +91,15 @@ class GlobalSettingsFragment : PreferenceFragmentCompat() {
             forceMaxGpuClocksPref.isSelectable = false
             forceMaxGpuClocksPref.isChecked = false
             forceMaxGpuClocksPref.summary = context!!.getString(R.string.force_max_gpu_clocks_desc_unsupported)
+        }
+
+        // Narrow the page down to the requested categories, this is done last so the setup above can rely on every preference existing
+        arguments?.getStringArray(ARG_CATEGORIES)?.let { visibleCategories ->
+            for (index in preferenceScreen.preferenceCount - 1 downTo 0) {
+                val category = preferenceScreen.getPreference(index)
+                if (category.key !in visibleCategories)
+                    preferenceScreen.removePreference(category)
+            }
         }
     }
 }

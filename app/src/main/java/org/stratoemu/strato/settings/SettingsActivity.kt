@@ -45,14 +45,33 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
     }
 
     /**
-     * The instance of [PreferenceFragmentCompat] that is shown inside [R.id.settings]
-     * Retrieves extras from the intent if any and instantiates the appropriate fragment
+     * The fragment shown first inside [R.id.settings]: the settings of a single game if the intent has one, otherwise the home list of categories
      */
-    private val preferenceFragment by lazy {
+    private val initialFragment by lazy {
         if (intent.hasExtra(AppItemTag))
             GameSettingsFragment().apply { arguments = intent.extras }
         else
-            GlobalSettingsFragment()
+            SettingsHomeFragment()
+    }
+
+    /**
+     * The [PreferenceFragmentCompat] currently displayed, null while the home list is displayed
+     */
+    private val currentPreferenceFragment get() = supportFragmentManager.findFragmentById(R.id.settings) as? PreferenceFragmentCompat
+
+    /**
+     * Updates the title and the search action to match the page being displayed
+     */
+    private fun updateToolbar() {
+        when (val fragment = supportFragmentManager.findFragmentById(R.id.settings)) {
+            is GlobalSettingsFragment -> {
+                val title = fragment.arguments?.getInt(GlobalSettingsFragment.ARG_TITLE) ?: 0
+                supportActionBar?.setTitle(if (title != 0) title else R.string.settings)
+            }
+
+            is SettingsHomeFragment -> supportActionBar?.setTitle(R.string.settings)
+        }
+        invalidateOptionsMenu()
     }
 
     /**
@@ -120,9 +139,20 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
         if (savedInstanceState == null) {
             supportFragmentManager
                 .beginTransaction()
-                .replace(R.id.settings, preferenceFragment)
-                .commit()
+                .replace(R.id.settings, initialFragment)
+                .commitNow()
         }
+
+        supportFragmentManager.addOnBackStackChangedListener { updateToolbar() }
+        updateToolbar()
+    }
+
+    /**
+     * The up arrow goes back one page (from a category to the home list) rather than leaving the settings
+     */
+    override fun onSupportNavigateUp() : Boolean {
+        onBackPressedDispatcher.onBackPressed()
+        return true
     }
 
     override fun onCreateOptionsMenu(menu : Menu?) : Boolean {
@@ -130,6 +160,7 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
         val menuItem = menu!!.findItem(R.id.app_bar_search)
         val searchView = menuItem.actionView as SearchView
         searchView.queryHint = getString(R.string.search)
+        menuItem.isVisible = currentPreferenceFragment != null // There is nothing to search on the home list
 
         searchView.setOnQueryTextFocusChangeListener { _, focus ->
             (binding.titlebar.toolbar.layoutParams as AppBarLayout.LayoutParams).scrollFlags =
@@ -145,9 +176,10 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
             }
 
             override fun onQueryTextChange(newText : String) : Boolean {
+                val screen = currentPreferenceFragment?.preferenceScreen ?: return true
                 val queries = newText.split(",")
                 if (newText.isNotEmpty()) {
-                    preferenceFragment.preferenceScreen.forEach { preferenceCategory ->
+                    screen.forEach { preferenceCategory ->
                         if (hiddenCategoriesFromSearch.contains(preferenceCategory.key)) {
                             preferenceCategory.isVisible = false
                             return@forEach
@@ -164,7 +196,7 @@ class SettingsActivity : AppCompatActivity(), PreferenceFragmentCompat.OnPrefere
                         preferenceCategory.isVisible = !areAllPrefsHidden || queryMatchesCategory
                     }
                 } else { // If user input is empty, show all preferences
-                    preferenceFragment.preferenceScreen.forEach { preferenceCategory ->
+                    screen.forEach { preferenceCategory ->
                         preferenceCategory.isVisible = true
                         (preferenceCategory as PreferenceCategory).forEach { preference ->
                             preference.isVisible = true

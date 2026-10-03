@@ -341,4 +341,11 @@
     <string name="use_builtin_vibrator">Use Phone Vibrator</string>
     <string name="finish">Finish</string>
     <string name="skip">Skip</string>
+
+    <!-- Settings home screen -->
+    <string name="settings_controllers">Controllers</string>
+    <string name="settings_graphics">Graphics</string>
+    <string name="settings_layout">Layout</string>
+    <string name="settings_defaults">Defaults</string>
+    <string name="settings_defaults_warning">Reset the system, layout, graphics, audio and debug settings to their default values? <b>Current values will be lost.</b> Game paths, keys and controllers are kept.</string>
 </resources>

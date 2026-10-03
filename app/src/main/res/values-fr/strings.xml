@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings">Paramètres</string>
+    <string name="general">Général</string>
+    <string name="system">Système</string>
+    <string name="audio">Audio</string>
+    <string name="debug">Déboguer</string>
+    <string name="licenses">Licences</string>
+    <string name="settings_controllers">Manette de jeu</string>
+    <string name="settings_graphics">Graphismes</string>
+    <string name="settings_layout">Disposition</string>
+    <string name="settings_defaults">Par défaut</string>
+    <string name="settings_defaults_warning">Réinitialiser les paramètres système, disposition, graphismes, audio et débogage à leurs valeurs par défaut ? <b>Les valeurs actuelles seront perdues.</b> Les chemins des jeux, les clés et les manettes sont conservés.</string>
+</resources>

@@ -4,12 +4,40 @@
 #pragma once
 
 #include <opus.h>
+#include <opus_multistream.h>
 
 #include <common.h>
 #include <services/base_service.h>
 #include <kernel/types/KTransferMemory.h>
 
 namespace skyline::service::codec {
+    /**
+     * @brief Initialization parameters for the Opus multi-stream decoder
+     * @see opus_multistream_decoder_init()
+     */
+    struct MultiStreamParameters {
+        i32 sampleRate;
+        i32 channelCount;
+        i32 streamCount;
+        i32 stereoStreamCount;
+        std::array<u8, 0x100> mappings; //!< Array of channel mappings
+    };
+    static_assert(sizeof(MultiStreamParameters) == 0x110);
+
+    /**
+     * @brief Same as MultiStreamParameters but with the larger frame size flag added in 12.0.0
+     */
+    struct MultiStreamParametersEx {
+        i32 sampleRate;
+        i32 channelCount;
+        i32 streamCount;
+        i32 stereoStreamCount;
+        i32 useLargerFrameSize;
+        i32 _pad_;
+        std::array<u8, 0x100> mappings;
+    };
+    static_assert(sizeof(MultiStreamParametersEx) == 0x118);
+
     /**
      * @return The required output buffer size for decoding an Opus stream with the given parameters
      */
@@ -28,6 +56,7 @@ namespace skyline::service::codec {
       private:
         std::shared_ptr<kernel::type::KTransferMemory> workBuffer;
         OpusDecoder *decoderState{};
+        OpusMSDecoder *multiStreamState{}; //!< Set instead of decoderState when this is a multi-stream decoder
         i32 sampleRate;
         i32 channelCount;
         u32 decoderOutputBufferSize;
@@ -59,6 +88,11 @@ namespace skyline::service::codec {
 
       public:
         IHardwareOpusDecoder(const DeviceState &state, ServiceManager &manager, i32 sampleRate, i32 channelCount, u32 workBufferSize, KHandle workBufferHandle, bool isIsLargerSize = false);
+
+        /**
+         * @brief Creates a multi-stream decoder (used by games with more than 2 channels of Opus audio, e.g. surround)
+         */
+        IHardwareOpusDecoder(const DeviceState &state, ServiceManager &manager, const MultiStreamParameters &parameters, u32 workBufferSize, KHandle workBufferHandle, bool isLargerSize = false);
 
         /**
          * @brief Decodes the Opus source data, returns decoded data size and decoded sample count

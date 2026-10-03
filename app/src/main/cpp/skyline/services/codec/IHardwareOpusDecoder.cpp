@@ -27,6 +27,26 @@ namespace skyline::service::codec {
             throw OpusException(result);
     }
 
+    IHardwareOpusDecoder::IHardwareOpusDecoder(const DeviceState &state, ServiceManager &manager, const MultiStreamParameters &parameters, u32 workBufferSize, KHandle workBufferHandle, bool isLargerSize)
+        : BaseService(state, manager),
+          sampleRate(parameters.sampleRate),
+          channelCount(parameters.channelCount),
+          workBuffer(state.process->GetHandle<kernel::type::KTransferMemory>(workBufferHandle)),
+          decoderOutputBufferSize(CalculateOutBufferSize(parameters.sampleRate, parameters.channelCount, isLargerSize ? MaxFrameSizeEx : MaxFrameSizeNormal)) {
+        i32 requiredSize{opus_multistream_decoder_get_size(parameters.streamCount, parameters.stereoStreamCount)};
+        if (requiredSize <= 0)
+            throw exception("Invalid Opus multi-stream parameters: streams: {}, stereo streams: {}", parameters.streamCount, parameters.stereoStreamCount);
+        if (workBufferSize < static_cast<u32>(requiredSize))
+            throw exception("Work Buffer doesn't have adequate space for Opus multi-stream Decoder: 0x{:X} (Required: 0x{:X})", workBufferSize, requiredSize);
+
+        // Like the single stream decoder, the decoder state is placed in the guest-supplied work buffer
+        multiStreamState = reinterpret_cast<OpusMSDecoder *>(workBuffer->host.data());
+
+        int result{opus_multistream_decoder_init(multiStreamState, sampleRate, channelCount, parameters.streamCount, parameters.stereoStreamCount, parameters.mappings.data())};
+        if (result != OPUS_OK)
+            throw OpusException(result);
+    }
+
     Result IHardwareOpusDecoder::DecodeInterleavedOld(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
         return DecodeInterleavedImpl(request, response);
     }
@@ -44,7 +64,10 @@ namespace skyline::service::codec {
     }
 
     void IHardwareOpusDecoder::ResetContext() {
-        opus_decoder_ctl(decoderState, OPUS_RESET_STATE);
+        if (multiStreamState)
+            opus_multistream_decoder_ctl(multiStreamState, OPUS_RESET_STATE);
+        else
+            opus_decoder_ctl(decoderState, OPUS_RESET_STATE);
     }
 
     Result IHardwareOpusDecoder::DecodeInterleavedImpl(ipc::IpcRequest &request, ipc::IpcResponse &response, bool writeDecodeTime) {
@@ -63,7 +86,9 @@ namespace skyline::service::codec {
         auto sampleDataIn = dataIn.subspan(sizeof(OpusDataHeader));
 
         auto perfTimer{timesrv::TimeSpanType::FromNanoseconds(util::GetTimeNs())};
-        i32 decodedCount{opus_decode(decoderState, sampleDataIn.data(), opusPacketSize, dataOut.data(), static_cast<int>(decoderOutputBufferSize), false)};
+        i32 decodedCount{multiStreamState
+                         ? opus_multistream_decode(multiStreamState, sampleDataIn.data(), opusPacketSize, dataOut.data(), static_cast<int>(dataOut.size() / static_cast<size_t>(channelCount)), false) // The frame size is the available space per channel in samples
+                         : opus_decode(decoderState, sampleDataIn.data(), opusPacketSize, dataOut.data(), static_cast<int>(decoderOutputBufferSize), false)};
         perfTimer = timesrv::TimeSpanType::FromNanoseconds(util::GetTimeNs()) - perfTimer;
 
         if (decodedCount < 0)
