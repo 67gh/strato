@@ -126,7 +126,7 @@ namespace skyline::service {
 
         virtual ServiceFunctionDescriptor GetServiceFunction(u32 id, bool isTipc) {
             if (ShouldLogStubCall(GetName(), id))
-                LOGW("[STUB] BaseService::GetServiceFunction called (cmdId=0x{:X}, tipc={}) — further calls to this cmdId will not be logged", id, isTipc);
+                LOGW("[STUB] {}::GetServiceFunction not implemented (cmdId=0x{:X}, tipc={}) — further calls to this cmdId will not be logged", GetName(), id, isTipc);
             return ServiceFunctionDescriptor{
                 reinterpret_cast<DerivedService*>(this),
                 reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(&BaseService::StubFunction),
