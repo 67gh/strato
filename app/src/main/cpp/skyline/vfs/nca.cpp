@@ -104,6 +104,9 @@ namespace skyline::vfs {
         u8 keyGeneration{GetKeyGeneration()};
 
         auto titleKey{keyStore->GetTitleKey(header.rightsId)};
+        if (keyGeneration >= keyStore->titleKek.size())
+            throw loader_exception(LoaderResult::MissingTitleKek); // This NCA was made for a newer firmware than the keys support
+
         auto &titleKek{keyStore->titleKek[keyGeneration]};
 
         if (!titleKey)
@@ -119,6 +122,9 @@ namespace skyline::vfs {
     crypto::KeyStore::Key128 NCA::GetKeyAreaKey(NCA::NcaSectionEncryptionType type) {
         auto keyArea{[this, &type](crypto::KeyStore::IndexedKeys128 &keys) {
             u8 keyGeneration{GetKeyGeneration()};
+
+            if (keyGeneration >= keys.size())
+                throw loader_exception(LoaderResult::MissingKeyArea); // This NCA was made for a newer firmware than the keys support
 
             auto &keyArea{keys[keyGeneration]};
 

@@ -979,6 +979,13 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
             gpu.graphicsPipelineAssembler->WaitIdle();
             LOGI("Loaded {} graphics pipelines in {}ms", map.size(), (util::GetTimeNs() - startTime) / constant::NsInMillisecond);
+            {
+                size_t withUnwritten{};
+                for (auto &entry : map)
+                    if (!entry.second->DescribeUnwrittenDescriptors().empty())
+                        withUnwritten++;
+                diagnostics::Record("pipeline", fmt::format("loaded {} pipelines from the cache, {} of them have unwritten descriptors", map.size(), withUnwritten));
+            }
 
             gpu.graphicsPipelineAssembler->SavePipelineCache();
 

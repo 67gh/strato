@@ -7,6 +7,7 @@
 #include <gpu/interconnect/common/state_updater.h>
 #include <soc/gm20b/channel.h>
 #include "common/utils.h"
+#include <gpu/diagnostics.h>
 #include "maxwell_3d.h"
 #include "common.h"
 
@@ -163,9 +164,13 @@ namespace skyline::gpu::interconnect::maxwell3d {
              }
          }()};
 
-         if (oldPipeline != pipeline)
+         if (oldPipeline != pipeline) {
              // If the pipeline has changed, we need to update the pipeline state
              builder.SetPipeline(pipeline->compiledPipeline.pipeline, vk::PipelineBindPoint::eGraphics);
+
+             auto unwritten{pipeline->DescribeUnwrittenDescriptors()};
+             diagnostics::Record("bind", fmt::format("pipeline {} topology {} indexed {} count {}{}", fmt::ptr(pipeline), static_cast<u32>(topology), indexed, count, unwritten.empty() ? "" : ", UNWRITTEN descriptors:" + unwritten));
+         }
 
          if (descUpdateInfo) {
              if (ctx.gpu.traits.supportsPushDescriptors) {

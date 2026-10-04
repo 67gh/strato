@@ -30,7 +30,7 @@
     <string name="firmware">Firmware</string>
     <string name="setup_prod_keys_desc">Obligatoire pour lancer les jeux, le fichier prod.keys</string>
     <string name="setup_title_keys_desc">Facultatif, le fichier title.keys</string>
-    <string name="setup_firmware_desc">Facultatif, le firmware au format zip. Demande d\'abord les clés de production</string>
+    <string name="setup_firmware_desc">Facultatif, le firmware au format zip, complet ou allégé (seulement la version système et les polices, un import écrit firmware_lite.zip pour la prochaine fois). Demande d\'abord les clés de production</string>
     <string name="setup_imported">Importé</string>
     <string name="setup_choose">Choisir</string>
     <string name="setup_allow">Autoriser</string>

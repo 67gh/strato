@@ -59,41 +59,39 @@ object KeyReader {
 
         val outputFile = File(outputDirectory, keyType.fileName)
         val tmpOutputFile = File("${outputFile}.tmp")
-        var valid = false
 
+        var validLines = 0
         context.contentResolver.openInputStream(uri).use { inputStream ->
             tmpOutputFile.bufferedWriter().use { writer ->
-                valid = inputStream!!.bufferedReader().useLines {
+                inputStream!!.bufferedReader().useLines {
                     for (line in it) {
-                        if (line.startsWith(";") || line.isBlank()) continue
+                        // Key dumps from different tools add comments (; or #), blank lines and sometimes keys of their own, none of that should make the whole file invalid
+                        if (line.isBlank() || line.startsWith(";") || line.startsWith("#")) continue
 
-                        val pair = line.split("=")
-                        if (pair.size != 2)
-                            return@useLines false
+                        val pair = line.split("=", limit = 2)
+                        if (pair.size != 2) {
+                            Log.w(Tag, "Skipping line without a key/value pair in ${keyType.name}")
+                            continue
+                        }
 
                         val key = pair[0].trim()
                         val value = pair[1].trim()
-                        when (keyType) {
-                            KeyType.Title -> {
-                                if (key.length != 32 && !isHexString(key))
-                                    return@useLines false
-                                if (value.length != 32 && !isHexString(value))
-                                    return@useLines false
-                            }
-                            KeyType.Prod -> {
-                                if (!key.contains("_"))
-                                    return@useLines false
-                                if (!isHexString(value))
-                                    return@useLines false
-                            }
+                        val lineValid = when (keyType) {
+                            KeyType.Title -> key.length == 32 && isHexString(key) && value.length == 32 && isHexString(value)
+                            KeyType.Prod -> key.contains("_") && isHexString(value)
+                        }
+                        if (!lineValid) {
+                            Log.w(Tag, "Skipping invalid ${keyType.name} entry '$key'")
+                            continue
                         }
 
                         writer.append("$key=$value\n")
+                        validLines++
                     }
-                    true
                 }
             }
         }
+        val valid = validLines > 0
 
         val cleanup = {
             try {

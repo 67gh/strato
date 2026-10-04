@@ -130,6 +130,40 @@ extern "C" JNIEXPORT jstring Java_org_stratoemu_strato_preference_FirmwareImport
     return env->NewStringUTF("");
 }
 
+/**
+ * @brief Names of the NCAs that are enough to run games, in the order they were found
+ * @note These are the only archives the emulator reads on its own: the system version (0x...809) and the shared fonts (0x...810 to 0x...814).
+ * Games can also ask for other system data archives (Mii models 0x...802, time zones 0x...80E, certificates 0x...800...), add their IDs here if one needs them
+ */
+extern "C" JNIEXPORT jobjectArray Java_org_stratoemu_strato_preference_FirmwareImportPreference_listEssentialArchives(JNIEnv *env, jobject thiz, jstring systemArchivesPathJstring, jstring keysPathJstring) {
+    constexpr skyline::u64 firstEssentialProgramId{0x0100000000000809};
+    constexpr skyline::u64 lastEssentialProgramId{0x0100000000000814};
+
+    auto systemArchivesFileSystem{std::make_shared<skyline::vfs::OsFileSystem>(skyline::JniString(env, systemArchivesPathJstring))};
+    auto systemArchives{systemArchivesFileSystem->OpenDirectory("")};
+    auto keyStore{std::make_shared<skyline::crypto::KeyStore>(skyline::JniString(env, keysPathJstring))};
+
+    std::vector<std::string> names;
+    for (const auto &entry : systemArchives->Read()) {
+        try {
+            std::shared_ptr<skyline::vfs::Backing> backing{systemArchivesFileSystem->OpenFile(entry.name)};
+            auto nca{skyline::vfs::NCA(backing, keyStore)};
+
+            // 0x80A to 0x80F are other system archives (avatars, news, time zones...) that sit between the version and the fonts
+            bool essential{nca.header.programId == firstEssentialProgramId || (nca.header.programId >= 0x0100000000000810 && nca.header.programId <= lastEssentialProgramId)};
+            if (essential && nca.romFs != nullptr)
+                names.push_back(entry.name);
+        } catch (...) {
+            continue; // Not parsable with the current keys, so it can't be used by the emulator either
+        }
+    }
+
+    jobjectArray result{env->NewObjectArray(static_cast<jsize>(names.size()), env->FindClass("java/lang/String"), nullptr)};
+    for (size_t i{}; i < names.size(); i++)
+        env->SetObjectArrayElement(result, static_cast<jsize>(i), env->NewStringUTF(names[i].c_str()));
+    return result;
+}
+
 std::vector<skyline::u8> decodeBfttfFont(const std::shared_ptr<skyline::vfs::Backing> bfttfFile){
     constexpr skyline::u32 fontKey{0x06186249};
     constexpr skyline::u32 BFTTFMagic{0x18029a7f};

@@ -22,8 +22,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
-import java.io.FilenameFilter
 import java.io.IOException
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class FirmwareImportPreference @JvmOverloads constructor(context : Context, attrs : AttributeSet? = null, defStyleAttr : Int = androidx.preference.R.attr.preferenceStyle) : Preference(context, attrs, defStyleAttr) {
     private class Firmware(val valid : Boolean, val version : String)
@@ -64,10 +65,19 @@ class FirmwareImportPreference @JvmOverloads constructor(context : Context, attr
     fun importFirmware(uri : Uri) : ImportResult {
         val inputZip = context.contentResolver.openInputStream(uri) ?: return ImportResult(R.string.error, null)
         val cacheFirmwareDir = File("${context.cacheDir.path}/registered/")
+        val extractedDir = File("${context.cacheDir.path}/registered_extracted/")
 
         return try {
             // Unzip in cache dir to not delete previous firmware in case the zip given doesn't contain a valid one
-            ZipUtils.unzip(inputZip, cacheFirmwareDir)
+            extractedDir.deleteRecursively()
+            cacheFirmwareDir.deleteRecursively()
+            ZipUtils.unzip(inputZip, extractedDir)
+
+            // A full firmware has its archives at the root of the zip but a zip made by hand (a lite firmware) often has them in a folder, only the NCAs matter
+            cacheFirmwareDir.mkdirs()
+            extractedDir.walkTopDown().filter { it.isFile && it.name.endsWith(".nca", ignoreCase = true) }.forEach {
+                it.copyTo(File(cacheFirmwareDir, it.name), overwrite = true)
+            }
 
             val firmware = isFirmwareValid(cacheFirmwareDir)
             if (!firmware.valid) {
@@ -76,12 +86,38 @@ class FirmwareImportPreference @JvmOverloads constructor(context : Context, attr
                 firmwarePath.deleteRecursively()
                 cacheFirmwareDir.copyRecursively(firmwarePath, true)
                 extractFonts(firmwarePath.path, keysPath, fontsPath)
+                writeLiteFirmware()
                 ImportResult(R.string.import_firmware_success, firmware.version)
             }
         } catch (e : IOException) {
             ImportResult(R.string.error, null)
         } finally {
             cacheFirmwareDir.deleteRecursively()
+            extractedDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Writes firmware_lite.zip in the public files directory: only the archives the emulator needs (the version and the shared fonts) out of the installed firmware
+     * It's a valid firmware package on its own, so it can be imported on another device instead of the full firmware
+     * Failing to write it never fails the import
+     */
+    private fun writeLiteFirmware() {
+        try {
+            val essential = listEssentialArchives(firmwarePath.path, keysPath)
+            if (essential.isEmpty())
+                return
+
+            val liteZip = File(context.getPublicFilesDir(), "firmware_lite.zip")
+            ZipOutputStream(liteZip.outputStream().buffered()).use { zip ->
+                for (name in essential) {
+                    zip.putNextEntry(ZipEntry(name))
+                    File(firmwarePath, name).inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+        } catch (e : Exception) {
+            // The lite zip is only a convenience
         }
     }
 
@@ -102,22 +138,23 @@ class FirmwareImportPreference @JvmOverloads constructor(context : Context, attr
     override fun onClick() = documentPicker.launch(arrayOf("application/zip"))
 
     /**
-     * Checks if the given directory stores a valid firmware. For that, all files must be NCAs and
-     * one of them must store the firmware version.
+     * Checks if the given directory (that only contains the NCAs found in the zip) stores a usable firmware: one of the NCAs stores the firmware version or is a shared font
+     * A lite firmware (the version and the fonts) is as valid as a full one
      * @return A pair that tells if the firmware is valid, and if so, which firmware version it is
      */
     private fun isFirmwareValid(cacheFirmwareDir : File) : Firmware {
-        val filterNCA = FilenameFilter { _, dirName -> dirName.endsWith(".nca") }
+        if (cacheFirmwareDir.list()?.isEmpty() != false)
+            return Firmware(false, "")
 
-        val unfilteredNumOfFiles = cacheFirmwareDir.list()?.size ?: -1
-        val filteredNumOfFiles = cacheFirmwareDir.list(filterNCA)?.size ?: -2
+        val version = fetchFirmwareVersion(cacheFirmwareDir.path, keysPath)
+        if (version.isNotEmpty())
+            return Firmware(true, version)
 
-        return if (unfilteredNumOfFiles == filteredNumOfFiles) {
-            val version = fetchFirmwareVersion(cacheFirmwareDir.path, keysPath)
-            Firmware(version.isNotEmpty(), version)
-        } else Firmware(false, "")
+        // A hand-made lite firmware may only have the fonts, it's still worth installing
+        return if (listEssentialArchives(cacheFirmwareDir.path, keysPath).isNotEmpty()) Firmware(true, "Lite") else Firmware(false, "")
     }
 
     private external fun fetchFirmwareVersion(systemArchivesPath : String, keysPath : String) : String
     private external fun extractFonts(systemArchivesPath : String, keysPath : String, fontsPath : String)
+    private external fun listEssentialArchives(systemArchivesPath : String, keysPath : String) : Array<String>
 }

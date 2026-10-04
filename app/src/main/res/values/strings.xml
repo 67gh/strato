@@ -368,7 +368,7 @@
     <string name="setup_storage_desc">Choose the folders where your games are, Android only gives access to the folders you pick. You can add as many as you want</string>
     <string name="setup_prod_keys_desc">Required to run games, the prod.keys file</string>
     <string name="setup_title_keys_desc">Optional, the title.keys file</string>
-    <string name="setup_firmware_desc">Optional, the firmware as a zip file. Needs the production keys first</string>
+    <string name="setup_firmware_desc">Optional, the firmware as a zip file, full or lite (only the system version and the fonts, an import writes firmware_lite.zip for next time). Needs the production keys first</string>
     <string name="setup_imported">Imported</string>
     <string name="setup_choose">Choose</string>
     <string name="setup_allow">Allow</string>
