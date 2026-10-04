@@ -29,6 +29,8 @@ namespace skyline::gpu::interconnect::kepler_compute {
             u32 totalBufferDescCount;
             u32 totalTexelBufferDescCount;
             u32 totalImageDescCount;
+
+            bool hasUnsupportedDescriptors; //!< Storage images or texel buffers are declared by the shader but never written to the descriptor set
         };
 
         struct CompiledPipeline {
@@ -42,6 +44,7 @@ namespace skyline::gpu::interconnect::kepler_compute {
         DescriptorInfo descriptorInfo;
         std::vector<CachedMappedBufferView> storageBufferViews;
         ContextTag lastExecutionTag{}; //!< The last execution tag this pipeline was used at
+        bool skipLogged{}; //!< If the skipped dispatches of this pipeline were already reported
 
         void SyncCachedStorageBufferViews(ContextTag executionTag);
 
@@ -49,6 +52,20 @@ namespace skyline::gpu::interconnect::kepler_compute {
         CompiledPipeline compiledPipeline;
 
         PackedPipelineState sourcePackedState;
+
+        /**
+         * @return If the shader uses descriptors that Strato doesn't write (storage images, texel buffers), dispatching it makes the Adreno GPU hang so it is skipped
+         */
+        bool HasUnsupportedDescriptors() const {
+            return descriptorInfo.hasUnsupportedDescriptors;
+        }
+
+        /**
+         * @return True the first time it's called, so a skipped pipeline is only reported once
+         */
+        bool ShouldReportSkip() {
+            return !std::exchange(skipLogged, true);
+        }
 
         Pipeline(InterconnectContext &ctx, Textures &textures, ConstantBufferSet &constantBuffers, const PackedPipelineState &packedState, const ShaderBinary &shaderBinary);
 

@@ -2,6 +2,7 @@
 // Copyright © 2022 Ryujinx Team and Contributors (https://github.com/Ryujinx/)
 // Copyright © 2022 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <gpu/diagnostics.h>
 #include <gpu/interconnect/command_executor.h>
 #include <gpu/interconnect/common/state_updater.h>
 #include <soc/gm20b/channel.h>
@@ -38,6 +39,16 @@ namespace skyline::gpu::interconnect::kepler_compute {
         constantBuffers.Update(ctx, qmd);
         samplers.Update(ctx, qmd.samplerIndex == soc::gm20b::engine::kepler_compute::QMD::SamplerIndex::ViaHeaderIndex);
         auto *pipeline{pipelineState.Update(ctx, builder, textures, constantBuffers.boundConstantBuffers, qmd)};
+
+        // A shader that reads storage images or texel buffers that were never bound hangs the GPU (VK_ERROR_DEVICE_LOST on Adreno), so the dispatch is dropped
+        // The effect it would have had is missing from the frame, which is better than the whole emulation dying
+        if (pipeline->HasUnsupportedDescriptors()) {
+            if (pipeline->ShouldReportSkip()) {
+                LOGW("Skipping compute dispatches of pipeline {}: its shader uses storage images or texel buffers which aren't supported", fmt::ptr(pipeline));
+                diagnostics::Record("compute", fmt::format("skipping dispatches of pipeline {} (storage images/texel buffers are unsupported)", fmt::ptr(pipeline)));
+            }
+            return;
+        }
 
         vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
         auto *descUpdateInfo{pipeline->SyncDescriptors(ctx, constantBuffers.boundConstantBuffers, samplers, textures, srcStageMask, dstStageMask)};

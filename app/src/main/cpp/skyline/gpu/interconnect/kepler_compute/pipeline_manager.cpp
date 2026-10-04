@@ -61,6 +61,8 @@ namespace skyline::gpu::interconnect::kepler_compute {
         if (stage.info.image_descriptors.size() > 0)
             LOGW("Image descriptors are not supported");
 
+        descriptorInfo.hasUnsupportedDescriptors = descriptorInfo.totalTexelBufferDescCount > 0 || stage.info.image_descriptors.size() > 0;
+
         return descriptorInfo;
     }
 
