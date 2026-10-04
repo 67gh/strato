@@ -119,6 +119,13 @@ namespace skyline::service::hid {
         /**
          * @brief Requests the LED pattern which represents a particular Player
          */
+        /**
+         * @brief Disconnects an npad, games call it on startup to reset the controller state
+         * @note The npad is left connected, the application re-activates the controllers it wants straight after
+         * @url https://switchbrew.org/wiki/HID_services#DisconnectNpad
+         */
+        Result DisconnectNpad(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
+
         Result GetPlayerLedPattern(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response);
 
         /**
@@ -250,6 +257,7 @@ namespace skyline::service::hid {
             SFUNC(0x67, IHidServer, ActivateNpad),
             SFUNC(0x68, IHidServer, DeactivateNpad),
             SFUNC(0x6A, IHidServer, AcquireNpadStyleSetUpdateEventHandle),
+            SFUNC(0x6B, IHidServer, DisconnectNpad),
             SFUNC(0x6C, IHidServer, GetPlayerLedPattern),
             SFUNC(0x6D, IHidServer, ActivateNpadWithRevision),
             SFUNC(0x78, IHidServer, SetNpadJoyHoldType),

@@ -5,6 +5,7 @@
 #include <loader/loader.h>
 #include <vulkan/vulkan.hpp>
 #include "command_scheduler.h"
+#include "diagnostics.h"
 #include "common/exception.h"
 
 namespace skyline::gpu {
@@ -104,6 +105,7 @@ namespace skyline::gpu {
                     .pSignalSemaphores = fullSignalSemaphores.data(),
                 }, cycle->fence);
             } catch (const vk::DeviceLostError &e) {
+                diagnostics::DumpFaultReport("the device was lost while submitting commands");
                 // Wait 5 seconds to give traces etc. time to settle
                 std::this_thread::sleep_for(std::chrono::seconds(5));
                 throw exception("Vulkan device lost!");

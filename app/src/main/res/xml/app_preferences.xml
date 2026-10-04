@@ -7,9 +7,10 @@
             app:key="document_provider"
             app:summary="@string/open_data_directory_summary"
             app:title="@string/open_data_directory" />
-        <org.stratoemu.strato.preference.FolderPickerPreference
-            app:key="search_location"
-            app:title="@string/search_location" />
+        <org.stratoemu.strato.preference.SearchLocationsPreference
+            app:key="search_locations"
+            app:persistent="false"
+            app:title="@string/search_locations" />
         <org.stratoemu.strato.preference.KeyPickerPreference
             app:key="prod_keys"
             app:title="@string/prod_keys"

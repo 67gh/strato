@@ -130,13 +130,21 @@ add_subdirectory("libraries/adrenotools")
 add_subdirectory("libraries/robin-map")
 
 # Dynarmic JIT used to execute guest instructions that NCE can't run natively (see skyline/nce/jit_fallback.h)
-option(STRATO_JIT_FALLBACK "Enable the Dynarmic JIT fallback for instructions NCE fails on" OFF)
+# It is enabled by default but only built if the submodule was fetched (git submodule update --init --recursive app/libraries/dynarmic), otherwise the build goes on without it and the log says so
+option(STRATO_JIT_FALLBACK "Enable the Dynarmic JIT fallback for instructions NCE fails on" ON)
+set(STRATO_JIT_ENABLED OFF)
 if (STRATO_JIT_FALLBACK)
-    set(DYNARMIC_TESTS OFF CACHE BOOL "" FORCE)
-    set(DYNARMIC_FRONTENDS "A64" CACHE STRING "" FORCE)
-    set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
-    add_subdirectory("libraries/dynarmic")
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libraries/dynarmic/CMakeLists.txt")
+        set(STRATO_JIT_ENABLED ON)
+        set(DYNARMIC_TESTS OFF CACHE BOOL "" FORCE)
+        set(DYNARMIC_FRONTENDS "A64" CACHE STRING "" FORCE)
+        set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
+        add_subdirectory("libraries/dynarmic")
+    else ()
+        message(WARNING "STRATO_JIT_FALLBACK is ON but libraries/dynarmic is empty, building WITHOUT the JIT fallback. Run: git submodule update --init --recursive app/libraries/dynarmic")
+    endif ()
 endif ()
+message(STATUS "Dynarmic JIT fallback: ${STRATO_JIT_ENABLED}")
 
 # Renderdoc in-app API
 include_directories("libraries/renderdoc")
@@ -208,6 +216,7 @@ add_library(skyline SHARED
         ${source_DIR}/skyline/gpu/texture_manager.cpp
         ${source_DIR}/skyline/gpu/buffer_manager.cpp
         ${source_DIR}/skyline/gpu/command_scheduler.cpp
+        ${source_DIR}/skyline/gpu/diagnostics.cpp
         ${source_DIR}/skyline/gpu/descriptor_allocator.cpp
         ${source_DIR}/skyline/gpu/texture/bc_decoder.cpp
         ${source_DIR}/skyline/gpu/texture/texture.cpp
@@ -444,7 +453,7 @@ target_include_directories(skyline PRIVATE ${source_DIR}/skyline)
 target_compile_options(skyline PRIVATE -Wall -Wno-unknown-attributes -Wno-c++20-extensions -Wno-c++17-extensions -Wno-c99-designator -Wno-reorder -Wno-missing-braces -Wno-unused-variable -Wno-unused-private-field -Wno-dangling-else -Wconversion -fsigned-bitfields)
 
 target_link_libraries(skyline PRIVATE shader_recompiler audio_core)
-if (STRATO_JIT_FALLBACK)
+if (STRATO_JIT_ENABLED)
     target_link_libraries(skyline PRIVATE dynarmic)
     target_compile_definitions(skyline PRIVATE STRATO_JIT_FALLBACK=1)
 

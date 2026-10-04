@@ -11,4 +11,29 @@
     <string name="settings_layout">Disposition</string>
     <string name="settings_defaults">Par défaut</string>
     <string name="settings_defaults_warning">Réinitialiser les paramètres système, disposition, graphismes, audio et débogage à leurs valeurs par défaut ? <b>Les valeurs actuelles seront perdues.</b> Les chemins des jeux, les clés et les manettes sont conservés.</string>
+    <string name="search_locations">Dossiers de jeux</string>
+    <string name="no_search_locations">Aucun dossier de jeux sélectionné</string>
+    <string name="add_folder">Ajouter un dossier</string>
+    <plurals name="search_locations_count">
+        <item quantity="one">%d dossier de jeux</item>
+        <item quantity="other">%d dossiers de jeux</item>
+    </plurals>
+    <string name="setup_title">Bienvenue</string>
+    <string name="setup_subtitle">Configure tout ce dont l\'émulateur a besoin, tu peux aussi le faire plus tard dans les paramètres</string>
+    <string name="setup_notifications">Notifications</string>
+    <string name="setup_notifications_desc">Nécessaires pour afficher l\'état de l\'émulation pendant une partie</string>
+    <string name="setup_notifications_granted">Autorisées</string>
+    <string name="setup_storage">Stockage</string>
+    <string name="setup_storage_desc">Choisis les dossiers où sont tes jeux, Android ne donne accès qu\'aux dossiers que tu sélectionnes. Tu peux en ajouter autant que tu veux</string>
+    <string name="prod_keys">Clés de production</string>
+    <string name="title_keys">Clés de titre</string>
+    <string name="firmware">Firmware</string>
+    <string name="setup_prod_keys_desc">Obligatoire pour lancer les jeux, le fichier prod.keys</string>
+    <string name="setup_title_keys_desc">Facultatif, le fichier title.keys</string>
+    <string name="setup_firmware_desc">Facultatif, le firmware au format zip. Demande d\'abord les clés de production</string>
+    <string name="setup_imported">Importé</string>
+    <string name="setup_choose">Choisir</string>
+    <string name="setup_allow">Autoriser</string>
+    <string name="setup_finish">Terminer</string>
+    <string name="setup_skip">Passer</string>
 </resources>

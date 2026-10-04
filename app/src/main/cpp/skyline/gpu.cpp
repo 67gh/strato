@@ -7,6 +7,7 @@
 #include <jvm.h>
 #include <common/settings.h>
 #include "gpu.h"
+#include "gpu/diagnostics.h"
 
 namespace skyline::gpu {
     static vk::raii::Instance CreateInstance(const DeviceState &state, const vk::raii::Context &context) {
@@ -199,6 +200,11 @@ namespace skyline::gpu {
             #undef IGNORE_TYPE
         }
 
+        // Keep the driver's messages (Turnip reports shader/GPU faults here) so they can be written next to the events that preceded them
+        diagnostics::Record("vulkan", fmt::format("{}:{}: {}", layerPrefix, vk::to_string(vk::DebugReportObjectTypeEXT(objectType)), message));
+        if (std::string_view{message}.find("GPU faulted") != std::string_view::npos || std::string_view{message}.find("DEVICE_LOST") != std::string_view::npos)
+            diagnostics::DumpFaultReport(message);
+
         auto logLevel{severityLookup.at(static_cast<size_t>(std::countr_zero(static_cast<u32>(flags))))};
         if (AsyncLogger::CheckLogLevel(logLevel))
             AsyncLogger::LogAsync(logLevel, fmt::format("Vk{}:{}[0x{:X}]:I{}:L{}: {}", layerPrefix, vk::to_string(vk::DebugReportObjectTypeEXT(objectType)), object, messageCode, location, message));
@@ -387,8 +393,13 @@ namespace skyline::gpu {
         return reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(libvulkanHandle, "vkGetInstanceProcAddr"));
     }
 
+    static const DeviceState &InitializeDiagnostics(const DeviceState &state) {
+        diagnostics::Initialize(state.os->publicAppFilesPath + "gpu_fault.log");
+        return state;
+    }
+
     GPU::GPU(const DeviceState &state)
-        : state(state),
+        : state(InitializeDiagnostics(state)),
           vkContext(LoadVulkanDriver(state, &adrenotoolsImportMapping)),
           vkInstance(CreateInstance(state, vkContext)),
           vkDebugReportCallback(CreateDebugReportCallback(this, vkInstance)),

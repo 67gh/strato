@@ -4,6 +4,7 @@
 
 #include <fstream>
 #include <gpu/texture/texture.h>
+#include <gpu/diagnostics.h>
 #include <gpu/interconnect/command_executor.h>
 #include <gpu/interconnect/common/pipeline.inc>
 #include <gpu/interconnect/common/file_pipeline_state_accessor.h>
@@ -1010,6 +1011,12 @@ namespace skyline::gpu::interconnect::maxwell3d {
         bundle->Reset(packedState);
         auto accessor{RuntimeGraphicsPipelineStateAccessor{std::move(bundle), ctx, textures, constantBuffers, shaderBinaries}};
         auto *pipeline{map.emplace(packedState, std::make_unique<Pipeline>(ctx.gpu, accessor, packedState)).first->second.get()};
+
+        {
+            // Descriptor types that are declared in the layout but never written, a shader reading one is a candidate for a GPU fault
+            auto unwritten{pipeline->DescribeUnwrittenDescriptors()};
+            diagnostics::Record("pipeline", fmt::format("graphics pipeline #{} created at {}{}", map.size(), fmt::ptr(pipeline), unwritten.empty() ? ", all descriptors are written" : ", UNWRITTEN descriptors:" + unwritten));
+        }
 
         #ifdef PIPELINE_STATS
         auto sharedIt{sharedPipelines.find(pipeline->sourcePackedState.shaderHashes)};

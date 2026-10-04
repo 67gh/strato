@@ -113,6 +113,11 @@ namespace skyline::service::hid {
         return {};
     }
 
+    Result IHidServer::DisconnectNpad(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
+        LOGD("Npad {} disconnect requested, ignored", request.Pop<NpadId>());
+        return {};
+    }
+
     Result IHidServer::GetPlayerLedPattern(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
         auto id{request.Pop<NpadId>()};
         response.Push<u64>([id]() -> u64 {

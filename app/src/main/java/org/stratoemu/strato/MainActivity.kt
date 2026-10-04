@@ -88,10 +88,17 @@ class MainActivity : AppCompatActivity() {
     private val documentPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) {
         it?.let { uri ->
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            appSettings.searchLocation = uri.toString()
+            appSettings.searchLocationList = appSettings.searchLocationList + uri
 
             loadRoms(false)
         }
+    }
+
+    /**
+     * The first-run setup (permissions, keys, firmware, game folders), the games are loaded once it's closed
+     */
+    private val setupCallback = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        loadRoms(false)
     }
 
     private val settingsCallback = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -127,6 +134,10 @@ class MainActivity : AppCompatActivity() {
         binding.appList.setHasFixedSize(true)
 
         setupAppList()
+
+        // A fresh install goes through the setup screen first, someone who already has a game folder (an update) or who skipped it never sees it
+        if (savedInstanceState == null && !appSettings.setupCompleted && appSettings.searchLocationList.isEmpty())
+            setupCallback.launch(Intent(this, SetupActivity::class.java))
 
         binding.swipeRefreshLayout.apply {
             setProgressBackgroundColorSchemeColor(
@@ -222,7 +233,6 @@ class MainActivity : AppCompatActivity() {
         binding.appList.layoutManager = CustomLayoutManager(gridSpan)
         setAppListDecoration()
 
-        if (appSettings.searchLocation.isEmpty()) documentPicker.launch(null)
     }
 
     private fun getAppItems() = mutableListOf<AppViewItem>().apply {
@@ -286,7 +296,7 @@ class MainActivity : AppCompatActivity() {
             binding.romPlaceholder.isVisible = true
             binding.romPlaceholder.text = getString(R.string.searching_roms)
         }
-        viewModel.loadRoms(this, loadFromFile, Uri.parse(appSettings.searchLocation), EmulationSettings.global.systemLanguage)
+        viewModel.loadRoms(this, loadFromFile, appSettings.searchLocationList, EmulationSettings.global.systemLanguage)
         appSettings.refreshRequired = false
     }
 
@@ -384,6 +394,6 @@ class MainActivity : AppCompatActivity() {
             adapter.notifyItemRangeChanged(0, adapter.currentItems.size)
         }
 
-        viewModel.checkRomHash(Uri.parse(appSettings.searchLocation), EmulationSettings.global.systemLanguage)
+        viewModel.checkRomHash(appSettings.searchLocationList, EmulationSettings.global.systemLanguage)
     }
 }

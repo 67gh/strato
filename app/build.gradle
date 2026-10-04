@@ -83,7 +83,7 @@ buildTypes {
             debuggable true
             externalNativeBuild {
                 cmake {
-                    arguments "-DCMAKE_BUILD_TYPE=RELEASE"
+                    arguments "-DCMAKE_BUILD_TYPE=RELEASE", "-DSTRATO_JIT_FALLBACK=ON"
                 }
             }
             minifyEnabled true
@@ -97,7 +97,7 @@ buildTypes {
             debuggable true
             externalNativeBuild {
                 cmake {
-                    arguments "-DCMAKE_BUILD_TYPE=RELWITHDEBINFO"
+                    arguments "-DCMAKE_BUILD_TYPE=RELWITHDEBINFO", "-DSTRATO_JIT_FALLBACK=ON"
                 }
             }
             minifyEnabled false

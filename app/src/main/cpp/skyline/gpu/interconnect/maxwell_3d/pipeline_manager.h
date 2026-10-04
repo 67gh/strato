@@ -233,6 +233,19 @@ namespace skyline::gpu::interconnect::maxwell3d {
         Pipeline(GPU &gpu, PipelineStateAccessor &accessor, const PackedPipelineState &packedState);
 
         /**
+         * @return A description of the descriptors that are declared in the layout but never written (storage images and texel buffers aren't supported), empty if there are none
+         */
+        std::string DescribeUnwrittenDescriptors() const {
+            std::string description;
+            for (size_t i{}; i < descriptorInfo.stages.size(); i++) {
+                const auto &stage{descriptorInfo.stages[i]};
+                if (stage.storageImageDescTotalCount || stage.storageTexelBufferDescTotalCount || stage.uniformTexelBufferDescTotalCount)
+                    description += fmt::format(" stage{}[storage images:{} storage texel buffers:{} texel buffers:{}]", i, stage.storageImageDescTotalCount, stage.storageTexelBufferDescTotalCount, stage.uniformTexelBufferDescTotalCount);
+            }
+            return description;
+        }
+
+        /**
          * @brief Returns the pipeline in the transition cache (if present) that matches the given state
          */
         Pipeline *LookupNext(const PackedPipelineState &packedState);

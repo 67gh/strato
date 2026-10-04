@@ -3,6 +3,7 @@ package org.stratoemu.strato
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.stratoemu.strato.loader.AppEntry
@@ -30,9 +31,26 @@ class RomProvider @Inject constructor(@ApplicationContext private val context : 
         }
     }
 
-    fun loadRoms(searchLocation : Uri, systemLanguage : Int) = DocumentFile.fromTreeUri(context, searchLocation)!!.let { documentFile ->
+    fun loadRoms(searchLocation : Uri, systemLanguage : Int) : ArrayList<AppEntry> = DocumentFile.fromTreeUri(context, searchLocation)!!.let { documentFile ->
         arrayListOf<AppEntry>().apply {
             addEntries(mapOf("nro" to NRO, "nso" to NSO, "nca" to NCA, "nsp" to NSP, "xci" to XCI), documentFile, this, systemLanguage)
         }
+    }
+
+    /**
+     * Loads the games of every given folder, a game found in more than one folder (nested folders) is only listed once
+     * A folder that can't be read anymore (permission revoked, folder deleted) is skipped so the others still load
+     */
+    fun loadRoms(searchLocations : List<Uri>, systemLanguage : Int) : ArrayList<AppEntry> = arrayListOf<AppEntry>().apply {
+        searchLocations.forEach { location ->
+            try {
+                addAll(loadRoms(location, systemLanguage))
+            } catch (e : Exception) {
+                Log.w("RomProvider", "Skipping game folder '$location': ${e.message}")
+            }
+        }
+        val unique = distinctBy { it.uri }
+        clear()
+        addAll(unique)
     }
 }

@@ -6,6 +6,7 @@
 package org.stratoemu.strato.preference
 
 import android.content.Context
+import android.net.Uri
 import android.util.AttributeSet
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,45 +34,54 @@ class FirmwareImportPreference @JvmOverloads constructor(context : Context, attr
 
     private val documentPicker = (context as ComponentActivity).registerForActivityResult(ActivityResultContracts.OpenDocument()) {
         it?.let { uri ->
-            val inputZip = context.contentResolver.openInputStream(uri)
-            if (inputZip == null) {
-                Snackbar.make((context as SettingsActivity).binding.root, R.string.error, Snackbar.LENGTH_LONG).show()
-                return@registerForActivityResult
-            }
-
-            val cacheFirmwareDir = File("${context.cacheDir.path}/registered/")
-
             val task : () -> Unit = {
-                var messageToShow : Int
-
-                try {
-                    // Unzip in cache dir to not delete previous firmware in case the zip given doesn't contain a valid one
-                    ZipUtils.unzip(inputZip, cacheFirmwareDir)
-
-                    val firmware = isFirmwareValid(cacheFirmwareDir)
-                    messageToShow = if (!firmware.valid) {
-                        R.string.import_firmware_invalid_contents
-                    } else {
-                        firmwarePath.deleteRecursively()
-                        cacheFirmwareDir.copyRecursively(firmwarePath, true)
-                        persistString(firmware.version)
-                        extractFonts(firmwarePath.path, keysPath, fontsPath)
-                        CoroutineScope(Dispatchers.Main).launch {
-                            notifyChanged()
-                        }
-                        R.string.import_firmware_success
+                val result = importFirmware(uri)
+                result.version?.let { version ->
+                    persistString(version)
+                    CoroutineScope(Dispatchers.Main).launch {
+                        notifyChanged()
                     }
-                } catch (e : IOException) {
-                    messageToShow = R.string.error
-                } finally {
-                    cacheFirmwareDir.deleteRecursively()
                 }
 
-                Snackbar.make((context as SettingsActivity).binding.root, messageToShow, Snackbar.LENGTH_LONG).show()
+                Snackbar.make((context as SettingsActivity).binding.root, result.message, Snackbar.LENGTH_LONG).show()
             }
 
             IndeterminateProgressDialogFragment.newInstance(context as SettingsActivity, R.string.import_firmware_in_progress, task)
                 .show(context.supportFragmentManager, IndeterminateProgressDialogFragment.TAG)
+        }
+    }
+
+    /**
+     * @param message The string resource describing the outcome
+     * @param version The installed firmware version, null if nothing was installed
+     */
+    class ImportResult(val message : Int, val version : String?)
+
+    /**
+     * Installs the firmware from a zip, this blocks so it must run on a background thread
+     * The previous firmware is only replaced once the new one was found to be valid
+     */
+    fun importFirmware(uri : Uri) : ImportResult {
+        val inputZip = context.contentResolver.openInputStream(uri) ?: return ImportResult(R.string.error, null)
+        val cacheFirmwareDir = File("${context.cacheDir.path}/registered/")
+
+        return try {
+            // Unzip in cache dir to not delete previous firmware in case the zip given doesn't contain a valid one
+            ZipUtils.unzip(inputZip, cacheFirmwareDir)
+
+            val firmware = isFirmwareValid(cacheFirmwareDir)
+            if (!firmware.valid) {
+                ImportResult(R.string.import_firmware_invalid_contents, null)
+            } else {
+                firmwarePath.deleteRecursively()
+                cacheFirmwareDir.copyRecursively(firmwarePath, true)
+                extractFonts(firmwarePath.path, keysPath, fontsPath)
+                ImportResult(R.string.import_firmware_success, firmware.version)
+            }
+        } catch (e : IOException) {
+            ImportResult(R.string.error, null)
+        } finally {
+            cacheFirmwareDir.deleteRecursively()
         }
     }
 
