@@ -20,6 +20,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Initialize Git submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --force
+          git submodule status --recursive
+
       - name: Restore CCache
         uses: hendrikmuhs/ccache-action@v1.2
         with:

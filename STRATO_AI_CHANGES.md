@@ -68,22 +68,22 @@ Ce fichier conserve l'historique des modifications apportées au projet pendant 
 5. Tester un titre nécessitant le fallback Dynarmic.
 6. Si une erreur apparaît, ajouter le correctif au présent journal avec le fichier exact modifié.
 
-## 2026-10-05 — Implémentation storage images Vulkan
+## 2026-10-05 — Correction GitHub Actions / sous-modules
 
-### Fichiers modifiés
-- `app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc`
-- `app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.cpp`
-- `app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp`
-- `app/src/main/cpp/skyline/gpu/texture/texture.cpp`
+### `.github/workflows/build.yml`
+- Ajout d'une étape explicite d'initialisation des sous-modules après le checkout.
+- Exécution de `git submodule sync --recursive`.
+- Exécution de `git submodule update --init --recursive --force`.
+- Affichage de `git submodule status --recursive` pour rendre l'état des sous-modules visible dans les logs CI.
 
-### Changement
-- Ajout d'un chemin commun pour construire les descripteurs `VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` sans sampler.
-- `kepler_compute` écrit désormais les `image_descriptors` dans `SyncDescriptors`.
-- `maxwell_3d` écrit désormais les `storageImageDescs` dans `SyncDescriptors`.
-- Les storage images sont utilisées en layout `VK_IMAGE_LAYOUT_GENERAL` et marquées GPU-dirty lorsqu'elles sont écrites.
-- Les textures dont le format hôte supporte `eStorageImage` demandent maintenant `VK_IMAGE_USAGE_STORAGE_BIT` à la création.
+### `.github/workflows/pr_build.yml`
+- Même initialisation explicite des sous-modules pour les builds de Pull Request.
 
-### Limite / vérification
-- Les texel buffers (`eUniformTexelBuffer` / `eStorageTexelBuffer`) ne sont pas encore implémentés dans cette livraison : leur `VkBufferView` nécessite un chemin de création, de durée de vie et de format qui n'est pas présent dans cette branche.
-- Aucune compilation Android/NDK ni exécution sur le S21 n'a été effectuée dans cet environnement.
-- `git diff --check` est **OK**. Le patch de livraison est vérifié avec `patch -p1 --dry-run`.
+### Problème corrigé
+- Le checkout utilisait déjà `submodules: recursive`, mais le build GitHub fourni montrait que les répertoires `app/libraries/*` requis par CMake étaient absents.
+- Le correctif force donc la synchronisation et l'initialisation des sous-modules avant toute étape CMake/Gradle.
+- Aucun dépôt personnel n'est créé : les URLs déjà présentes dans `.gitmodules` restent utilisées.
+
+### Vérifications
+- Vérification statique des deux workflows : étape placée immédiatement après le checkout.
+- Le build Android GitHub n'est pas exécuté dans cet environnement ; son succès doit être confirmé par une nouvelle exécution GitHub Actions.
