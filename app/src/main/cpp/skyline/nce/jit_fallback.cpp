@@ -182,19 +182,22 @@ namespace skyline::nce {
                     Fail(JitFallback::Outcome::MemoryFault, fmt::format("invalid guest read at 0x{:X}", address));
                     return {};
                 }
-                T value{*reinterpret_cast<T *>(address)};
+
+                T value{};
+                std::memcpy(&value, reinterpret_cast<const void *>(address), sizeof(T));
                 Record('R', address, value);
                 return value;
             }
 
             template<typename T>
             void Write(u64 address, T value) {
-                if (!Valid(address, sizeof(T)))
+                if (!Valid(address, sizeof(T))) {
                     Fail(JitFallback::Outcome::MemoryFault, fmt::format("invalid guest write at 0x{:X}", address));
-                else {
-                    *reinterpret_cast<T *>(address) = value;
-                    Record('W', address, value);
+                    return;
                 }
+
+                std::memcpy(reinterpret_cast<void *>(address), &value, sizeof(T));
+                Record('W', address, value);
             }
 
             template<typename T>
@@ -203,6 +206,11 @@ namespace skyline::nce {
                     Fail(JitFallback::Outcome::MemoryFault, fmt::format("invalid guest exclusive write at 0x{:X}", address));
                     return false;
                 }
+                if ((address & (sizeof(T) - 1)) != 0) {
+                    Fail(JitFallback::Outcome::MemoryFault, fmt::format("unaligned guest exclusive write at 0x{:X}", address));
+                    return false;
+                }
+
                 bool success{__atomic_compare_exchange_n(reinterpret_cast<T *>(address), &expected, value, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)};
                 if (success)
                     Record('X', address, value);
@@ -217,7 +225,14 @@ namespace skyline::nce {
                 jit->HaltExecution();
             }
 
-            std::optional<std::uint32_t> MemoryReadCode(u64 vaddr) override { return Valid(vaddr, 4) ? std::optional{*reinterpret_cast<u32 *>(vaddr)} : std::nullopt; }
+            std::optional<std::uint32_t> MemoryReadCode(u64 vaddr) override {
+                if (!Valid(vaddr, sizeof(u32)))
+                    return std::nullopt;
+
+                u32 value{};
+                std::memcpy(&value, reinterpret_cast<const void *>(vaddr), sizeof(value));
+                return value;
+            }
             u8 MemoryRead8(u64 vaddr) override { return Read<u8>(vaddr); }
             u16 MemoryRead16(u64 vaddr) override { return Read<u16>(vaddr); }
             u32 MemoryRead32(u64 vaddr) override { return Read<u32>(vaddr); }
@@ -362,8 +377,18 @@ namespace skyline::nce {
                 std::string disassembly;
 #ifdef STRATO_JIT_DUMP_DISASSEMBLY
                 if (dumpDisassembly) {
-                    // NOTE: older Dynarmic versions only have DumpDisassembly() (prints to stdout), newer ones return a string from Disassemble()
-                    disassembly = fmt::format(R"(,"jit_disassembly":"{}")", JsonEscape(jit->Disassemble().substr(0, 4096)));
+                    auto instructions{jit->Disassemble()};
+                    std::string text;
+                    for (const auto &instruction : instructions) {
+                        if (!text.empty())
+                            text += "\n";
+                        text += instruction;
+                        if (text.size() >= 4096) {
+                            text.resize(4096);
+                            break;
+                        }
+                    }
+                    disassembly = fmt::format(R"(,"jit_disassembly":"{}")", JsonEscape(text));
                 }
 #endif
                 job.trace = fmt::format(R"(,"jit":{{"next_pc":"0x{:X}","regs_changed":{{{}}},"mem":[{}]}}{})", jit->GetPC(), changed, callbacks.accesses, disassembly);
@@ -405,7 +430,13 @@ namespace skyline::nce {
     }
 
     void JitFallback::Initialize(const DeviceState &state, std::string logPath, std::string gameName) {
+        std::scoped_lock lock{logMutex};
         deviceState = &state;
+        seen.clear();
+        if (logFd >= 0) {
+            close(logFd);
+            logFd = -1;
+        }
         logFd = open(logPath.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
         if (logFd < 0) {
             LOGW("NCE fallback: couldn't open '{}' for writing, failures won't be recorded", logPath);

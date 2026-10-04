@@ -107,6 +107,11 @@ buildTypes {
 
         debug {
             debuggable true
+            externalNativeBuild {
+                cmake {
+                    arguments "-DSTRATO_JIT_FALLBACK=ON"
+                }
+            }
             minifyEnabled false
             shrinkResources false
             signingConfig signingConfigs.debug

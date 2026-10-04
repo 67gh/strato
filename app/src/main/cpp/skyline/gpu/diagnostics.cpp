@@ -22,6 +22,8 @@ namespace skyline::gpu::diagnostics {
     void Initialize(std::string reportPath) {
         std::scoped_lock lock{mutex};
         path = std::move(reportPath);
+        events.clear();
+        reported = false;
     }
 
     void Record(std::string_view category, std::string_view message) {

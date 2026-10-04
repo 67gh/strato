@@ -92,7 +92,7 @@ namespace skyline::gpu {
 
         #define DEBUG_VALIDATION(string) IGNORE_VALIDATION_C(string, { raise(SIGTRAP); }) // Using __builtin_debugtrap() as opposed to raise(SIGTRAP) will result in the inability to continue
 
-        std::string_view message{messageCStr};
+        std::string_view message{messageCStr ? messageCStr : "<null Vulkan debug message>"};
 
         std::string_view type{message};
         auto first{type.find('[')};
@@ -201,7 +201,7 @@ namespace skyline::gpu {
         }
 
         // Keep the driver's messages (Turnip reports shader/GPU faults here) so they can be written next to the events that preceded them
-        diagnostics::Record("vulkan", fmt::format("{}:{}: {}", layerPrefix, vk::to_string(vk::DebugReportObjectTypeEXT(objectType)), message));
+        diagnostics::Record("vulkan", fmt::format("{}:{}: {}", layerPrefix ? layerPrefix : "?", vk::to_string(vk::DebugReportObjectTypeEXT(objectType)), message));
         if (std::string_view{message}.find("GPU faulted") != std::string_view::npos || std::string_view{message}.find("DEVICE_LOST") != std::string_view::npos)
             diagnostics::DumpFaultReport(message);
 
@@ -387,10 +387,22 @@ namespace skyline::gpu {
             }
 
             if (!libvulkanHandle)
-                libvulkanHandle = dlopen("libvulkan.so", RTLD_NOW);
+            libvulkanHandle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
         }
 
-        return reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(libvulkanHandle, "vkGetInstanceProcAddr"));
+        if (!libvulkanHandle) {
+            const char *error{dlerror()};
+            throw exception("Unable to load Vulkan driver: {}", error ? error : "unknown error");
+        }
+
+        dlerror();
+        auto getInstanceProcAddr{reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(libvulkanHandle, "vkGetInstanceProcAddr"))};
+        if (!getInstanceProcAddr) {
+            const char *error{dlerror()};
+            throw exception("Vulkan driver does not export vkGetInstanceProcAddr: {}", error ? error : "unknown error");
+        }
+
+        return getInstanceProcAddr;
     }
 
     static const DeviceState &InitializeDiagnostics(const DeviceState &state) {
