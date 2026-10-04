@@ -116,4 +116,27 @@ namespace skyline::gpu::interconnect {
             texture
         };
     }
+
+    static std::pair<vk::DescriptorImageInfo, TextureView *> GetStorageImageBinding(InterconnectContext &ctx, const auto &desc,
+                                                                                     Textures &textures, BindlessHandle handle,
+                                                                                     vk::PipelineStageFlagBits dstStage,
+                                                                                     vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
+        auto texture{textures.GetTexture(ctx, handle.textureIndex, desc.type)};
+        ctx.executor.AttachTexture(texture);
+
+        texture->texture->PopulateReadBarrier(dstStage, srcStageMask, dstStageMask);
+        texture->texture->TransitionLayout(vk::ImageLayout::eGeneral);
+        if (desc.is_written)
+            texture->texture->MarkGpuDirty(ctx.executor.usageTracker);
+
+        return {
+            vk::DescriptorImageInfo{
+                .sampler = nullptr,
+                .imageView = texture->GetView(),
+                .imageLayout = vk::ImageLayout::eGeneral,
+            },
+            texture
+        };
+    }
+
 }

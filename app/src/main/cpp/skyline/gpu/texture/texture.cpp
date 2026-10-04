@@ -599,6 +599,12 @@ namespace skyline::gpu {
           sampleCount(vk::SampleCountFlagBits::e1),
           flags(gpu.traits.quirks.vkImageMutableFormatCostly ? vk::ImageCreateFlags{} : vk::ImageCreateFlagBits::eMutableFormat),
           usage(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled) {
+        // Storage images are used by Maxwell/Kepler shader image descriptors. Only request
+        // storage usage when the host format advertises support for it; compressed and other
+        // unsupported formats must remain sample-only or image creation can fail.
+        if (gpu.vkPhysicalDevice.getFormatProperties(*format).optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage)
+            usage |= vk::ImageUsageFlagBits::eStorage;
+
         if ((format->vkAspect & vk::ImageAspectFlagBits::eColor) && !format->IsCompressed())
             usage |= vk::ImageUsageFlagBits::eColorAttachment;
         if (format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))

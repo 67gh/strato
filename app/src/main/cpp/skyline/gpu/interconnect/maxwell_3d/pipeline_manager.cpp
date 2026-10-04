@@ -836,7 +836,13 @@ namespace skyline::gpu::interconnect::maxwell3d {
                                 return binding.first;
                             }, ctx.gpu.traits.quirks.needsIndividualTextureBindingWrites);
 
-            bindingIdx += stage.storageImageDescs.size();
+            writeImageDescs(vk::DescriptorType::eStorageImage, stage.storageImageDescs, stage.storageImageDescTotalCount,
+                            [&](const DescriptorInfo::StageDescriptorInfo::StorageImageDesc &desc, size_t arrayIdx) {
+                                BindlessHandle handle{ReadBindlessHandle(ctx, constantBuffers[i], desc, arrayIdx)};
+                                auto binding{GetStorageImageBinding(ctx, desc, textures, handle,
+                                                                    stage.stage, srcStageMask, dstStageMask)};
+                                return binding.first;
+                            }, ctx.gpu.traits.quirks.needsIndividualTextureBindingWrites);
         }
 
         return ctx.executor.allocator->EmplaceUntracked<DescriptorUpdateInfo>(DescriptorUpdateInfo{
