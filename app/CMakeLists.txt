@@ -135,11 +135,26 @@ option(STRATO_JIT_FALLBACK "Enable the Dynarmic JIT fallback for instructions NC
 set(STRATO_JIT_ENABLED OFF)
 if (STRATO_JIT_FALLBACK)
     if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libraries/dynarmic/CMakeLists.txt")
-        set(STRATO_JIT_ENABLED ON)
-        set(DYNARMIC_TESTS OFF CACHE BOOL "" FORCE)
-        set(DYNARMIC_FRONTENDS "A64" CACHE STRING "" FORCE)
-        set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
-        add_subdirectory("libraries/dynarmic")
+        # Dynarmic runs find_package(Boost 1.57 REQUIRED), but the bundled Boost is a CMake superproject (nothing is installed and there's no single include
+        # directory) so FindBoost finds nothing. Point it at the headers inside the sources instead: boost/version.hpp lives in the config library, and the
+        # headers of every bundled library are added to the include path since Dynarmic uses several (container, icl...)
+        find_path(STRATO_BOOST_VERSION_DIR boost/version.hpp
+                  PATHS "${CMAKE_CURRENT_SOURCE_DIR}/libraries/boost/libs/config/include" "${CMAKE_CURRENT_SOURCE_DIR}/libraries/boost"
+                  NO_DEFAULT_PATH)
+        if (STRATO_BOOST_VERSION_DIR)
+            set(STRATO_JIT_ENABLED ON)
+            set(Boost_NO_BOOST_CMAKE ON)
+            set(Boost_INCLUDE_DIR "${STRATO_BOOST_VERSION_DIR}" CACHE PATH "Boost headers for Dynarmic" FORCE)
+            file(GLOB STRATO_BOOST_HEADER_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/libraries/boost/libs/*/include")
+            include_directories(SYSTEM ${STRATO_BOOST_HEADER_DIRS})
+
+            set(DYNARMIC_TESTS OFF CACHE BOOL "" FORCE)
+            set(DYNARMIC_FRONTENDS "A64" CACHE STRING "" FORCE)
+            set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
+            add_subdirectory("libraries/dynarmic")
+        else ()
+            message(WARNING "STRATO_JIT_FALLBACK is ON but boost/version.hpp wasn't found in libraries/boost, building WITHOUT the JIT fallback")
+        endif ()
     else ()
         message(WARNING "STRATO_JIT_FALLBACK is ON but libraries/dynarmic is empty, building WITHOUT the JIT fallback. Run: git submodule update --init --recursive app/libraries/dynarmic")
     endif ()
