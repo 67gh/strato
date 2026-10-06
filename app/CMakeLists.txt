@@ -129,42 +129,77 @@ add_subdirectory("libraries/adrenotools")
 # Tessil Robin Map
 add_subdirectory("libraries/robin-map")
 
-# Dynarmic JIT used to execute guest instructions that NCE can't run natively (see skyline/nce/jit_fallback.h)
-# It is enabled by default but only built if the submodule was fetched (git submodule update --init --recursive app/libraries/dynarmic), otherwise the build goes on without it and the log says so
+# Dynarmic JIT used to execute guest instructions that NCE can't run natively
+# (see skyline/nce/jit_fallback.h)
 option(STRATO_JIT_FALLBACK "Enable the Dynarmic JIT fallback for instructions NCE fails on" ON)
 set(STRATO_JIT_ENABLED OFF)
+
 if (STRATO_JIT_FALLBACK)
     if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libraries/dynarmic/CMakeLists.txt")
-        # Dynarmic runs find_package(Boost 1.57 REQUIRED), but the bundled Boost is a CMake superproject (nothing is installed and there's no single include
-        # directory) so FindBoost finds nothing. Point it at the headers inside the sources instead: boost/version.hpp lives in the config library, and the
-        # headers of every bundled library are added to the include path since Dynarmic uses several (container, icl...)
-        find_path(STRATO_BOOST_VERSION_DIR boost/version.hpp
-                  PATHS "${CMAKE_CURRENT_SOURCE_DIR}/libraries/boost/libs/config/include" "${CMAKE_CURRENT_SOURCE_DIR}/libraries/boost"
-                  NO_DEFAULT_PATH)
-        if (STRATO_BOOST_VERSION_DIR)
-            set(STRATO_JIT_ENABLED ON)
-            set(Boost_NO_BOOST_CMAKE ON)
-            set(Boost_INCLUDE_DIR "${STRATO_BOOST_VERSION_DIR}" CACHE PATH "Boost headers for Dynarmic" FORCE)
-            file(GLOB STRATO_BOOST_HEADER_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/libraries/boost/libs/*/include")
-            include_directories(SYSTEM ${STRATO_BOOST_HEADER_DIRS})
+        # Dynarmic requires Boost >= 1.57 through find_package().
+        # Boost is already added above as a bundled CMake project, so expose
+        # its headers explicitly instead of relying on an installed Boost on
+        # the Android runner.
+        set(STRATO_BOOST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libraries/boost")
+
+        # Find the actual Boost include root in the bundled Boost tree.
+        find_path(STRATO_BOOST_INCLUDE_DIR
+            NAMES boost/version.hpp
+            PATHS
+                "${STRATO_BOOST_ROOT}"
+                "${STRATO_BOOST_ROOT}/libs/config/include"
+            NO_DEFAULT_PATH
+        )
+
+        if (STRATO_BOOST_INCLUDE_DIR)
+            message(STATUS "Strato bundled Boost headers: ${STRATO_BOOST_INCLUDE_DIR}")
+
+            # Make Boost discoverable by Dynarmic's find_package(Boost).
+            set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "" FORCE)
+            set(Boost_NO_SYSTEM_PATHS ON CACHE BOOL "" FORCE)
+            set(BOOST_ROOT "${STRATO_BOOST_INCLUDE_DIR}" CACHE PATH "" FORCE)
+            set(Boost_INCLUDE_DIR "${STRATO_BOOST_INCLUDE_DIR}" CACHE PATH "" FORCE)
+
+            # Dynarmic uses several Boost header-only libraries.
+            file(GLOB STRATO_BOOST_HEADER_DIRS
+                "${STRATO_BOOST_ROOT}/libs/*/include"
+            )
+
+            include_directories(SYSTEM
+                "${STRATO_BOOST_INCLUDE_DIR}"
+                ${STRATO_BOOST_HEADER_DIRS}
+            )
 
             set(DYNARMIC_TESTS OFF CACHE BOOL "" FORCE)
             set(DYNARMIC_FRONTENDS "A64" CACHE STRING "" FORCE)
             set(DYNARMIC_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
             # Dynarmic's PCH can be fragile when cross-compiling with the Android NDK.
             set(DYNARMIC_USE_PRECOMPILED_HEADERS OFF CACHE BOOL "" FORCE)
+
             add_subdirectory("libraries/dynarmic")
-            if (NOT TARGET dynarmic)
-                set(STRATO_JIT_ENABLED OFF)
-                message(WARNING "Dynarmic was found but its CMake target was not created; building WITHOUT the JIT fallback")
+
+            if (TARGET dynarmic)
+                set(STRATO_JIT_ENABLED ON)
+            else ()
+                message(WARNING
+                    "Dynarmic was found but its CMake target was not created; "
+                    "building WITHOUT the JIT fallback"
+                )
             endif ()
         else ()
-            message(WARNING "STRATO_JIT_FALLBACK is ON but boost/version.hpp wasn't found in libraries/boost, building WITHOUT the JIT fallback")
+            message(WARNING
+                "STRATO_JIT_FALLBACK is ON but boost/version.hpp could not be "
+                "located in libraries/boost; building WITHOUT the JIT fallback"
+            )
         endif ()
     else ()
-        message(WARNING "STRATO_JIT_FALLBACK is ON but libraries/dynarmic is empty, building WITHOUT the JIT fallback. Run: git submodule update --init --recursive app/libraries/dynarmic")
+        message(WARNING
+            "STRATO_JIT_FALLBACK is ON but libraries/dynarmic/CMakeLists.txt "
+            "is missing; building WITHOUT the JIT fallback"
+        )
     endif ()
 endif ()
+
 message(STATUS "Dynarmic JIT fallback: ${STRATO_JIT_ENABLED}")
 
 # Renderdoc in-app API
