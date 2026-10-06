@@ -301,23 +301,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * @brief Silently checks GitHub for a newer release than the one currently installed and,
-     *        if one exists, shows a dialog offering to open the release page. Shows nothing at
-     *        all if already up to date or if the check fails for any reason (e.g. no network).
+     * @brief Checks GitHub for a newer release. Automatic checks stay silent when there is no
+     *        update; manual checks from the About page show an explicit result.
      */
-    private fun checkForUpdate() {
+    fun checkForUpdate(showUpToDateMessage : Boolean = false) {
         lifecycleScope.launch {
-            val currentInstallTimeMs = try {
-                packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-            } catch (e : Exception) {
-                return@launch // Can't reliably compare without this, so don't check at all
-            }
+            val currentBuildTimeMs = BuildConfig.BUILD_TIMESTAMP * 1000L
 
             val updateInfo = withContext(Dispatchers.IO) {
-                UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, currentInstallTimeMs)
-            } ?: return@launch
+                UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, currentBuildTimeMs, BuildConfig.BUILD_COMMIT_SHORT)
+            }
 
             if (isFinishing || isDestroyed) return@launch
+
+            if (updateInfo == null) {
+                if (showUpToDateMessage)
+                    Snackbar.make(findViewById(android.R.id.content), getString(R.string.update_up_to_date), Snackbar.LENGTH_SHORT).show()
+                return@launch
+            }
 
             val apkUrl = updateInfo.apkDownloadUrl
             MaterialAlertDialogBuilder(this@MainActivity)
@@ -325,11 +326,8 @@ class MainActivity : AppCompatActivity() {
                 .setMessage(getString(R.string.update_available_message, updateInfo.tagName))
                 .setPositiveButton(getString(R.string.update_available_action)) { _, _ ->
                     if (apkUrl != null) {
-                        // Real in-app update: downloads the APK and prompts the system installer directly
                         UpdateInstaller.downloadAndInstall(this@MainActivity, apkUrl, updateInfo.tagName)
                     } else {
-                        // No .apk asset on the release (e.g. source-only release) - nothing to
-                        // download in-app, fall back to sending the user to the release page
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.releaseUrl)))
                     }
                 }

@@ -44,7 +44,7 @@ buildTypes {
         minSdk 29
         targetSdk 33
 
-        versionCode 4
+        versionCode 3
         versionName getGitVersionName()
 
         ndk {
@@ -59,6 +59,8 @@ buildTypes {
 
         // Add available locales to the build config so that they can be accessed from the app
         buildConfigField "String[]", "AVAILABLE_APP_LANGUAGES", "new String[]{\"" + locales.join("\",\"") + "\"}"
+        buildConfigField "long", "BUILD_TIMESTAMP", getGitCommitTimestamp() + "L"
+        buildConfigField "String", "BUILD_COMMIT_SHORT", "\"" + getGitShortHash() + "\""
         // Uncomment the following line whenever AAPT2 will properly support BCP47 language tags
         //resourceConfigurations += locales
     }
@@ -236,6 +238,18 @@ def getGitVersionName() {
 /**
  * Returns the number of commits until the last tag
  */
+def getGitCommitTimestamp() {
+    try {
+        def timestamp = 'git show -s --format=%ct HEAD'.execute([], project.rootDir).text.trim()
+        if (!timestamp.isEmpty())
+            return timestamp
+    } catch (Exception e) {
+        logger.quiet(e.toString() + ': defaulting to current build timestamp')
+    }
+
+    return (System.currentTimeMillis() / 1000L)
+}
+
 def getGitVersionCode() {
     def versionCode = 1
 

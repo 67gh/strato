@@ -25,13 +25,14 @@ data class UpdateInfo(
  * @brief Queries the GitHub Releases API for the given repository and compares the release's
  *        publish timestamp against the currently installed APK's install/update timestamp.
  *
- * NOTE: this repo's release tags are always "0.0.0-<hash>" (a fixed "0.0.0" prefix followed by
- * a changing alphanumeric suffix), so there is no usable version or date to parse out of the
- * tag name itself - comparing tag strings or extracting a date from them will never work here.
- * Instead we compare the release's "published_at" timestamp (always present and reliable on the
- * GitHub API) against [currentInstallTimeMs], which the caller should obtain via
- * `packageManager.getPackageInfo(packageName, 0).lastUpdateTime` - a genuinely local, reliable
- * signal for "when was the app I'm currently running actually installed/updated".
+ * The repository publishes its builds as GitHub pre-releases, so the GitHub
+ * `releases/latest` endpoint is not sufficient: it can ignore the newest build entirely.
+ * We therefore query the release list and select the newest published release, including
+ * pre-releases.
+ *
+ * Release tags are generated from a date and commit hash, so they are not a stable semantic
+ * version. Comparing the release's `published_at` timestamp against [currentInstallTimeMs]
+ * is therefore the reliable way to answer "is there a build newer than the APK installed here?".
  *
  * This never throws: any network failure, malformed response, or parsing error results in
  * `null` being returned so that a failed check is silently ignored rather than shown to
@@ -44,13 +45,14 @@ object UpdateChecker {
     /**
      * @param owner The GitHub username/organization that owns the repository (e.g. "67gh")
      * @param repo The repository name (e.g. "strato")
-     * @param currentInstallTimeMs Epoch milliseconds of when the currently running APK was
-     *                             installed/last updated on this device (see note above)
+     * @param currentBuildTimeMs Epoch milliseconds of the commit used to build the currently
+     *                            running APK
+     * @param currentBuildCommitShort Short git commit hash embedded in the APK
      * @return Information about the newer release if one exists, otherwise `null`
      */
-    fun checkForUpdate(owner : String, repo : String, currentInstallTimeMs : Long) : UpdateInfo? {
+    fun checkForUpdate(owner : String, repo : String, currentBuildTimeMs : Long, currentBuildCommitShort : String) : UpdateInfo? {
         return try {
-            val url = URL("https://api.github.com/repos/$owner/$repo/releases/latest")
+            val url = URL("https://api.github.com/repos/$owner/$repo/releases?per_page=20")
             val connection = url.openConnection() as HttpURLConnection
             connection.connectTimeout = TIMEOUT_MS
             connection.readTimeout = TIMEOUT_MS
@@ -63,22 +65,45 @@ object UpdateChecker {
                 }
 
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(body)
+                val releases = org.json.JSONArray(body)
 
-                val tagName = json.optString("tag_name", "")
-                val publishedAt = json.optString("published_at", "")
-                val remoteTimeMs = parseIso8601(publishedAt) ?: run {
-                    Log.w(TAG, "Could not parse published_at '$publishedAt', skipping update check")
-                    return null
+                var newestRelease : JSONObject? = null
+                var newestReleaseTimeMs = Long.MIN_VALUE
+
+                for (i in 0 until releases.length()) {
+                    val release = releases.optJSONObject(i) ?: continue
+                    if (release.optBoolean("draft", false))
+                        continue
+
+                    val publishedAt = release.optString("published_at", "")
+                    val releaseTimeMs = parseIso8601(publishedAt) ?: continue
+                    if (releaseTimeMs > newestReleaseTimeMs) {
+                        newestReleaseTimeMs = releaseTimeMs
+                        newestRelease = release
+                    }
                 }
 
-                if (remoteTimeMs <= currentInstallTimeMs)
+                val release = newestRelease ?: return null
+                if (newestReleaseTimeMs <= currentBuildTimeMs)
                     return null // Already up to date (or somehow newer, e.g. a local dev build)
 
-                val releaseUrl = json.optString("html_url", "https://github.com/$owner/$repo/releases/latest")
+                val tagName = release.optString("tag_name", "")
+                if (tagName.isEmpty())
+                    return null
+
+                // The release workflow tags the exact commit as vYYYY.MM.DD-<short-sha>.
+                // A release can therefore be published after its APK was built; matching the
+                // commit avoids offering the exact same build as an "update".
+                if (tagName.endsWith("-${currentBuildCommitShort}"))
+                    return null
+
+                val releaseUrl = release.optString(
+                    "html_url",
+                    "https://github.com/$owner/$repo/releases/latest"
+                )
 
                 var apkDownloadUrl : String? = null
-                val assets = json.optJSONArray("assets")
+                val assets = release.optJSONArray("assets")
                 if (assets != null) {
                     for (i in 0 until assets.length()) {
                         val asset = assets.getJSONObject(i)
