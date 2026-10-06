@@ -20,6 +20,8 @@
 #include <common.h>
 #include <common/signal.h>
 #include <loader/loader.h>
+#include <kernel/types/KProcess.h>
+#include <kernel/types/KThread.h>
 
 namespace skyline::nce {
     /**
@@ -52,6 +54,8 @@ namespace skyline::nce {
             std::atomic<bool> done;
             bool guest;
             u64 pc, lr, sp, fp, x0, x1, x2, x3;
+            u64 saved[10]; //!< X19-X28, callee-saved registers which usually hold the pointers a loop works on (e.g. a lock word)
+            kernel::type::KThread *thread; //!< The KThread of the interrupted thread, only set for guest threads
         };
 
         static inline Capture capture{};
@@ -76,6 +80,8 @@ namespace skyline::nce {
             capture.x1 = mctx.regs[1];
             capture.x2 = mctx.regs[2];
             capture.x3 = mctx.regs[3];
+            for (size_t i{}; i < 10; i++)
+                capture.saved[i] = mctx.regs[19 + i];
             capture.done.store(true, std::memory_order_release);
         }
 
@@ -83,6 +89,7 @@ namespace skyline::nce {
          * @brief Called when the signal interrupts guest code, the guest TLS has already been swapped for the host one by the caller
          */
         static void GuestSampleHandler(int, siginfo *, ucontext *context, void **) {
+            capture.thread = DeviceState::thread.get();
             Record(context, true);
         }
 
@@ -90,6 +97,7 @@ namespace skyline::nce {
          * @brief Called when the signal interrupts host code (e.g. inside a SVC), the TLS may not be valid so stack protector is disabled and nothing but stores is done
          */
         static void __attribute__((no_stack_protector)) HostSampleHandler(int, siginfo *, ucontext *context) {
+            capture.thread = nullptr;
             Record(context, false);
         }
 
@@ -121,6 +129,51 @@ namespace skyline::nce {
             return text;
         }
 
+        static bool ReadWord(u64 address, u32 &word) {
+            int fd{open("/proc/self/mem", O_RDONLY | O_CLOEXEC)};
+            if (fd < 0)
+                return false;
+            bool ok{pread(fd, &word, sizeof(word), static_cast<off_t>(address)) == static_cast<ssize_t>(sizeof(word))};
+            close(fd);
+            return ok;
+        }
+
+        /**
+         * @brief A one line description of the scheduling state of a guest thread, fields are read without synchronization so they can be momentarily inconsistent
+         */
+        static std::string DescribeThread(kernel::type::KThread *thread) {
+            if (!thread)
+                return "(unknown)";
+            return fmt::format("id {} handle 0x{:X} priority {} (base {}) core {} (ideal {}) affinity 0x{:X} running {} paused {} preempted {} waitMutex 0x{:X} waitThread {}",
+                               thread->id, thread->handle, static_cast<int>(thread->priority.load()), static_cast<int>(thread->basePriority.load()), thread->coreId, thread->idealCore,
+                               thread->affinityMask.to_ullong(), thread->running, thread->isPaused, thread->isPreempted, reinterpret_cast<u64>(thread->waitMutex),
+                               thread->waitThread ? static_cast<i64>(thread->waitThread->id) : -1);
+        }
+
+        /**
+         * @brief Describes what the saved registers point to, which for a lock-wait loop reveals the lock word, its value and (if the value is a thread handle) its owner
+         */
+        static std::string DescribeRegisters(const DeviceState &state, kernel::type::KThread *self) {
+            constexpr u32 HandleWaitersBit{1U << 30}; // Set in a guest mutex value when other threads are waiting on it, the rest is the owner's handle
+            std::string out{fmt::format("\n  this thread: {}", DescribeThread(self))};
+            for (size_t i{}; i < 10; i++) {
+                u64 value{capture.saved[i]};
+                u32 word{};
+                if (value < 0x10000 || value >= (1ULL << 39) || (value & 3) || !ReadWord(value, word))
+                    continue;
+
+                out += fmt::format("\n  X{} = 0x{:X} -> [0x{:X}] = 0x{:X}", 19 + i, value, value, word);
+                if (u32 owner{word & ~HandleWaitersBit}; owner) {
+                    try {
+                        auto thread{state.process->GetHandle<kernel::type::KThread>(owner)};
+                        out += fmt::format("\n    if this is a lock, owner handle 0x{:X} = thread {}", owner, DescribeThread(thread.get()));
+                    } catch (...) {
+                    }
+                }
+            }
+            return out;
+        }
+
         /**
          * @brief Formats the raw 32-bit instruction words in [address - before, address + after) with the one at 'address' in brackets
          * @note Reads through /proc/self/mem so an unmapped address just fails instead of faulting
@@ -150,7 +203,7 @@ namespace skyline::nce {
                     if (SampleThread(tid)) {
                         if (!codeDumped && capture.guest) {
                             codeDumped = true;
-                            report += fmt::format("\n  code at PC 0x{:X}:{}\n  code before LR 0x{:X}:{}", capture.pc, DumpWords(capture.pc, 16, 16), capture.lr, DumpWords(capture.lr, 16, 4));
+                            report += fmt::format("\n  code at PC 0x{:X}:{}\n  code before LR 0x{:X}:{}{}", capture.pc, DumpWords(capture.pc, 16, 16), capture.lr, DumpWords(capture.lr, 16, 4), DescribeRegisters(state, capture.thread));
                         }
                         std::string frames;
                         try {
