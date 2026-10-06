@@ -339,7 +339,7 @@ namespace skyline::nce {
             jit->SetPstate(static_cast<u32>(mctx.pstate) & 0xF0000000);
             jit->SetFpcr(fp->fpcr);
             jit->SetFpsr(fp->fpsr);
-            Dynarmic::A64::Jit::Vector vectors;
+            std::array<Dynarmic::A64::Vector, 32> vectors;
             for (size_t i{}; i < 32; i++)
                 std::memcpy(&vectors[i], &fp->vregs[i], sizeof(vectors[i]));
             jit->SetVectors(vectors);
