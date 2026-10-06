@@ -5,6 +5,7 @@
 #include "nce.h"
 #include "nce/guest.h"
 #include "nce/jit_fallback.h"
+#include "nce/hang_watchdog.h"
 #include "kernel/types/KProcess.h"
 #include "vfs/os_backing.h"
 #include "loader/nro.h"
@@ -73,6 +74,8 @@ namespace skyline::kernel {
             nce::JitFallback::Initialize(state, publicAppFilesPath + "nce_fallback.jsonl", gameName);
         }
 
+        nce::HangWatchdog::Start();
+
         process->InitializeHeapTls();
         auto thread{process->CreateThread(entry)};
         if (thread) {
@@ -80,5 +83,7 @@ namespace skyline::kernel {
             thread->Start(true);
             process->Kill(true, true, true);
         }
+
+        nce::HangWatchdog::Stop();
     }
 }
