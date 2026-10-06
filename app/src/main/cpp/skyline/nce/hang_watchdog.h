@@ -9,6 +9,7 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <algorithm>
 #include <condition_variable>
 #include <unordered_map>
 #include <csignal>
@@ -129,13 +130,20 @@ namespace skyline::nce {
             return text;
         }
 
-        static bool ReadWord(u64 address, u32 &word) {
+        /**
+         * @brief Reads memory of this process through /proc/self/mem so an unmapped address just fails instead of faulting
+         */
+        static bool ReadMemory(u64 address, void *buffer, size_t size) {
             int fd{open("/proc/self/mem", O_RDONLY | O_CLOEXEC)};
             if (fd < 0)
                 return false;
-            bool ok{pread(fd, &word, sizeof(word), static_cast<off_t>(address)) == static_cast<ssize_t>(sizeof(word))};
+            bool ok{pread(fd, buffer, size, static_cast<off_t>(address)) == static_cast<ssize_t>(size)};
             close(fd);
             return ok;
+        }
+
+        static bool ReadWord(u64 address, u32 &word) {
+            return ReadMemory(address, &word, sizeof(word));
         }
 
         /**
@@ -195,6 +203,45 @@ namespace skyline::nce {
             return out;
         }
 
+        /**
+         * @brief Logs the call stack (host and guest frames) of every given thread by following the frame pointer chain from where it was interrupted
+         * @details For a thread blocked in a SVC this shows which guest function called it, e.g. what the holder of a lock everyone else spins on is waiting for
+         */
+        static void DumpThreadStacks(const DeviceState &state, u64 index, const std::vector<std::pair<int, std::string>> &threads) {
+            constexpr size_t MaxFrames{18};
+            for (const auto &[tid, name] : threads) {
+                if (!SampleThread(tid)) {
+                    LOGINF("Watchdog #{}: stack of {} (tid {}): no answer", index, name, tid);
+                    continue;
+                }
+
+                std::vector<void *> frames{reinterpret_cast<void *>(capture.pc)};
+                if (capture.lr)
+                    frames.push_back(reinterpret_cast<void *>(capture.lr));
+
+                u64 fp{capture.fp};
+                for (size_t i{}; i < MaxFrames && fp >= 0x10000 && !(fp & 7); i++) {
+                    u64 record[2]; // {previous frame pointer, return address}
+                    if (!ReadMemory(fp, record, sizeof(record)) || !record[1])
+                        break;
+                    if (reinterpret_cast<void *>(record[1]) != frames.back())
+                        frames.push_back(reinterpret_cast<void *>(record[1]));
+                    if (record[0] <= fp)
+                        break;
+                    fp = record[0];
+                }
+
+                std::string trace;
+                try {
+                    trace = state.loader->GetStackTrace(frames);
+                } catch (...) {
+                    trace = "\n* (symbol resolution failed)";
+                }
+                LOGINF("Watchdog #{}: stack of {} (tid {}) [{}]:{}", index, name, tid, capture.guest ? "guest" : "host", trace);
+                std::this_thread::sleep_for(SampleSpacing);
+            }
+        }
+
         static void SampleHotThreads(const DeviceState &state, u64 index, const std::vector<std::pair<int, std::string>> &hotThreads) {
             for (const auto &[tid, name] : hotThreads) {
                 std::string report;
@@ -228,7 +275,7 @@ namespace skyline::nce {
             const long ticksPerSecond{sysconf(_SC_CLK_TCK)};
             const long pageSize{sysconf(_SC_PAGESIZE)};
             std::unordered_map<int, Sample> previous;
-            u64 index{};
+            u64 index{}, hotPeriods{};
 
             std::unique_lock lock{mutex};
             while (!stop) {
@@ -244,7 +291,7 @@ namespace skyline::nce {
 
                 u32 running{}, sleeping{}, disk{}, other{};
                 std::string details;
-                std::vector<std::pair<int, std::string>> hotThreads;
+                std::vector<std::pair<int, std::string>> hotThreads, guestThreads;
 
                 if (auto *dir{opendir("/proc/self/task")}) {
                     while (auto *entry{readdir(dir)}) {
@@ -280,9 +327,12 @@ namespace skyline::nce {
                         u64 delta{userDelta + sysDelta};
                         previous[tid] = Sample{utime, stime};
 
+                        std::string name{ReadFile(base + "comm")};
+                        if (name.starts_with("HOS-"))
+                            guestThreads.emplace_back(tid, name);
+
                         // Only threads that did work or are in uninterruptible sleep are listed, idle threads would drown out the interesting ones
                         if (delta > 0 || state[0] == 'D') {
-                            std::string name{ReadFile(base + "comm")};
                             std::string wchan{ReadFile(base + "wchan")};
                             const u64 window{static_cast<u64>(ticksPerSecond) * static_cast<u64>(period.count())};
                             u64 percent{delta * 100 / window};
@@ -298,8 +348,18 @@ namespace skyline::nce {
                 index++;
                 LOGINF("Watchdog #{}: RSS {} MiB, threads: {} running, {} sleeping, {} disk-wait, {} other{}", index, rssPages * pageSize / (1024 * 1024), running, sleeping, disk, other, details);
 
-                if (!hotThreads.empty())
+                if (!hotThreads.empty()) {
                     SampleHotThreads(*state, index, hotThreads);
+
+                    // The threads that are not spinning (e.g. the holder of the lock the others wait on) are dumped on the first hot period and every 6th one afterwards
+                    if (samplerEnabled && (hotPeriods++ % 6) == 0) {
+                        std::vector<std::pair<int, std::string>> others;
+                        for (const auto &thread : guestThreads)
+                            if (std::none_of(hotThreads.begin(), hotThreads.end(), [&](const auto &hot) { return hot.first == thread.first; }))
+                                others.push_back(thread);
+                        DumpThreadStacks(*state, index, others);
+                    }
+                }
             }
         }
 
