@@ -182,7 +182,12 @@ if (STRATO_JIT_FALLBACK)
             # Dynarmic's PCH can be fragile when cross-compiling with the Android NDK.
             set(DYNARMIC_USE_PRECOMPILED_HEADERS OFF CACHE BOOL "" FORCE)
 
+            # Dynarmic is embedded into Strato and is not installed as a standalone package.
+            # Its install(EXPORT ...) rules would otherwise fail because the bundled Boost/fmt
+            # targets are not part of Dynarmic's export set.
+            set(CMAKE_SKIP_INSTALL_RULES ON)
             add_subdirectory("libraries/dynarmic")
+            set(CMAKE_SKIP_INSTALL_RULES OFF)
 
             if (NOT TARGET dynarmic)
                 set(STRATO_JIT_ENABLED OFF)
