@@ -60,7 +60,7 @@ buildTypes {
         // Add available locales to the build config so that they can be accessed from the app
         buildConfigField "String[]", "AVAILABLE_APP_LANGUAGES", "new String[]{\"" + locales.join("\",\"") + "\"}"
         buildConfigField "long", "BUILD_TIMESTAMP", getGitCommitTimestamp() + "L"
-        buildConfigField "String", "BUILD_COMMIT_SHORT", "\"" + getGitShortHash() + "\""
+        buildConfigField "String", "BUILD_COMMIT_FULL", "\"" + getGitFullHash() + "\""
         // Uncomment the following line whenever AAPT2 will properly support BCP47 language tags
         //resourceConfigurations += locales
     }
@@ -271,9 +271,25 @@ def getGitShortHash() {
     def gitHash = '0'
 
     try {
-        gitHash = 'git rev-parse --short HEAD'.execute([], project.rootDir).text.trim()
+        gitHash = 'git rev-parse --short=12 HEAD'.execute([], project.rootDir).text.trim()
     } catch (Exception e) {
         logger.error(e.toString() + ': defaulting to dummy build hash ' + gitHash)
+    }
+
+    return gitHash
+}
+
+
+/**
+ * Returns the full commit hash.
+ */
+def getGitFullHash() {
+    def gitHash = '0'
+
+    try {
+        gitHash = 'git rev-parse HEAD'.execute([], project.rootDir).text.trim()
+    } catch (Exception e) {
+        logger.error(e.toString() + ': defaulting to dummy full build hash ' + gitHash)
     }
 
     return gitHash

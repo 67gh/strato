@@ -57,8 +57,14 @@ jobs:
           ls -lh ./artifacts/
           APK=$(find ./artifacts -name "*.apk" | head -n 1)
           [ -z "$APK" ] && exit 1
+          BUILD_SHA_FILE=$(find ./artifacts -name "release-commit.txt" | head -n 1)
+          [ -z "$BUILD_SHA_FILE" ] && exit 1
+          BUILD_SHA=$(tr -d '[:space:]' < "$BUILD_SHA_FILE")
+          [ -z "$BUILD_SHA" ] && exit 1
+          git cat-file -e "$BUILD_SHA^{commit}"
           echo "apk_path=$APK" >> $GITHUB_OUTPUT
-          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "build_sha=$BUILD_SHA" >> $GITHUB_OUTPUT
+          SHORT_SHA=$(git rev-parse --short=12 "$BUILD_SHA")
           DATE=$(date +'%Y.%m.%d')
           echo "version=${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "tag_name=v${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
@@ -91,7 +97,7 @@ jobs:
           TAG="${{ steps.inspect.outputs.tag_name }}"
           git push origin :refs/tags/$TAG 2>/dev/null || true
           git tag -d $TAG 2>/dev/null || true
-          git tag -a $TAG -m "Release $TAG"
+          git tag -a $TAG "${{ steps.inspect.outputs.build_sha }}" -m "Release $TAG"
           git push origin $TAG
 
       - name: Create Release

@@ -47,10 +47,10 @@ object UpdateChecker {
      * @param repo The repository name (e.g. "strato")
      * @param currentBuildTimeMs Epoch milliseconds of the commit used to build the currently
      *                            running APK
-     * @param currentBuildCommitShort Short git commit hash embedded in the APK
+     * @param currentBuildCommitFull Full git commit hash embedded in the APK
      * @return Information about the newer release if one exists, otherwise `null`
      */
-    fun checkForUpdate(owner : String, repo : String, currentBuildTimeMs : Long, currentBuildCommitShort : String) : UpdateInfo? {
+    fun checkForUpdate(owner : String, repo : String, currentBuildTimeMs : Long, currentBuildCommitFull : String) : UpdateInfo? {
         return try {
             val url = URL("https://api.github.com/repos/$owner/$repo/releases?per_page=20")
             val connection = url.openConnection() as HttpURLConnection
@@ -91,10 +91,12 @@ object UpdateChecker {
                 if (tagName.isEmpty())
                     return null
 
-                // The release workflow tags the exact commit as vYYYY.MM.DD-<short-sha>.
-                // A release can therefore be published after its APK was built; matching the
-                // commit avoids offering the exact same build as an "update".
-                if (tagName.endsWith("-${currentBuildCommitShort}"))
+                // The release workflow tags the exact commit as vYYYY.MM.DD-<12-char-sha>.
+                // The APK stores the full commit hash. Comparing the tag's commit prefix
+                // against that full hash avoids treating the exact same build as an update,
+                // even if the release is published after the APK was built.
+                val releaseCommit = tagName.substringAfterLast('-', "")
+                if (releaseCommit.isNotEmpty() && currentBuildCommitFull.startsWith(releaseCommit))
                     return null
 
                 val releaseUrl = release.optString(

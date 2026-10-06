@@ -110,7 +110,7 @@ class SettingsHomeFragment : Fragment() {
                     "67gh",
                     "strato",
                     currentBuildTimeMs,
-                    org.stratoemu.strato.BuildConfig.BUILD_COMMIT_SHORT
+                    org.stratoemu.strato.BuildConfig.BUILD_COMMIT_FULL
                 )
             }
 

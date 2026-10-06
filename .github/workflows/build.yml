@@ -15,6 +15,7 @@ jobs:
       - name: Git Checkout
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           submodules: recursive
 
       - name: Auto-increment versionCode
@@ -93,9 +94,14 @@ jobs:
             -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
             -Pandroid.injected.signing.key.password=$KEY_PASS
 
+      - name: Record build commit
+        run: git rev-parse HEAD > release-commit.txt
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mainline-release-apk
-          path: app/build/outputs/apk/mainline/release/*.apk
+          path: |
+            app/build/outputs/apk/mainline/release/*.apk
+            release-commit.txt
           if-no-files-found: error

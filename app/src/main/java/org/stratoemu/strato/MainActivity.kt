@@ -309,7 +309,7 @@ class MainActivity : AppCompatActivity() {
             val currentBuildTimeMs = BuildConfig.BUILD_TIMESTAMP * 1000L
 
             val updateInfo = withContext(Dispatchers.IO) {
-                UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, currentBuildTimeMs, BuildConfig.BUILD_COMMIT_SHORT)
+                UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, currentBuildTimeMs, BuildConfig.BUILD_COMMIT_FULL)
             }
 
             if (isFinishing || isDestroyed) return@launch
