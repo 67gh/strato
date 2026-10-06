@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/syscall.h>
+#include <fcntl.h>
 #include <common.h>
 #include <common/signal.h>
 #include <loader/loader.h>
@@ -40,7 +41,8 @@ namespace skyline::nce {
         static constexpr auto SampleSpacing{std::chrono::milliseconds{10}};
 
         struct Sample {
-            u64 ticks{}; //!< utime + stime in clock ticks at the previous sample
+            u64 utime{}; //!< User CPU time in clock ticks at the previous sample
+            u64 stime{}; //!< Kernel CPU time in clock ticks at the previous sample
         };
 
         /**
@@ -119,11 +121,37 @@ namespace skyline::nce {
             return text;
         }
 
+        /**
+         * @brief Formats the raw 32-bit instruction words in [address - before, address + after) with the one at 'address' in brackets
+         * @note Reads through /proc/self/mem so an unmapped address just fails instead of faulting
+         */
+        static std::string DumpWords(u64 address, size_t before, size_t after) {
+            int fd{open("/proc/self/mem", O_RDONLY | O_CLOEXEC)};
+            if (fd < 0)
+                return "(cannot open /proc/self/mem)";
+
+            std::string out;
+            for (u64 cursor{address - before}; cursor < address + after; cursor += sizeof(u32)) {
+                u32 word{};
+                if (pread(fd, &word, sizeof(word), static_cast<off_t>(cursor)) != static_cast<ssize_t>(sizeof(word)))
+                    out += " ????????";
+                else
+                    out += (cursor == address) ? fmt::format(" [{:08x}]", word) : fmt::format(" {:08x}", word);
+            }
+            close(fd);
+            return out;
+        }
+
         static void SampleHotThreads(const DeviceState &state, u64 index, const std::vector<std::pair<int, std::string>> &hotThreads) {
             for (const auto &[tid, name] : hotThreads) {
                 std::string report;
+                bool codeDumped{};
                 for (size_t i{}; i < SamplesPerThread; i++) {
                     if (SampleThread(tid)) {
+                        if (!codeDumped && capture.guest) {
+                            codeDumped = true;
+                            report += fmt::format("\n  code at PC 0x{:X}:{}\n  code before LR 0x{:X}:{}", capture.pc, DumpWords(capture.pc, 16, 16), capture.lr, DumpWords(capture.lr, 16, 4));
+                        }
                         std::string frames;
                         try {
                             frames = state.loader->GetStackTrace(std::vector<void *>{reinterpret_cast<void *>(capture.pc), reinterpret_cast<void *>(capture.lr)});
@@ -193,17 +221,19 @@ namespace skyline::nce {
                             default: other++; break;
                         }
 
-                        u64 ticks{utime + stime};
                         auto it{previous.find(tid)};
-                        u64 delta{it != previous.end() ? ticks - it->second.ticks : 0};
-                        previous[tid].ticks = ticks;
+                        u64 userDelta{it != previous.end() ? utime - it->second.utime : 0};
+                        u64 sysDelta{it != previous.end() ? stime - it->second.stime : 0};
+                        u64 delta{userDelta + sysDelta};
+                        previous[tid] = Sample{utime, stime};
 
                         // Only threads that did work or are in uninterruptible sleep are listed, idle threads would drown out the interesting ones
                         if (delta > 0 || state[0] == 'D') {
                             std::string name{ReadFile(base + "comm")};
                             std::string wchan{ReadFile(base + "wchan")};
-                            u64 percent{delta * 100 / (static_cast<u64>(ticksPerSecond) * static_cast<u64>(period.count()))};
-                            details += fmt::format("\n    tid {:>6} {:<16} state {} cpu {:>3}% wchan {}", tid, name, state, percent, wchan.empty() ? "-" : wchan);
+                            const u64 window{static_cast<u64>(ticksPerSecond) * static_cast<u64>(period.count())};
+                            u64 percent{delta * 100 / window};
+                            details += fmt::format("\n    tid {:>6} {:<16} state {} cpu {:>3}% (user {:>3}% sys {:>3}%) wchan {}", tid, name, state, percent, userDelta * 100 / window, sysDelta * 100 / window, wchan.empty() ? "-" : wchan);
 
                             if (samplerEnabled && percent >= HotThreadCpuPercent && name.starts_with("HOS-") && hotThreads.size() < MaxSampledThreads)
                                 hotThreads.emplace_back(tid, name);
