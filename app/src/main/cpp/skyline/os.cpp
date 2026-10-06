@@ -74,7 +74,7 @@ namespace skyline::kernel {
             nce::JitFallback::Initialize(state, publicAppFilesPath + "nce_fallback.jsonl", gameName);
         }
 
-        nce::HangWatchdog::Start();
+        nce::HangWatchdog::Start(state);
 
         process->InitializeHeapTls();
         auto thread{process->CreateThread(entry)};

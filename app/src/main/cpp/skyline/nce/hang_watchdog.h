@@ -7,30 +7,107 @@
 #include <chrono>
 #include <thread>
 #include <mutex>
+#include <atomic>
+#include <vector>
 #include <condition_variable>
 #include <unordered_map>
+#include <csignal>
 #include <dirent.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/syscall.h>
 #include <common.h>
+#include <common/signal.h>
+#include <loader/loader.h>
 
 namespace skyline::nce {
     /**
      * @brief Periodically logs what every host thread of the process is doing so a frozen game can be diagnosed from the normal log
      * @details Every period it reads /proc/self/task/<tid>/{stat,wchan,comm} and writes one summary line (RSS, thread counts) followed by one
      * line per thread that used CPU since the last sample. A thread that is stuck waiting shows state S/D and no CPU, one that spins in guest
-     * code shows state R and a high CPU percentage. Header-only on purpose, it needs no build system change.
+     * code shows state R and a high CPU percentage.
+     * For guest threads (HOS-N) above HotThreadCpuPercent it additionally interrupts the thread with SIGUSR2 a few times and logs where it was
+     * (PC, LR, SP, FP, X0-X3) with the module/symbol resolved by the loader, which shows what a spinning guest thread is waiting for.
+     * Header-only on purpose, it needs no build system change.
      */
     class HangWatchdog {
       private:
+        static constexpr int SampleSignal{SIGUSR2}; //!< The signal used to interrupt a thread and read its registers
+        static constexpr u64 HotThreadCpuPercent{50}; //!< Threads using at least this much CPU over the period are sampled
+        static constexpr size_t MaxSampledThreads{4}; //!< Maximum number of threads sampled per period
+        static constexpr size_t SamplesPerThread{3};
+        static constexpr auto SampleTimeout{std::chrono::milliseconds{50}};
+        static constexpr auto SampleSpacing{std::chrono::milliseconds{10}};
+
         struct Sample {
             u64 ticks{}; //!< utime + stime in clock ticks at the previous sample
         };
+
+        /**
+         * @brief The registers captured by the sampling signal handler, only one request is ever in flight
+         */
+        struct Capture {
+            std::atomic<bool> done;
+            bool guest;
+            u64 pc, lr, sp, fp, x0, x1, x2, x3;
+        };
+
+        static inline Capture capture{};
+        static inline bool samplerEnabled{};
 
         static inline std::thread thread;
         static inline std::mutex mutex;
         static inline std::condition_variable cv;
         static inline bool stop{true};
+
+        /**
+         * @brief Records the registers of the interrupted context, this runs on the interrupted thread so it only does plain stores
+         */
+        static void Record(ucontext *context, bool guest) {
+            auto &mctx{context->uc_mcontext};
+            capture.guest = guest;
+            capture.pc = mctx.pc;
+            capture.lr = mctx.regs[30];
+            capture.sp = mctx.sp;
+            capture.fp = mctx.regs[29];
+            capture.x0 = mctx.regs[0];
+            capture.x1 = mctx.regs[1];
+            capture.x2 = mctx.regs[2];
+            capture.x3 = mctx.regs[3];
+            capture.done.store(true, std::memory_order_release);
+        }
+
+        /**
+         * @brief Called when the signal interrupts guest code, the guest TLS has already been swapped for the host one by the caller
+         */
+        static void GuestSampleHandler(int, siginfo *, ucontext *context, void **) {
+            Record(context, true);
+        }
+
+        /**
+         * @brief Called when the signal interrupts host code (e.g. inside a SVC), the TLS may not be valid so stack protector is disabled and nothing but stores is done
+         */
+        static void __attribute__((no_stack_protector)) HostSampleHandler(int, siginfo *, ucontext *context) {
+            Record(context, false);
+        }
+
+        /**
+         * @brief Interrupts a thread and returns the registers it was executing with
+         * @return True if the thread answered in time, false otherwise (e.g. it went to sleep and the signal is still pending)
+         */
+        static bool SampleThread(int tid) {
+            capture.done.store(false, std::memory_order_relaxed);
+            if (syscall(SYS_tgkill, getpid(), tid, SampleSignal) != 0)
+                return false;
+
+            auto deadline{std::chrono::steady_clock::now() + SampleTimeout};
+            while (!capture.done.load(std::memory_order_acquire)) {
+                if (std::chrono::steady_clock::now() > deadline)
+                    return false;
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
+            return true;
+        }
 
         static std::string ReadFile(const std::string &path) {
             std::ifstream file{path};
@@ -42,7 +119,28 @@ namespace skyline::nce {
             return text;
         }
 
-        static void Run(std::chrono::seconds period) {
+        static void SampleHotThreads(const DeviceState &state, u64 index, const std::vector<std::pair<int, std::string>> &hotThreads) {
+            for (const auto &[tid, name] : hotThreads) {
+                std::string report;
+                for (size_t i{}; i < SamplesPerThread; i++) {
+                    if (SampleThread(tid)) {
+                        std::string frames;
+                        try {
+                            frames = state.loader->GetStackTrace(std::vector<void *>{reinterpret_cast<void *>(capture.pc), reinterpret_cast<void *>(capture.lr)});
+                        } catch (...) {
+                            frames = "\n* (symbol resolution failed)";
+                        }
+                        report += fmt::format("\n  sample {} [{}] SP 0x{:X} FP 0x{:X} X0 0x{:X} X1 0x{:X} X2 0x{:X} X3 0x{:X}{}", i + 1, capture.guest ? "guest" : "host", capture.sp, capture.fp, capture.x0, capture.x1, capture.x2, capture.x3, frames);
+                    } else {
+                        report += fmt::format("\n  sample {}: no answer within {} ms (thread is sleeping or in a non-interruptible state)", i + 1, SampleTimeout.count());
+                    }
+                    std::this_thread::sleep_for(SampleSpacing);
+                }
+                LOGINF("Watchdog #{}: where {} (tid {}) is running:{}", index, name, tid, report);
+            }
+        }
+
+        static void Run(const DeviceState *state, std::chrono::seconds period) {
             pthread_setname_np(pthread_self(), "Sky-Watchdog");
             AsyncLogger::UpdateTag();
 
@@ -65,6 +163,7 @@ namespace skyline::nce {
 
                 u32 running{}, sleeping{}, disk{}, other{};
                 std::string details;
+                std::vector<std::pair<int, std::string>> hotThreads;
 
                 if (auto *dir{opendir("/proc/self/task")}) {
                     while (auto *entry{readdir(dir)}) {
@@ -103,23 +202,40 @@ namespace skyline::nce {
                         if (delta > 0 || state[0] == 'D') {
                             std::string name{ReadFile(base + "comm")};
                             std::string wchan{ReadFile(base + "wchan")};
-                            details += fmt::format("\n    tid {:>6} {:<16} state {} cpu {:>3}% wchan {}", tid, name, state, delta * 100 / (ticksPerSecond * period.count()), wchan.empty() ? "-" : wchan);
+                            u64 percent{delta * 100 / (static_cast<u64>(ticksPerSecond) * static_cast<u64>(period.count()))};
+                            details += fmt::format("\n    tid {:>6} {:<16} state {} cpu {:>3}% wchan {}", tid, name, state, percent, wchan.empty() ? "-" : wchan);
+
+                            if (samplerEnabled && percent >= HotThreadCpuPercent && name.starts_with("HOS-") && hotThreads.size() < MaxSampledThreads)
+                                hotThreads.emplace_back(tid, name);
                         }
                     }
                     closedir(dir);
                 }
 
-                LOGINF("Watchdog #{}: RSS {} MiB, threads: {} running, {} sleeping, {} disk-wait, {} other{}", ++index, rssPages * pageSize / (1024 * 1024), running, sleeping, disk, other, details);
+                index++;
+                LOGINF("Watchdog #{}: RSS {} MiB, threads: {} running, {} sleeping, {} disk-wait, {} other{}", index, rssPages * pageSize / (1024 * 1024), running, sleeping, disk, other, details);
+
+                if (!hotThreads.empty())
+                    SampleHotThreads(*state, index, hotThreads);
             }
         }
 
       public:
-        static void Start(std::chrono::seconds period = std::chrono::seconds{10}) {
+        static void Start(const DeviceState &state, std::chrono::seconds period = std::chrono::seconds{10}) {
             std::scoped_lock lock{mutex};
             if (thread.joinable())
                 return;
+
+            try {
+                signal::SetGuestSignalHandler({SampleSignal}, GuestSampleHandler);
+                signal::SetHostSignalHandler({SampleSignal}, HostSampleHandler);
+                samplerEnabled = true;
+            } catch (const std::exception &e) {
+                LOGW("Watchdog: PC sampling disabled, couldn't install the signal handler: {}", e.what());
+            }
+
             stop = false;
-            thread = std::thread{&HangWatchdog::Run, period};
+            thread = std::thread{&HangWatchdog::Run, &state, period};
         }
 
         /**
