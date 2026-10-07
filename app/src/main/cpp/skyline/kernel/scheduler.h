@@ -7,6 +7,10 @@
 #include <common.h>
 #include <condition_variable>
 
+namespace skyline::nce {
+    class HangWatchdog;
+}
+
 namespace skyline {
     namespace constant {
         constexpr u8 CoreCount{4}; //!< The amount of cores an HOS process can be scheduled onto (User applications can only be on the first 3 cores, the last one is reserved for the system)
@@ -42,6 +46,8 @@ namespace skyline {
          */
         class Scheduler {
           private:
+            friend class nce::HangWatchdog; //!< The diagnostic watchdog reads the core queues
+
             const DeviceState &state;
 
             struct CoreContext {

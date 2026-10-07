@@ -10,6 +10,10 @@
 #include "KSession.h"
 #include "KEvent.h"
 
+namespace skyline::nce {
+    class HangWatchdog;
+}
+
 namespace skyline {
     namespace constant {
         constexpr u16 TlsSlotSize{0x200}; //!< The size of a single TLS slot
@@ -27,6 +31,8 @@ namespace skyline {
             TrapManager trap;
 
           private:
+            friend class nce::HangWatchdog; //!< The diagnostic watchdog reads the thread list and the sync waiters
+
             std::mutex threadMutex; //!< Synchronizes thread creation to prevent a race between thread creation and thread killing
             bool disableThreadCreation{}; //!< Whether to disable thread creation, we use this to prevent thread creation after all threads have been killed
             std::atomic_bool alreadyKilled{}; //!< If the process has already been killed prior so there's no need to redundantly kill it again
