@@ -326,10 +326,7 @@
     <string name="render_scale">Render Scale</string>
     <string name="render_scale_desc">Multiplier applied to the game\'s internal render resolution</string>
     <string name="auto_bind">Auto-Bind Controller</string>
-    <string name="auto_bind_description">Select a connected controller and map all buttons and sticks automatically</string>
-    <string name="auto_bind_select_controller">Select a controller</string>
-    <string name="auto_bind_no_controllers">No compatible controllers are currently connected.</string>
-    <string name="auto_bind_complete">%1$s mapped automatically (%2$d inputs).</string>
+    <string name="auto_bind_description">Detect and map all buttons automatically in one session</string>
     <string name="auto_bind_detect_title">Press any button on your controller</string>
     <string name="auto_bind_detect_subtitle">Your controller will be identified automatically</string>
     <string name="auto_bind_device_detected">Detected: %s</string>
@@ -377,4 +374,18 @@
     <string name="setup_allow">Allow</string>
     <string name="setup_finish">Finish</string>
     <string name="setup_skip">Skip</string>
+    <string name="update_downloading_progress">Downloading update… %1$d%%</string>
+    <string name="update_extracting_progress">Extracting update… %1$d%%</string>
+    <string name="update_preparing_install">Preparing installation…</string>
+    <string name="update_installing_progress">Installing update…</string>
+    <string name="update_install_started">Installation started — finishing…</string>
+    <string name="update_extract_failed">Couldn't extract the update. Please try again.</string>
+    <string name="update_up_to_date">You are already using the latest available build.</string>
+    <string name="update_check_failed">Couldn\'t check for updates. Please check your internet connection and try again.</string>
+    <string name="check_for_updates">Check for updates</string>
+    <string name="about">About</string>
+    <string name="about_message">Strato\nVersion: %1$s</string>
+    <string name="auto_bind_select_controller">Select a controller</string>
+    <string name="auto_bind_no_controllers">No physical controllers are currently connected.</string>
+    <string name="auto_bind_complete">%1$s mapped automatically (%2$d inputs).</string>
 </resources>

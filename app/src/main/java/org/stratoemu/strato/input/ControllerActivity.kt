@@ -347,7 +347,7 @@ class ControllerActivity : AppCompatActivity() {
      * button-by-button confirmation is required.
      */
     private fun showAutoBindDialog() {
-        val devices = InputDevice.getDeviceIds().mapNotNull { InputDevice.getDevice(it) }
+        val devices = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull()
             .filter { device ->
                 val sources = device.sources
                 (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
@@ -365,7 +365,7 @@ class ControllerActivity : AppCompatActivity() {
             return
         }
 
-        val names = devices.map { device ->
+        val names: Array<CharSequence> = devices.map { device ->
             if (device.name.isNullOrBlank()) device.descriptor else device.name
         }.toTypedArray()
 
