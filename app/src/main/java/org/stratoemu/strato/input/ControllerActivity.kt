@@ -375,8 +375,9 @@ class ControllerActivity : AppCompatActivity() {
                 val controller = inputManager.controllers[id] ?: return@setItems
                 val device = devices[index]
                 val mapped = AutoMapper.map(inputManager, controller, device)
+                val deviceName = if (device.name.isNullOrBlank()) device.descriptor else device.name
 
-                val message = getString(R.string.auto_bind_complete, device.name, mapped)
+                val message = getString(R.string.auto_bind_complete, deviceName, mapped)
                 MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.auto_bind)
                     .setMessage(message)

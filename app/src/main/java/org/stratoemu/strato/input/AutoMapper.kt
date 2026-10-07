@@ -75,7 +75,7 @@ object AutoMapper {
 
         buttons.forEach { (keyCode, button) -> mapButton(keyCode, button) }
 
-        val hasAxis = { axis : Int -> device.getMotionRange(axis, device.sources) != null }
+        val hasAxis = { axis : Int -> device.getMotionRange(axis) != null }
 
         if (hasAxis(MotionEvent.AXIS_X)) {
             mapAxis(MotionEvent.AXIS_X, true, AxisId.LX)
