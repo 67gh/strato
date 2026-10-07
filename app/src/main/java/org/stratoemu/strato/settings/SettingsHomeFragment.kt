@@ -121,13 +121,13 @@ class SettingsHomeFragment : Fragment() {
                 return@launch
             }
 
-            val apkUrl = updateInfo.apkDownloadUrl
+            val downloadUrl = updateInfo.downloadUrl
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.update_available_title)
                 .setMessage(getString(R.string.update_available_message, updateInfo.tagName))
                 .setPositiveButton(R.string.update_available_action) { _, _ ->
-                    if (apkUrl != null) {
-                        UpdateInstaller.downloadAndInstall(requireContext(), apkUrl, updateInfo.tagName)
+                    if (downloadUrl != null) {
+                        UpdateInstaller.downloadAndInstall(requireContext(), downloadUrl, updateInfo.tagName, updateInfo.downloadIsArchive)
                     } else {
                         startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(updateInfo.releaseUrl)))
                     }

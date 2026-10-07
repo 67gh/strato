@@ -69,6 +69,35 @@ jobs:
           echo "version=${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "tag_name=v${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
 
+      - name: Create compressed update archive when it saves space
+        id: package
+        run: |
+          APK="${{ steps.inspect.outputs.apk_path }}"
+          ZIP="./artifacts/strato-update.zip"
+          rm -f "$ZIP"
+          zip -9 -j "$ZIP" "$APK"
+          APK_SIZE=$(stat -c%s "$APK")
+          ZIP_SIZE=$(stat -c%s "$ZIP")
+          echo "APK size: $APK_SIZE bytes"
+          echo "ZIP size: $ZIP_SIZE bytes"
+          if [ "$ZIP_SIZE" -lt "$APK_SIZE" ]; then
+            echo "use_zip=true" >> "$GITHUB_OUTPUT"
+            echo "ZIP is smaller; publishing the compressed update archive."
+          else
+            rm -f "$ZIP"
+            echo "use_zip=false" >> "$GITHUB_OUTPUT"
+            echo "ZIP is not smaller; publishing the APK directly."
+          fi
+
+      - name: Prepare release assets
+        run: |
+          rm -rf ./release-assets
+          mkdir -p ./release-assets
+          cp "${{ steps.inspect.outputs.apk_path }}" ./release-assets/
+          if [ -f ./artifacts/strato-update.zip ]; then
+            cp ./artifacts/strato-update.zip ./release-assets/
+          fi
+
       - name: Release notes
         id: notes
         run: |
@@ -107,6 +136,6 @@ jobs:
           name: ${{ steps.notes.outputs.title }}
           body_path: RELEASE_NOTES.md
           prerelease: ${{ github.event.inputs.prerelease || true }}
-          files: ./artifacts/**/*.apk
+          files: ./release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

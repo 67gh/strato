@@ -37,6 +37,8 @@ class ControllerGeneralViewItem(private val controllerId : Int, val type : Gener
 
             GeneralType.RumbleDevice -> controller.rumbleDeviceName ?: context.getString(R.string.none)
 
+            GeneralType.AutoBind -> context.getString(R.string.auto_bind_description)
+
             GeneralType.SetupGuide -> context.getString(R.string.setup_guide_description)
         }
         super.bind(holder, position)

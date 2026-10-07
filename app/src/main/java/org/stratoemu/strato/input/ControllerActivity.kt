@@ -8,6 +8,7 @@ package org.stratoemu.strato.input
 import android.content.Intent
 import android.graphics.Canvas
 import android.os.Bundle
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.ViewTreeObserver
 import androidx.appcompat.app.AppCompatActivity
@@ -74,6 +75,11 @@ class ControllerActivity : AppCompatActivity() {
      */
     private fun update() {
         val items = mutableListOf<GenericListItem<*>>()
+
+        buttonMap.clear()
+        axisMap.clear()
+        stickItems.clear()
+        buttonItems.clear()
 
         try {
             val controller = inputManager.controllers[id]!!
@@ -315,6 +321,10 @@ class ControllerActivity : AppCompatActivity() {
                 RumbleDialog(item).show(supportFragmentManager, null)
             }
 
+            GeneralType.AutoBind -> {
+                showAutoBindDialog()
+            }
+
             GeneralType.SetupGuide -> {
                 var dialogFragment : BottomSheetDialogFragment? = null
 
@@ -328,6 +338,56 @@ class ControllerActivity : AppCompatActivity() {
             }
         }
         Unit
+    }
+
+
+    /**
+     * Shows the physical game controllers currently available to Android.
+     * Selecting one immediately maps its standard buttons and axes; no
+     * button-by-button confirmation is required.
+     */
+    private fun showAutoBindDialog() {
+        val devices = InputDevice.getDeviceIds().mapNotNull { InputDevice.getDevice(it) }
+            .filter { device ->
+                val sources = device.sources
+                (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+                    (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+            }
+            .distinctBy { it.descriptor }
+            .sortedBy { it.name.lowercase() }
+
+        if (devices.isEmpty()) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.auto_bind)
+                .setMessage(R.string.auto_bind_no_controllers)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
+
+        val names = devices.map { device ->
+            if (device.name.isNullOrBlank()) device.descriptor else device.name
+        }.toTypedArray()
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.auto_bind_select_controller)
+            .setItems(names) { dialog, index ->
+                val controller = inputManager.controllers[id] ?: return@setItems
+                val device = devices[index]
+                val mapped = AutoMapper.map(inputManager, controller, device)
+
+                val message = getString(R.string.auto_bind_complete, device.name, mapped)
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.auto_bind)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+
+                update()
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private val onControllerButtonClick = { item : ControllerButtonViewItem, _ : Int ->

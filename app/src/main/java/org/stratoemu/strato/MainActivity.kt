@@ -320,13 +320,13 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
 
-            val apkUrl = updateInfo.apkDownloadUrl
+            val downloadUrl = updateInfo.downloadUrl
             MaterialAlertDialogBuilder(this@MainActivity)
                 .setTitle(getString(R.string.update_available_title))
                 .setMessage(getString(R.string.update_available_message, updateInfo.tagName))
                 .setPositiveButton(getString(R.string.update_available_action)) { _, _ ->
-                    if (apkUrl != null) {
-                        UpdateInstaller.downloadAndInstall(this@MainActivity, apkUrl, updateInfo.tagName)
+                    if (downloadUrl != null) {
+                        UpdateInstaller.downloadAndInstall(this@MainActivity, downloadUrl, updateInfo.tagName, updateInfo.downloadIsArchive)
                     } else {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.releaseUrl)))
                     }

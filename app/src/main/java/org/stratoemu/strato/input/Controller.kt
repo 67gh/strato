@@ -74,6 +74,7 @@ enum class ControllerType(val stringRes : Int, val firstController : Boolean, va
 enum class GeneralType(val stringRes : Int, val compatibleControllers : Array<ControllerType>? = null) {
     PartnerJoyCon(R.string.partner_joycon, arrayOf(ControllerType.JoyConLeft)),
     RumbleDevice(R.string.rumble_device),
+    AutoBind(R.string.auto_bind),
     SetupGuide(R.string.setup_guide),
 }
 

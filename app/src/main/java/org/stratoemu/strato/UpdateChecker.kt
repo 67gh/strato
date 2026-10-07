@@ -18,7 +18,8 @@ import java.util.TimeZone
 data class UpdateInfo(
     val tagName : String,
     val releaseUrl : String,
-    val apkDownloadUrl : String?
+    val downloadUrl : String?,
+    val downloadIsArchive : Boolean
 )
 
 /**
@@ -31,7 +32,7 @@ data class UpdateInfo(
  * pre-releases.
  *
  * Release tags are generated from a date and commit hash, so they are not a stable semantic
- * version. Comparing the release's `published_at` timestamp against [currentInstallTimeMs]
+ * version. Comparing the release's `published_at` timestamp against [currentBuildTimeMs]
  * is therefore the reliable way to answer "is there a build newer than the APK installed here?".
  *
  * This never throws: any network failure, malformed response, or parsing error results in
@@ -105,19 +106,22 @@ object UpdateChecker {
                 )
 
                 var apkDownloadUrl : String? = null
+                var zipDownloadUrl : String? = null
                 val assets = release.optJSONArray("assets")
                 if (assets != null) {
                     for (i in 0 until assets.length()) {
                         val asset = assets.getJSONObject(i)
                         val name = asset.optString("name", "")
-                        if (name.endsWith(".apk", ignoreCase = true)) {
-                            apkDownloadUrl = asset.optString("browser_download_url", null)
-                            break
+                        val url = asset.optString("browser_download_url", null)
+                        when {
+                            name.endsWith(".zip", ignoreCase = true) && zipDownloadUrl == null -> zipDownloadUrl = url
+                            name.endsWith(".apk", ignoreCase = true) && apkDownloadUrl == null -> apkDownloadUrl = url
                         }
                     }
                 }
 
-                UpdateInfo(tagName, releaseUrl, apkDownloadUrl)
+                val downloadUrl = zipDownloadUrl ?: apkDownloadUrl
+                UpdateInfo(tagName, releaseUrl, downloadUrl, zipDownloadUrl != null)
             } finally {
                 connection.disconnect()
             }
