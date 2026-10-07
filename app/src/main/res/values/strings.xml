@@ -330,7 +330,7 @@
     <string name="auto_bind_detect_title">Press any button on your controller</string>
     <string name="auto_bind_detect_subtitle">Your controller will be identified automatically</string>
     <string name="auto_bind_device_detected">Detected: %s</string>
-    <string name="auto_bind_device_locked">Controller locked — let\'s map your buttons</string>
+    <string name="auto_bind_device_locked">Controller locked — let&apos;s map your buttons</string>
     <string name="auto_bind_press_button">Press this button on your controller</string>
     <string name="auto_bind_push_stick">Push the stick %s</string>
     <string name="auto_bind_rumble_title">Rumble Test</string>
@@ -379,9 +379,9 @@
     <string name="update_preparing_install">Preparing installation…</string>
     <string name="update_installing_progress">Installing update…</string>
     <string name="update_install_started">Installation started — finishing…</string>
-    <string name="update_extract_failed">Couldn\'t extract the update. Please try again.</string>
+    <string name="update_extract_failed">Couldn&apos;t extract the update. Please try again.</string>
     <string name="update_up_to_date">You are already using the latest available build.</string>
-    <string name="update_check_failed">Couldn\'t check for updates. Please check your internet connection and try again.</string>
+    <string name="update_check_failed">Couldn&apos;t check for updates. Please check your internet connection and try again.</string>
     <string name="check_for_updates">Check for updates</string>
     <string name="about">About</string>
     <string name="about_message">Strato\nVersion: %1$s</string>
