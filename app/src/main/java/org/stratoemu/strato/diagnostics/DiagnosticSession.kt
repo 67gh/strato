@@ -404,6 +404,7 @@ class DiagnosticSession private constructor(
                     .put("first_seen_utc", utcNow())
                     .put("error", error.javaClass.simpleName + ": " + error.message.orEmpty().take(512))
             }
+            Unit
         }
     }
 
