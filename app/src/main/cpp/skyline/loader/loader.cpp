@@ -106,13 +106,24 @@ namespace skyline::loader {
         return {guestBase, size, executableGuestBase + executable.text.offset};
     }
 
+    std::vector<Loader::ExecutableRange> Loader::GetExecutableRanges() const {
+        std::vector<ExecutableRange> ranges;
+        ranges.reserve(executables.size());
+        for (const auto &executable : executables)
+            ranges.push_back({executable.name, reinterpret_cast<u64>(executable.patchStart),
+                              reinterpret_cast<u64>(executable.hookStart), reinterpret_cast<u64>(executable.programStart),
+                              reinterpret_cast<u64>(executable.programEnd)});
+        return ranges;
+    }
+
     template<ElfSymbol ElfSym>
     Loader::SymbolInfo Loader::ResolveSymbol(void *ptr) {
-        auto executable{std::lower_bound(executables.begin(), executables.end(), ptr, [](const ExecutableSymbolicInfo &it, void *ptr) { return it.programEnd < ptr; })};
-        auto symbols{executable->symbols.template cast<ElfSym>()};
+        auto executable{std::lower_bound(executables.begin(), executables.end(), ptr, [](const ExecutableSymbolicInfo &it, void *ptr) { return it.programEnd <= ptr; })};
 
-        if (executable != executables.end() && ptr >= executable->patchStart && ptr <= executable->programEnd) {
+        // A sampled host PC may lie beyond every guest module. Never dereference end().
+        if (executable != executables.end() && ptr >= executable->patchStart && ptr < executable->programEnd) {
             if (ptr >= executable->programStart) {
+                auto symbols{executable->symbols.template cast<ElfSym>()};
                 auto offset{reinterpret_cast<u8 *>(ptr) - reinterpret_cast<u8 *>(executable->programStart)};
                 auto symbol{std::find_if(symbols.begin(), symbols.end(), [&offset](const ElfSym &sym) { return sym.st_value <= offset && sym.st_value + sym.st_size > offset; })};
                 if (symbol != symbols.end() && symbol->st_name && symbol->st_name < executable->symbolStrings.size()) {

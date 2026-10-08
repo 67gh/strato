@@ -2,11 +2,21 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cerrno>
+#include <limits>
+#include <map>
+#include <tuple>
+#include <sys/syscall.h>
+#include <time.h>
 #include <unordered_set>
 #include <asm/sigcontext.h>
 #include <common/signal.h>
 #include <loader/loader.h>
 #include <kernel/types/KProcess.h>
+#include <kernel/types/KThread.h>
 #include <os.h>
 #include "jit_fallback.h"
 
@@ -19,8 +29,107 @@ namespace skyline::nce {
     namespace {
         const DeviceState *deviceState{};
         int logFd{-1};
+        int memoryFd{-1};
+        int memoryOpenError{EBADF};
         std::mutex logMutex;
-        std::unordered_set<u64> seen; //!< Failures already written, so a hot loop doesn't flood the file
+        constexpr size_t MaxTrackedFailures{1024};
+        constexpr size_t MaxLogBytes{8 * 1024 * 1024};
+        constexpr size_t FinalCountsReserve{1024 * 1024};
+        // Full tuple equality, not a lossy XOR: distinct faults must not silently merge.
+        using FailureKey = std::tuple<u64, u32, int, int, int, JitFallback::Outcome>;
+        struct FailureCount {
+            u64 id;
+            u64 count;
+            u64 reported;
+            u64 lastMonotonicNs;
+        };
+        std::map<FailureKey, FailureCount> seen;
+        std::vector<loader::Loader::ExecutableRange> executableRanges; // Copied before guest threads start; no symbol/stack reads in Log.
+        std::string sessionId;
+        u64 sessionSerial{};
+        std::atomic<u64> totalFaults{};
+        std::atomic<u64> contendedFaults{};
+        u64 untrackedFaults{};
+        size_t logBytes{};
+        u64 omittedLines{};
+        int writeError{};
+
+        u64 TimestampNs(clockid_t clock) {
+            timespec now{};
+            if (clock_gettime(clock, &now) != 0)
+                return 0; // Zero explicitly denotes an unavailable timestamp.
+            return static_cast<u64>(now.tv_sec) * 1'000'000'000ULL + static_cast<u64>(now.tv_nsec);
+        }
+
+        bool ReadInstruction(u64 pc, u32 &instruction, int &error) {
+            error = 0;
+            if (memoryFd < 0) {
+                error = memoryOpenError;
+                return false;
+            }
+            if ((pc & 3) || pc > static_cast<u64>(std::numeric_limits<off_t>::max()) - sizeof(instruction)) {
+                error = EINVAL;
+                return false;
+            }
+            ssize_t result;
+            do {
+                result = pread(memoryFd, &instruction, sizeof(instruction), static_cast<off_t>(pc));
+            } while (result < 0 && errno == EINTR);
+            if (result != static_cast<ssize_t>(sizeof(instruction))) {
+                error = result < 0 ? errno : EIO;
+                instruction = 0;
+                return false;
+            }
+            return true;
+        }
+
+        fpsimd_context *FindFpsimd(mcontext_t &mctx) {
+            auto *cursor{reinterpret_cast<u8 *>(mctx.__reserved)};
+            size_t remaining{sizeof(mctx.__reserved)};
+            while (remaining >= sizeof(_aarch64_ctx)) {
+                auto *head{reinterpret_cast<_aarch64_ctx *>(cursor)};
+                if (!head->magic || head->size < sizeof(_aarch64_ctx) || head->size > remaining || (head->size & 15))
+                    break;
+                if (head->magic == FPSIMD_MAGIC)
+                    return head->size >= sizeof(fpsimd_context) ? reinterpret_cast<fpsimd_context *>(head) : nullptr;
+                cursor += head->size;
+                remaining -= head->size;
+            }
+            return nullptr;
+        }
+
+        struct FaultSnapshot {
+            u64 pc, sp, pstate, faultAddress;
+            std::array<u64, 31> regs;
+            u64 unixNs, monotonicNs;
+            long hostTid;
+            i64 guestThreadId;
+            int signal, signalCode;
+            u32 instruction{};
+            int instructionReadError{};
+            bool fpAvailable{};
+            u32 fpcr{}, fpsr{};
+        };
+
+        FaultSnapshot CaptureFault(int signal, const siginfo &info, ucontext &ctx) {
+            const auto &mctx{ctx.uc_mcontext};
+            FaultSnapshot fault{
+                .pc = mctx.pc, .sp = mctx.sp, .pstate = mctx.pstate,
+                .faultAddress = info.si_code > 0 ? reinterpret_cast<u64>(info.si_addr) : 0,
+                .unixNs = TimestampNs(CLOCK_REALTIME), .monotonicNs = TimestampNs(CLOCK_MONOTONIC),
+                .hostTid = syscall(SYS_gettid),
+                .guestThreadId = DeviceState::thread ? static_cast<i64>(DeviceState::thread->id) : -1,
+                .signal = signal, .signalCode = info.si_code,
+            };
+            std::copy(std::begin(mctx.regs), std::end(mctx.regs), fault.regs.begin());
+            ReadInstruction(fault.pc, fault.instruction, fault.instructionReadError);
+            if (auto *fp{FindFpsimd(ctx.uc_mcontext)}) {
+                fault.fpAvailable = true;
+                fault.fpcr = fp->fpcr;
+                fault.fpsr = fp->fpsr;
+            }
+            return fault;
+        }
 
         struct SysReg {
             u8 op0, op1, crn, crm, op2;
@@ -116,35 +225,135 @@ namespace skyline::nce {
             for (char c : in) {
                 if (c == '"' || c == '\\') { out += '\\'; out += c; }
                 else if (c == '\n') out += "\\n";
-                else if (static_cast<unsigned char>(c) < 0x20) out += ' ';
+                else if (static_cast<unsigned char>(c) < 0x20) out += fmt::format("\\u{:04x}", static_cast<unsigned char>(c));
                 else out += c;
             }
             return out;
         }
 
-        void WriteLine(const std::string &line) {
-            if (logFd >= 0)
-                [[maybe_unused]] auto result{write(logFd, line.data(), line.size())};
+        bool WriteLine(const std::string &line, bool finalCounts = false) {
+            const size_t limit{finalCounts ? MaxLogBytes : MaxLogBytes - FinalCountsReserve};
+            if (logFd < 0 || writeError || line.size() > limit - std::min(logBytes, limit)) {
+                ++omittedLines;
+                return false;
+            }
+            size_t offset{};
+            while (offset < line.size()) {
+                auto result{write(logFd, line.data() + offset, line.size() - offset)};
+                if (result < 0 && errno == EINTR)
+                    continue;
+                if (result <= 0) {
+                    writeError = result < 0 ? errno : EIO;
+                    ++omittedLines;
+                    return false; // Do not append more JSON to a potentially partial line.
+                }
+                offset += static_cast<size_t>(result);
+                logBytes += static_cast<size_t>(result);
+            }
+            return true;
         }
 
-        void Log(int signal, siginfo *info, ucontext *ctx, JitFallback::Outcome outcome, std::string_view detail, std::string_view trace) {
-            auto &mctx{ctx->uc_mcontext};
-            u32 insn{};
-            if (mctx.pc)
-                std::memcpy(&insn, reinterpret_cast<void *>(mctx.pc), sizeof(insn)); // Guest .text is readable, the instruction at PC is the one that failed
+        std::string_view OutcomeName(JitFallback::Outcome outcome) {
+            static constexpr std::array<std::string_view, 4> Names{"recovered_by_jit", "jit_unsupported", "jit_memory_fault", "not_attempted"};
+            return Names[static_cast<size_t>(outcome)];
+        }
 
-            u64 key{mctx.pc ^ (static_cast<u64>(insn) << 32) ^ (static_cast<u64>(outcome) << 61) ^ static_cast<u64>(signal)};
-            std::scoped_lock lock{logMutex};
-            if (!seen.insert(key).second)
+        std::string_view SignalClass(const FaultSnapshot &fault) {
+            if (fault.signalCode <= 0)
+                return "software_generated_signal";
+            if (fault.signal == SIGILL)
+                return "instruction_signal";
+            if (fault.signal == SIGSEGV || fault.signal == SIGBUS)
+                return "memory_signal";
+            if (fault.signal == SIGFPE)
+                return "arithmetic_signal";
+            return "other_signal";
+        }
+
+        std::string InstructionJson(u32 instruction, int readError) {
+            return readError ? "null" : fmt::format("\"0x{:08X}\"", instruction);
+        }
+
+        std::string LocationJson(u64 pc) {
+            for (const auto &range : executableRanges) {
+                if (pc < range.patchStart || pc >= range.programEnd)
+                    continue;
+                auto section{pc < range.hookStart ? "patch" : pc < range.programStart ? "hook" : "text_or_data"};
+                u64 sectionStart{pc < range.hookStart ? range.patchStart : pc < range.programStart ? range.hookStart : range.programStart};
+                i64 offset{pc >= range.programStart ? static_cast<i64>(pc - range.programStart) : -static_cast<i64>(range.programStart - pc)};
+                return fmt::format(R"(,"module":"{}","module_offset":{},"section":"{}","section_offset":"0x{:X}")",
+                                   JsonEscape(range.name), offset, section, pc - sectionStart);
+            }
+            return R"(,"module":null,"module_offset":null,"section":null,"section_offset":null)";
+        }
+
+        void WriteCount(const FailureKey &key, FailureCount &entry, bool finalCounts = false) {
+            auto [pc, instruction, readError, signal, signalCode, outcome]{key};
+            if (WriteLine(fmt::format(R"({{"type":"count","schema_version":2,"session_id":"{}","event_id":{},"count":{},"last_monotonic_ns":{},"pc":"0x{:X}","insn":{},"opcode_read_errno":{},"signal_number":{},"si_code":{},"outcome":"{}"{}}})" "\n",
+                                     sessionId, entry.id, entry.count, entry.lastMonotonicNs, pc, InstructionJson(instruction, readError), readError,
+                                     signal, signalCode, OutcomeName(outcome), LocationJson(pc)), finalCounts))
+                entry.reported = entry.count;
+        }
+
+        void FlushLocked() {
+            if (logFd >= 0) {
+                for (auto &[key, entry] : seen)
+                    if (entry.count != entry.reported)
+                        WriteCount(key, entry, true);
+                WriteLine(fmt::format(R"({{"type":"session_end","schema_version":2,"session_id":"{}","unix_ns":{},"monotonic_ns":{},"total_faults":{},"tracked_keys":{},"untracked_faults":{},"contended_faults":{},"omitted_lines":{},"write_errno":{}}})" "\n",
+                                      sessionId, TimestampNs(CLOCK_REALTIME), TimestampNs(CLOCK_MONOTONIC), totalFaults.load(std::memory_order_relaxed),
+                                      seen.size(), untrackedFaults, contendedFaults.load(std::memory_order_relaxed), omittedLines, writeError), true);
+                if (fdatasync(logFd) != 0)
+                    LOGW("NCE diagnostics: final file sync failed (errno={})", errno);
+                close(logFd);
+                logFd = -1;
+            }
+            if (memoryFd >= 0) {
+                close(memoryFd);
+                memoryFd = -1;
+            }
+        }
+
+        void Log(const FaultSnapshot &fault, const ucontext &result, JitFallback::Outcome outcome, std::string_view detail, std::string_view trace) {
+            // Avoid waiting on a concurrent/recursive logger. This does not make the complete fallback async-signal-safe.
+            std::unique_lock lock{logMutex, std::try_to_lock};
+            if (!lock.owns_lock()) {
+                contendedFaults.fetch_add(1, std::memory_order_relaxed);
                 return;
-
-            static constexpr std::array<std::string_view, 4> OutcomeNames{"recovered_by_jit", "jit_unsupported", "jit_memory_fault", "not_attempted"};
-            signal::StackFrame topFrame{.lr = reinterpret_cast<void *>(mctx.pc), .next = reinterpret_cast<signal::StackFrame *>(mctx.regs[29])};
-            std::string where{deviceState && deviceState->loader ? deviceState->loader->GetStackTrace(&topFrame) : ""};
-            std::replace(where.begin(), where.end(), '\n', ' ');
-
-            WriteLine(fmt::format(R"({{"type":"failure","pc":"0x{:X}","insn":"0x{:08X}","decoded":"{}","class":"{}","signal":"{}","si_code":{},"fault_addr":"0x{:X}","outcome":"{}","detail":"{}","where":"{}"{}}})" "\n",
-                                  mctx.pc, insn, JsonEscape(Decode(insn)), Classify(insn), strsignal(signal), info->si_code, mctx.fault_address, OutcomeNames[static_cast<size_t>(outcome)], JsonEscape(detail), JsonEscape(where), trace));
+            }
+            if (logFd < 0)
+                return;
+            FailureKey key{fault.pc, fault.instruction, fault.instructionReadError, fault.signal, fault.signalCode, outcome};
+            if (auto found{seen.find(key)}; found != seen.end()) {
+                auto &entry{found->second};
+                ++entry.count;
+                entry.lastMonotonicNs = fault.monotonicNs;
+                if ((entry.count & (entry.count - 1)) == 0)
+                    WriteCount(key, entry); // Cumulative powers-of-two checkpoints; final counts are written by Flush.
+                return;
+            }
+            if (seen.size() >= MaxTrackedFailures) {
+                ++untrackedFaults;
+                if ((untrackedFaults & (untrackedFaults - 1)) == 0)
+                    WriteLine(fmt::format(R"({{"type":"overflow","schema_version":2,"session_id":"{}","untracked_faults":{}}})" "\n", sessionId, untrackedFaults));
+                return;
+            }
+            auto &entry{seen.emplace(key, FailureCount{seen.size() + 1, 1, 0, fault.monotonicNs}).first->second};
+            std::string regs;
+            for (auto value : fault.regs)
+                regs += fmt::format("{}\"0x{:X}\"", regs.empty() ? "" : ",", value);
+            const auto &after{result.uc_mcontext};
+            auto line{fmt::format(R"({{"type":"failure","schema_version":2,"session_id":"{}","event_id":{},"count":1,"unix_ns":{},"monotonic_ns":{},"host_tid":{},"guest_thread_id":{},"pc":"0x{:X}","insn":{},"opcode_read_errno":{},"decoded":"{}","class":"{}","signal_number":{},"si_code":{},"fault_addr":"0x{:X}","cause_class":"{}","cause_verified":false,"outcome":"{}","detail":"{}")",
+                                  sessionId, entry.id, fault.unixNs, fault.monotonicNs, fault.hostTid, fault.guestThreadId, fault.pc,
+                                  InstructionJson(fault.instruction, fault.instructionReadError), fault.instructionReadError,
+                                  JsonEscape(fault.instructionReadError ? "unavailable" : Decode(fault.instruction)),
+                                  fault.instructionReadError ? "unavailable" : Classify(fault.instruction), fault.signal, fault.signalCode,
+                                  fault.faultAddress, SignalClass(fault), OutcomeName(outcome), JsonEscape(detail))};
+            line += fmt::format(R"(,"initial_state":{{"pc":"0x{:X}","sp":"0x{:X}","pstate":"0x{:X}","x":[{}],"fp_available":{},"fpcr":"0x{:X}","fpsr":"0x{:X}"}},"resumed_state":{{"committed":{},"pc":"0x{:X}","sp":"0x{:X}","pstate":"0x{:X}"}}{}{})" "}}\n",
+                                fault.pc, fault.sp, fault.pstate, regs, fault.fpAvailable ? "true" : "false", fault.fpcr, fault.fpsr,
+                                outcome == JitFallback::Outcome::Recovered ? "true" : "false", after.pc, after.sp, after.pstate, LocationJson(fault.pc), trace);
+            if (WriteLine(line))
+                entry.reported = 1;
         }
 
 #ifdef STRATO_JIT_FALLBACK
@@ -230,7 +439,11 @@ namespace skyline::nce {
                     return std::nullopt;
 
                 u32 value{};
-                std::memcpy(&value, reinterpret_cast<const void *>(vaddr), sizeof(value));
+                int error{};
+                if (!ReadInstruction(vaddr, value, error)) {
+                    Fail(JitFallback::Outcome::MemoryFault, fmt::format("instruction read at 0x{:X} failed (errno={})", vaddr, error));
+                    return std::nullopt;
+                }
                 return value;
             }
             u8 MemoryRead8(u64 vaddr) override { return Read<u8>(vaddr); }
@@ -267,17 +480,11 @@ namespace skyline::nce {
         struct StepJob {
             ucontext *ctx;
             ThreadContext *threadCtx;
+            const FaultSnapshot *fault;
             JitFallback::Outcome outcome;
             std::string detail;
             std::string trace; //!< Extra JSON fields (leading comma) describing what the JIT did, appended to the log line
         };
-
-        fpsimd_context *FindFpsimd(mcontext_t &mctx) {
-            for (auto *head{reinterpret_cast<_aarch64_ctx *>(mctx.__reserved)}; head->magic; head = reinterpret_cast<_aarch64_ctx *>(reinterpret_cast<u8 *>(head) + head->size))
-                if (head->magic == FPSIMD_MAGIC)
-                    return reinterpret_cast<fpsimd_context *>(head);
-            return nullptr;
-        }
 
         /**
          * @brief Executes the instruction at the signal context's PC with Dynarmic and writes the state back, must run on the host stack
@@ -292,7 +499,7 @@ namespace skyline::nce {
                 return;
             }
 
-            // One JIT per guest thread, its block cache then makes repeated failures of the same instruction cheap
+            // One JIT per guest thread. The faulting code range is invalidated before each step for correctness.
             thread_local StepCallbacks callbacks;
             thread_local std::unique_ptr<Dynarmic::A64::Jit> jit;
             if (!jit) {
@@ -309,15 +516,14 @@ namespace skyline::nce {
             callbacks.accesses.clear();
             callbacks.accessCount = 0;
 
-            u32 insn{};
-            std::memcpy(&insn, reinterpret_cast<void *>(mctx.pc), sizeof(insn));
+            [[maybe_unused]] u32 insn{job.fault->instruction};
             [[maybe_unused]] bool dumpDisassembly{};
 #ifdef STRATO_JIT_DUMP_DISASSEMBLY
             {
                 static std::mutex dumpMutex;
                 static std::unordered_set<u32> dumped; // Only dump the first time an instruction word is seen, it's expensive
                 std::scoped_lock lock{dumpMutex};
-                dumpDisassembly = dumped.insert(insn).second;
+                dumpDisassembly = dumped.size() < MaxTrackedFailures && dumped.insert(insn).second;
             }
             if (dumpDisassembly)
                 jit->ClearCache(); // So the cache then only holds the block for this instruction
@@ -326,7 +532,7 @@ namespace skyline::nce {
             std::array<u64, 31> regsBefore;
             for (size_t i{}; i < 31; i++)
                 regsBefore[i] = mctx.regs[i];
-            u64 spBefore{mctx.sp}, pcBefore{mctx.pc};
+            u64 spBefore{mctx.sp};
             u32 nzcvBefore{static_cast<u32>(mctx.pstate) & 0xF0000000};
             auto *vregsBefore{fp->vregs};
             std::array<std::array<u8, 16>, 32> vecBefore;
@@ -364,6 +570,10 @@ namespace skyline::nce {
                     add("sp", fmt::format("0x{:X}", spBefore), fmt::format("0x{:X}", jit->GetSP()));
                 if (nzcvBefore != (jit->GetPstate() & 0xF0000000))
                     add("nzcv", fmt::format("0x{:X}", nzcvBefore >> 28), fmt::format("0x{:X}", (jit->GetPstate() & 0xF0000000) >> 28));
+                if (job.fault->fpcr != jit->GetFpcr())
+                    add("fpcr", fmt::format("0x{:X}", job.fault->fpcr), fmt::format("0x{:X}", jit->GetFpcr()));
+                if (job.fault->fpsr != jit->GetFpsr())
+                    add("fpsr", fmt::format("0x{:X}", job.fault->fpsr), fmt::format("0x{:X}", jit->GetFpsr()));
                 auto vectorsAfter{jit->GetVectors()};
                 for (size_t i{}; i < 32; i++) {
                     if (std::memcmp(vecBefore[i].data(), &vectorsAfter[i], 16) != 0) {
@@ -391,11 +601,12 @@ namespace skyline::nce {
                     disassembly = fmt::format(R"(,"jit_disassembly":"{}")", JsonEscape(text));
                 }
 #endif
-                job.trace = fmt::format(R"(,"jit":{{"next_pc":"0x{:X}","regs_changed":{{{}}},"mem":[{}]}}{})", jit->GetPC(), changed, callbacks.accesses, disassembly);
+                job.trace = fmt::format(R"(,"jit":{{"next_pc":"0x{:X}","regs_changed":{{{}}},"mem":[{}],"mem_event_count":{},"mem_truncated":{}}}{})",
+                                       jit->GetPC(), changed, callbacks.accesses, callbacks.accessCount, callbacks.accessCount > 8 ? "true" : "false", disassembly);
             }
 
             if (job.outcome != JitFallback::Outcome::Recovered)
-                return; // Leave the signal context untouched so the crash handler reports the original state
+                return; // Registers remain untouched. Guest memory writes made by callbacks are NOT rolled back.
 
             auto regs{jit->GetRegisters()};
             for (size_t i{}; i < 31; i++)
@@ -431,18 +642,20 @@ namespace skyline::nce {
 
     void JitFallback::Initialize(const DeviceState &state, std::string logPath, std::string gameName) {
         std::scoped_lock lock{logMutex};
+        FlushLocked();
         deviceState = &state;
+        executableRanges = state.loader ? state.loader->GetExecutableRanges() : std::vector<loader::Loader::ExecutableRange>{};
         seen.clear();
-        if (logFd >= 0) {
-            close(logFd);
-            logFd = -1;
-        }
-        logFd = open(logPath.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
-        if (logFd < 0) {
-            LOGW("NCE fallback: couldn't open '{}' for writing, failures won't be recorded", logPath);
-            return;
-        }
-        LOGINF("NCE fallback: Dynarmic JIT {}, logging guest faults to '{}'",
+        totalFaults.store(0, std::memory_order_relaxed);
+        contendedFaults.store(0, std::memory_order_relaxed);
+        untrackedFaults = 0;
+        logBytes = 0;
+        omittedLines = 0;
+        writeError = 0;
+        sessionId = fmt::format("{}-{}-{}", getpid(), TimestampNs(CLOCK_REALTIME), ++sessionSerial);
+
+        // Report the compiled status even if the diagnostic directory is not writable.
+        LOGINF("NCE fallback: Dynarmic JIT {}; diagnostic path '{}'",
 #ifdef STRATO_JIT_FALLBACK
                "ENABLED",
 #else
@@ -450,24 +663,63 @@ namespace skyline::nce {
 #endif
                logPath);
 
-        std::replace(gameName.begin(), gameName.end(), '"', '\'');
-        WriteLine(fmt::format(R"({{"type":"session","game":"{}","jit_compiled":{}}})" "\n", gameName,
+        memoryFd = open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
+        memoryOpenError = memoryFd < 0 ? errno : 0;
+        if (memoryFd < 0)
+            LOGW("NCE fallback: safe instruction reads unavailable (errno={}); SIGILL recovery will not be attempted", memoryOpenError);
+        logFd = open(logPath.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+        if (logFd < 0) {
+            LOGW("NCE fallback: couldn't open '{}' for writing (errno={}); failures won't be recorded", logPath, errno);
+            return;
+        }
+        WriteLine(fmt::format(R"({{"type":"session","schema_version":2,"session_id":"{}","game":"{}","unix_ns":{},"monotonic_ns":{},"pid":{},"jit_compiled":{},"opcode_reader":"proc_self_mem_pread","opcode_reader_errno":{},"max_tracked_keys":{},"max_session_log_bytes":{},"count_policy":"cumulative_powers_of_two_then_final","limitations":["signal_path_not_async_signal_safe","guest_data_accesses_not_fully_validated","no_memory_rollback","jit_trace_not_equivalence_proof"]}})" "\n",
+                              sessionId, JsonEscape(gameName), TimestampNs(CLOCK_REALTIME), TimestampNs(CLOCK_MONOTONIC), getpid(),
 #ifdef STRATO_JIT_FALLBACK
                               "true"
 #else
                               "false"
 #endif
-        ));
+                              , memoryOpenError, MaxTrackedFailures, MaxLogBytes));
+    }
+
+    void JitFallback::Flush() noexcept {
+        try {
+            std::scoped_lock lock{logMutex};
+            FlushLocked();
+        } catch (...) {
+            // Called only after guest threads have stopped. A diagnostic allocation failure must not escape JNI teardown.
+            if (logFd >= 0) {
+                close(logFd);
+                logFd = -1;
+            }
+            if (memoryFd >= 0) {
+                close(memoryFd);
+                memoryFd = -1;
+            }
+            constexpr char message[]{"NCE diagnostics: final counts unavailable after an exception\n"};
+            [[maybe_unused]] auto result{write(STDERR_FILENO, message, sizeof(message) - 1)};
+        }
     }
 
     bool JitFallback::HandleFault(int signal, siginfo *info, ucontext *ctx, ThreadContext &threadCtx) {
+        const int savedErrno{errno};
+        totalFaults.fetch_add(1, std::memory_order_relaxed);
+        const FaultSnapshot fault{CaptureFault(signal, *info, *ctx)};
         Outcome outcome{Outcome::NotAttempted};
         std::string trace;
-        std::string detail{signal == SIGILL ? "JIT not compiled in (build with -DSTRATO_JIT_FALLBACK=ON)" : "signal is not recoverable by instruction emulation"};
+        std::string detail;
+        if (signal != SIGILL)
+            detail = "signal is not eligible for instruction emulation";
+        else if (info->si_code <= 0)
+            detail = "software-generated SIGILL is not executed by the fallback";
+        else if (fault.instructionReadError)
+            detail = fmt::format("original opcode could not be read safely (errno={}); JIT not attempted", fault.instructionReadError);
+        else
+            detail = "JIT not compiled in (build with -DSTRATO_JIT_FALLBACK=ON)";
 
 #ifdef STRATO_JIT_FALLBACK
-        if (signal == SIGILL && info->si_code != SI_USER) {
-            StepJob job{ctx, &threadCtx, Outcome::NotAttempted, {}};
+        if (signal == SIGILL && info->si_code > 0 && !fault.instructionReadError) {
+            StepJob job{ctx, &threadCtx, &fault, Outcome::NotAttempted, {}};
             CallOnStack(&StepOnHostStack, &job, threadCtx.hostSp);
             outcome = job.outcome;
             detail = job.detail.empty() ? "single-stepped with Dynarmic" : job.detail;
@@ -475,7 +727,8 @@ namespace skyline::nce {
         }
 #endif
 
-        Log(signal, info, ctx, outcome, detail, trace);
+        Log(fault, *ctx, outcome, detail, trace);
+        errno = savedErrno;
         return outcome == Outcome::Recovered;
     }
 }

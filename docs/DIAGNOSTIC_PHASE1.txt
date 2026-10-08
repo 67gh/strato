@@ -1,0 +1,134 @@
+STRATO — LIVRAISON 1 : SOCLE DU DIAGNOSTIC
+Date : 2026-10-07
+
+Ce lot est la première étape de la refonte, pas sa version complète. Il est
+préparé à partir de l'archive strato.zip.txt fournie. Aucun build Android ni
+essai sur Snapdragon 888 n'a été effectué ici. La compilation GitHub Actions
+et les essais ci-dessous sont nécessaires avant de le considérer validé.
+
+INSTALLATION SUR LE PROJET DE TON AMI
+
+1. Sauvegarder/committer ses changements actuels.
+2. Comparer les fichiers concernés avec BASE_SHA256.csv livré dans le paquet.
+   Si un fichier a été corrigé depuis l'archive de référence, fusionner les
+   changements du patch ; ne pas remplacer aveuglément cette nouvelle version.
+3. Choisir UNE méthode : appliquer le patch ou copier le contenu de fichiers/
+   dans la racine du projet en conservant l'arborescence.
+   À la racine, avec GNU patch :
+     patch -p1 --dry-run --binary -i /chemin/Strato_phase1.patch
+     patch -p1 --binary -i /chemin/Strato_phase1.patch
+4. Compiler avec le workflow existant (NDK 26.1, CMake 3.31). Aucun changement
+   CMake/Gradle, aucune bibliothèque Android ajoutée par ce lot.
+5. En cas d'échec, transmettre la PREMIÈRE ligne error: ou CMake Error et son
+   contexte immédiat. Ne pas intégrer les phases GPU/NCE/UI suivantes avant
+   d'avoir une base compilable.
+
+CE QUI EST IMPLÉMENTÉ
+
+- Écran Diagnostic Material 3 FR/EN, accessible via Paramètres et l'action
+  journaux de la liste de jeux : choisir, exporter, actualiser ou supprimer
+  explicitement une session terminée. Suppression refusée si active/verrouillée.
+- Un répertoire privé distinct par lancement ; métadonnées, verrou système
+  relâché à la mort du processus, export possible après redémarrage.
+- Snapshots appareil, SoC, RAM, app, version de firmware déclarée par les
+  préférences, réglages globaux/par jeu/effectifs. Champs nom/profil masqués.
+- native.json indique le JIT réellement compilé ; vulkan.json contient pilote,
+  extensions annoncées/activées, traits/quirks, heaps/types mémoire et budget
+  si l'extension est annoncée. C'est un snapshot d'initialisation uniquement.
+- Journaux emulation.log, nce_fallback.jsonl et gpu_fault.log dirigés vers la
+  session. Exceptions Kotlin/Java et certaines exceptions JNI enregistrées.
+- Chronologie chaque seconde : RSS avec taille de page réelle, CPU processus,
+  nombre de threads hôtes, cadence décimale des présentations réelles. Le
+  compteur exclut les images interpolées ; il ne mesure pas la fin du travail
+  GPU ni l'affichage physique. Les mesures périmées deviennent indisponibles.
+- Logcat limité au PID et au démarrage de la session, par instantanés finis.
+- Export ZIP avec manifest.json listant les données absentes, tronquées ou
+  invalides et leurs limites ; aucun mélange avec une autre session.
+- Trace NCE v2 : PC/opcode avant le JIT séparés du résultat, horodatages,
+  threads, registres, FPCR/FPSR, module+offset ; comptes dédoublonnés bornés et
+  réconciliés à l'arrêt propre. Les catégories de signal ne prouvent pas une
+  cause précise. L'opcode est lu via pread(/proc/self/mem), sans déréférence
+  risquée ajoutée pour les traces. Lecture impossible => fallback SIGILL refusé.
+- Analyseur Python hors ligne, sans dépendance tierce. Classe par fréquence,
+  accepte plusieurs journaux et l'ancien schéma, indique données incomplètes
+  et attribution PC ancienne incertaine. Ses stratégies natives sont des
+  pistes à valider manuellement, pas des patches automatiquement prouvés.
+- Corrections ciblées : sélection de registre temporaire pour MSR TLS,
+  ResolveSymbol hors plages (fin de vecteur), arrêt watchdog lors d'une
+  exception avant destruction de l'état invité.
+
+UTILISATION DE L'ANALYSEUR
+
+Python 3.9 ou plus récent. Extraire nce_fallback.jsonl du ZIP diagnostic puis :
+  python tools/analyze_nce_fallback.py chemin/nce_fallback.jsonl
+  python tools/analyze_nce_fallback.py session1.jsonl session2.jsonl --top 30
+  python tools/analyze_nce_fallback.py chemin/nce_fallback.jsonl --json
+
+TESTS RÉALISÉS ICI
+
+- 21 tests Python : parsing, déduplication des comptes cumulés, fichiers
+  tronqués, compatibilité ancien schéma, et contrat JSON de véritables chaînes
+  de format C++ extraites du code. Ce n'est pas une compilation C++.
+  Commande : python -B -m unittest discover -s tools/tests -p "test_*nce*.py"
+- XML manifest/layout/provider/chaînes analysés ; parité FR/EN contrôlée.
+- Revue croisée Kotlin/JNI/C++ et du cycle de vie des fichiers.
+- Le rapport VERIFICATION.txt du paquet décrit la validation du patch et du ZIP.
+
+TESTS À FAIRE SUR ANDROID
+
+1. Compiler l'APK dans GitHub Actions, installer sans effacer les données.
+2. Lancer un petit jeu pendant 30 secondes, overlay désactivé, sortir proprement.
+   Exporter via Diagnostic. Vérifier game_name/title_id, réglages effectifs,
+   started_at, JIT ENABLED / NOT compiled in, pilote Vulkan, timeline et logcat.
+3. Tester des réglages par jeu différents des réglages globaux et vérifier
+   que le rapport distingue les trois snapshots. Les changements en cours
+   de partie ne sont pas historisés dans ce lot.
+4. Lancer TotK puis Dragon Ball avec un dossier de diagnostic distinct par
+   essai. À l'apparition du gel, forcer l'arrêt si nécessaire, rouvrir Strato,
+   sélectionner la dernière session puis exporter. Ne pas effacer ses données.
+5. Si possible, exporter pendant une session active et contrôler l'indication
+   de snapshot non atomique. Tester deux exports successifs, FR puis EN.
+6. Supprimer une ancienne session via confirmation : seule cette session doit
+   disparaître. Une session active doit être refusée. Les ZIP déjà exportés
+   restent dans le cache et peuvent être nettoyés via Android.
+7. Vérifier que les jeux/paramètres/imports existants fonctionnent toujours.
+8. Transmettre le ZIP complet du diagnostic et le résultat du build. Sans SIGILL,
+   l'absence de fallback ne valide pas l'exécution JIT : mode forcé encore à faire.
+
+LIMITES ET SUITE DU PLAN
+
+- Ce socle ne garantit pas encore un diagnostic causal en une seule exécution.
+  Le watchdog existant reste présent dans emulation.log ; cette livraison
+  n'ajoute pas le déclenchement sur absence de progrès, les états SVC/objets
+  attendus, la capture structurée PC/LR ni l'anneau IPC/stubs. À compléter
+  pour finir l'axe B avant les correctifs de rendu.
+- Pas encore de courbe d'allocations/budget GPU ni compteurs draws/dispatches/
+  pipelines ; valeurs explicitement indisponibles. Un GPU% portable fiable
+  n'est pas inventé à partir du CPU ou des FPS.
+- Les images de stockage, texel buffers, couleurs, device_fault, dump/validation
+  SPIR-V (axe D) ne sont pas corrigés. Le contournement compute demeure.
+- Pas de nouvelles familles de patches NCE, de mode forcé ou d'oracle comparatif
+  (axe C). Accès données JIT et rollback mémoire restent à auditer. La chaîne
+  de traitement des signaux n'est pas rendue globalement async-signal-safe.
+- Refonte bibliothèque/navigation/overlay complet (axe A) à venir.
+- Sessions non purgées automatiquement. Timeline : deux blocs de 1 Mio ;
+  logcat : deux blocs de 4 Mio, interrogation toutes les 2 secondes, pertes
+  possibles après mort brutale/saturation des buffers/changement d'heure.
+- NCE : 8 Mio maximum par session, 1024 clés dédupliquées et compteurs finaux
+  réservés. D'autres journaux natifs restent sans limite sur le stockage local ;
+  leurs queues seulement sont exportées au-delà de leurs plafonds respectifs.
+  ZIP limité à 64 Mio, charge utile 62 Mio ; le manifeste précise les omissions.
+- Un export actif peut combiner des fichiers pris à des instants différents.
+  Une absence de crash.log/gpu_fault.log ne prouve pas une absence de panne.
+  Les logs peuvent contenir des noms de jeux, chemins et textes utilisateur.
+  Aucun fichier de clés, firmware, ROM ou sauvegarde n'est ajouté à l'export.
+- Licences existantes conservées. LICENSE.md racine contient GPLv3 ; plusieurs
+  fichiers portent MPL-2.0. Aucun code d'un autre émulateur ajouté dans ce lot.
+
+INSTRUCTION POUR L'IA DU DESTINATAIRE
+
+Lis STRATO_AI_CHANGES.md, ce document et BASE_SHA256.csv. Compare les sources
+actuelles avant toute application. Vérifie le build, puis complète l'axe B,
+ensuite D, C et A par livraisons de fichiers modifiés uniquement. N'annonce
+pas les gels résolus sans trace et essai correspondants. Le prompt d'origine
+et le plan détaillé figurent dans contexte/ du paquet de transmission.

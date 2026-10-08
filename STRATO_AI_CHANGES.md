@@ -87,3 +87,63 @@ Ce fichier conserve l'historique des modifications apportées au projet pendant 
 ### Vérifications
 - Vérification statique des deux workflows : étape placée immédiatement après le checkout.
 - Le build Android GitHub n'est pas exécuté dans cet environnement ; son succès doit être confirmé par une nouvelle exécution GitHub Actions.
+
+## 2026-10-07 — Phase 1 : socle de diagnostic exportable et traces NCE fiables
+
+Première livraison de code après audit de l'archive fournie. La refonte complète
+reste à poursuivre par phases ; aucun gel de TotK ni DEVICE_LOST de Dragon Ball
+n'est déclaré résolu. Procédure, validations et limites : `docs/DIAGNOSTIC_PHASE1.txt`.
+
+### Diagnostic Android / JNI
+
+- Ajout de `DiagnosticSession.kt`, `DiagnosticExporter.kt`, `DiagnosticActivity.kt`,
+  layout et chaînes FR/EN. Sessions persistantes distinctes, collecte appareil/
+  réglages/CPU/RSS/threads hôtes/cadence des présentations réelles et logcat du PID.
+- Export ZIP plafonné avec manifeste d'intégrité structurelle et de disponibilité ;
+  les fichiers manquants, tronqués et captures actives sont explicitement signalés.
+- Sélection et suppression explicite des anciennes sessions ; verrou actif et
+  traversées de répertoires/symlinks refusés lors de la suppression.
+- Intégration dans `EmulationActivity.kt`, `StratoApplication.kt`, `MainActivity.kt`,
+  `SettingsHomeFragment.kt`, manifeste et FileProvider limité au cache diagnostics.
+- `emu_jni.cpp` : chemin de session, état JIT compilé, exceptions JNI, fin des traces
+  NCE après arrêt des threads. Aucun changement de signature publique hors liaison
+  Kotlin/JNI interne, modifiée des deux côtés.
+- `common/diagnostic_session.h` : publication atomique des JSON natifs ;
+  `common/diagnostic_metrics.h` et `presentation_engine.cpp` : compteur atomique des
+  présentations réelles, sans log par image et sans compter les images interpolées.
+
+### Vulkan / garde-fous
+
+- `gpu.cpp` et `gpu/diagnostic_snapshot.h` : snapshot d'initialisation du pilote,
+  extensions annoncées/activées, traits/quirks, heaps/types et budget éventuel.
+  Le budget du physical device n'exige pas l'activation de l'extension sur le device.
+- `gpu/diagnostics.cpp/.h` : fichier par session, événements bornés et horodatés,
+  initialisation réinitialisée, erreurs de diagnostic non propagées.
+- `os.cpp` : routage du journal NCE et arrêt watchdog sur exception d'exécution.
+- `loader/loader.cpp/.h` : vérification de fin/plage avant résolution de symboles,
+  copie des plages de modules avant démarrage des threads pour les traces NCE.
+
+### NCE / analyse hors ligne
+
+- `nce.cpp` : correction `mrs.srcReg` vers `msr.srcReg` dans le choix du registre
+  temporaire du patch MSR TLS.
+- `nce/jit_fallback.cpp/.h` : schéma v2 avec état avant JIT conservé, résultat séparé,
+  horodatages, threads, FPCR/FPSR, module+offset ; lecture opcode via `/proc/self/mem`,
+  compteurs cumulés dédoublonnés bornés et clôture non levante par `Flush()`.
+- L'indisponibilité de `/proc/self/mem` refuse désormais explicitement le fallback
+  SIGILL. La sûreté des accès données JIT n'est PAS démontrée par le `memcpy` mentionné
+  dans l'historique du 4 octobre ; droits/pages/rollback restent à traiter.
+- `tools/analyze_nce_fallback.py` : fréquences, ancien/nouveau schéma, données
+  tronquées et suggestions manuelles. Deux fichiers de tests dans `tools/tests/`.
+
+### Validation et travail restant
+
+- 21 tests Python réussis, dont quatre vérifications des formats JSON C++ extraits.
+- XML et parité FR/EN vérifiés ; revue croisée des changements. Le patch et ses
+  fichiers sont accompagnés d'un rapport de vérification dans la livraison.
+- Build Android, installation, performances et jeux : **non exécutés ici**.
+- Aucun ajout de dépendance Android ni modification de CMake/Gradle/workflows.
+- Axe B restant : watchdog étendu, threads/SVC/attentes, IPC/stubs, compteurs GPU.
+- Axe D restant : vrais descripteurs storage/texel, device_fault, SPIR-V et couleurs.
+- Axe C restant : mode forcé, sémantiques natives, oracle et accès mémoire JIT.
+- Axe A restant : refonte globale bibliothèque/paramètres/overlay.

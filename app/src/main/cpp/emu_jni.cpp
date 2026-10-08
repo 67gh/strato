@@ -9,6 +9,8 @@
 #include "skyline/common/language.h"
 #include "skyline/common/signal.h"
 #include "skyline/common/android_settings.h"
+#include "skyline/common/diagnostic_session.h"
+#include "skyline/common/diagnostic_metrics.h"
 #include "skyline/common/trace.h"
 #include "skyline/loader/loader.h"
 #include "skyline/vfs/android_asset_filesystem.h"
@@ -19,6 +21,7 @@
 #include "skyline/input.h"
 #include "skyline/kernel/types/KProcess.h"
 #include "skyline/logger/logger.h"
+#include "skyline/nce/jit_fallback.h"
 
 jint Fps; //!< An approximation of the amount of frames being submitted every second
 jfloat AverageFrametimeMs; //!< The average time it takes for a frame to be rendered and presented in milliseconds
@@ -55,6 +58,15 @@ static std::string GetTimeZoneName() {
     return "GMT";
 }
 
+static void RecordNativeFailure(std::string_view type, std::string_view message) noexcept {
+    try {
+        skyline::diagnostics::WriteJson("native_failure.json", fmt::format(R"({{"type":"{}","message":"{}"}})",
+            skyline::diagnostics::JsonEscape(type), skyline::diagnostics::JsonEscape(message)));
+    } catch (...) {
+        // Reporting must not throw a second exception across the JNI boundary.
+    }
+}
+
 extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApplication(
     JNIEnv *env,
     jobject instance,
@@ -65,10 +77,12 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApp
     jstring publicAppFilesPathJstring,
     jstring privateAppFilesPathJstring,
     jstring nativeLibraryPathJstring,
-    jobject assetManager
+    jobject assetManager,
+    jstring diagnosticPathJstring
 ) {
     skyline::signal::ScopedStackBlocker stackBlocker; // We do not want anything to unwind past JNI code as there are invalid stack frames which can lead to a segmentation fault
     Fps = 0;
+    skyline::diagnostics::presentedFrames.store(0, std::memory_order_relaxed);
     AverageFrametimeMs = AverageFrametimeDeviationMs = 0.0f;
 
     pthread_setname_np(pthread_self(), "EmuMain");
@@ -78,8 +92,16 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApp
     std::shared_ptr<skyline::Settings> settings{std::make_shared<skyline::AndroidSettings>(env, settingsInstance)};
 
     skyline::JniString publicAppFilesPath(env, publicAppFilesPathJstring);
+    skyline::diagnostics::Configure(skyline::JniString(env, diagnosticPathJstring));
 
-    skyline::AsyncLogger::Initialize(*settings->logLevel, publicAppFilesPath + "logs/emulation.log");
+    skyline::diagnostics::WriteJson("native.json",
+#ifdef STRATO_JIT_FALLBACK
+        R"({"schema_version":1,"jit_compiled":true,"jit_mode":"single_instruction_fallback"})");
+#else
+        R"({"schema_version":1,"jit_compiled":false,"jit_mode":"not_compiled"})");
+#endif
+
+    skyline::AsyncLogger::Initialize(*settings->logLevel, skyline::diagnostics::OutputPath("emulation.log", publicAppFilesPath + "logs/emulation.log"));
 
     auto start{std::chrono::steady_clock::now()};
 
@@ -116,10 +138,13 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApp
 
         os->Execute(romFd, static_cast<skyline::loader::RomFormat>(romType));
     } catch (std::exception &e) {
+        RecordNativeFailure("exception", e.what());
         LOGENF("An uncaught exception has occurred: {}", e.what());
     } catch (const skyline::signal::SignalException &e) {
+        try { RecordNativeFailure("signal_exception", e.what()); } catch (...) { }
         LOGENF("An uncaught signal exception has occurred: {}", e.what());
     } catch (...) {
+        RecordNativeFailure("unknown_exception", "Unknown exception at the JNI execution boundary");
         LOGENF("An unknown uncaught exception has occurred");
     }
 
@@ -130,8 +155,13 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApp
     auto end{std::chrono::steady_clock::now()};
     LOGINF("Emulation has ended in {}ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 
+    skyline::nce::JitFallback::Flush();
     skyline::AsyncLogger::Finalize(true);
     close(romFd);
+}
+
+extern "C" JNIEXPORT jlong Java_org_stratoemu_strato_EmulationActivity_getDiagnosticPresentedFrames(JNIEnv *, jobject) {
+    return static_cast<jlong>(skyline::diagnostics::presentedFrames.load(std::memory_order_relaxed));
 }
 
 extern "C" JNIEXPORT jboolean Java_org_stratoemu_strato_EmulationActivity_stopEmulation(JNIEnv *, jobject, jboolean join) {

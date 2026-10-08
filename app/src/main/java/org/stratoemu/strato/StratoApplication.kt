@@ -11,6 +11,7 @@ import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.DynamicColorsOptions
 import dagger.hilt.android.HiltAndroidApp
 import org.stratoemu.strato.di.getSettings
+import org.stratoemu.strato.diagnostics.DiagnosticSession
 import java.io.File
 
 /**
@@ -38,6 +39,10 @@ class StratoApplication : Application() {
         // Writes any uncaught exception to crash.log in the public files directory, then lets Android handle the crash as usual
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                DiagnosticSession.recordCurrentCrash(throwable)
+            } catch (_ : Throwable) {
+            }
             try {
                 File(getPublicFilesDir(), "crash.log").appendText("=== ${java.util.Date()} thread '${thread.name}'\n${throwable.stackTraceToString()}\n")
             } catch (_ : Throwable) {

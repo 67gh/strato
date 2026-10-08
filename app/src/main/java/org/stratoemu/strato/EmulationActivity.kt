@@ -51,6 +51,7 @@ import org.stratoemu.strato.applet.swkbd.SoftwareKeyboardDialog
 import org.stratoemu.strato.data.AppItem
 import org.stratoemu.strato.data.AppItemTag
 import org.stratoemu.strato.databinding.EmuActivityBinding
+import org.stratoemu.strato.diagnostics.DiagnosticSession
 import org.stratoemu.strato.emulation.PipelineLoadingFragment
 import org.stratoemu.strato.input.*
 import org.stratoemu.strato.loader.RomFile
@@ -128,6 +129,31 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
 
     private lateinit var emulationSettings : EmulationSettings
 
+    @Volatile
+    private var diagnosticSession : DiagnosticSession? = null
+    private val diagnosticHandler = Handler(Looper.getMainLooper())
+    private var lastDiagnosticSession : DiagnosticSession? = null
+    private var lastDiagnosticFrames = 0L
+    private var lastDiagnosticSampleMs = 0L
+    private val diagnosticStatistics = object : Runnable {
+        override fun run() {
+            diagnosticSession?.let {
+                val now = SystemClock.elapsedRealtime()
+                val frames = getDiagnosticPresentedFrames()
+                val interval = now - lastDiagnosticSampleMs
+                val delta = frames - lastDiagnosticFrames
+                if (lastDiagnosticSession === it && interval > 0 && delta >= 0) {
+                    val rate = 1000.0 * delta / interval
+                    it.updatePerformance(rate, if (delta > 0) interval.toFloat() / delta else 0f)
+                }
+                lastDiagnosticSession = it
+                lastDiagnosticFrames = frames
+                lastDiagnosticSampleMs = now
+            }
+            diagnosticHandler.postDelayed(this, 1000)
+        }
+    }
+
     @Inject
     lateinit var inputManager : InputManager
 
@@ -147,7 +173,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
      * @param nativeLibraryPath The full path to the app native library directory
      * @param assetManager The asset manager used for accessing app assets
      */
-    private external fun executeApplication(romUri : String, romType : Int, romFd : Int, nativeSettings : NativeSettings, publicAppFilesPath : String, privateAppFilesPath : String, nativeLibraryPath : String, assetManager : AssetManager)
+    private external fun executeApplication(romUri : String, romType : Int, romFd : Int, nativeSettings : NativeSettings, publicAppFilesPath : String, privateAppFilesPath : String, nativeLibraryPath : String, assetManager : AssetManager, diagnosticPath : String)
 
     /**
      * @param join If the function should only return after all the threads join or immediately
@@ -177,6 +203,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
      * Writes the current performance statistics into [fps], [averageFrametime] and [averageFrametimeDeviation] fields
      */
     private external fun updatePerformanceStatistics()
+    private external fun getDiagnosticPresentedFrames() : Long
 
     /**
      * @see [InputHandler.initializeControllers]
@@ -251,7 +278,30 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
 
         GpuDriverHelper.ensureFileRedirectDir(this)
         emulationThread = Thread {
-            executeApplication(rom.toString(), romType, romFd.detachFd(), NativeSettings(this, emulationSettings), applicationContext.getPublicFilesDir().canonicalPath + "/", applicationContext.filesDir.canonicalPath + "/", applicationInfo.nativeLibraryDir + "/", assets)
+            val nativeSettings = NativeSettings(this, emulationSettings)
+            val session = try {
+                DiagnosticSession.start(applicationContext, item.titleId ?: item.key(), item.title ?: "unknown", nativeSettings)
+            } catch (e : Exception) {
+                // A full disk must not prevent a game from starting.
+                Log.w(Tag, "Could not start diagnostic collection", e)
+                null
+            }
+            diagnosticSession = session
+            try {
+                executeApplication(rom.toString(), romType, romFd.detachFd(), nativeSettings, applicationContext.getPublicFilesDir().canonicalPath + "/", applicationContext.filesDir.canonicalPath + "/", applicationInfo.nativeLibraryDir + "/", assets, session?.directory?.absolutePath ?: "")
+            } catch (e : Throwable) {
+                session?.recordCrash(e)
+                throw e
+            } finally {
+                // Native exceptions may have been caught in JNI; "returned" is not a success verdict.
+                try {
+                    session?.finish("native_returned")
+                } catch (e : Exception) {
+                    Log.w(Tag, "Could not finalize diagnostic collection", e)
+                } finally {
+                    diagnosticSession = null
+                }
+            }
             returnFromEmulation()
         }
 
@@ -286,6 +336,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
         window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         inputHandler = InputHandler(inputManager, emulationSettings)
         setContentView(binding.root)
+        diagnosticHandler.post(diagnosticStatistics)
 
         builtinVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -341,7 +392,10 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
                     override fun run() {
                         updatePerformanceStatistics()
                         // We read the `VmRSS` value from the kernel
-                        ramUsage = File("/proc/self/statm").readLines()[0].split(' ')[1].toLong() * 4096 / 1000000
+                        ramUsage = runCatching {
+                            File("/proc/self/statm").readText().trim().split(Regex("\\s+"))[1].toLong() *
+                                android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE) / 1000000
+                        }.getOrDefault(0L)
                         text = "$fps FPS • $ramUsage MB"
                         postDelayed(this, 250)
                     }
@@ -557,6 +611,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
 
     override fun onDestroy() {
         super.onDestroy()
+        diagnosticHandler.removeCallbacks(diagnosticStatistics)
         shouldFinish = false
 
         // Stop forcing 60Hz on exit to allow the skyline UI to run at high refresh rates

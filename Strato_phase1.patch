@@ -1,0 +1,3488 @@
+diff -ruN a/STRATO_AI_CHANGES.md b/STRATO_AI_CHANGES.md
+--- a/STRATO_AI_CHANGES.md	2026-10-07 23:36:04.803638900 +0200
++++ b/STRATO_AI_CHANGES.md	2026-10-07 23:36:04.803106000 +0200
+@@ -87,3 +87,63 @@
+ ### Vérifications
+ - Vérification statique des deux workflows : étape placée immédiatement après le checkout.
+ - Le build Android GitHub n'est pas exécuté dans cet environnement ; son succès doit être confirmé par une nouvelle exécution GitHub Actions.
++
++## 2026-10-07 — Phase 1 : socle de diagnostic exportable et traces NCE fiables
++
++Première livraison de code après audit de l'archive fournie. La refonte complète
++reste à poursuivre par phases ; aucun gel de TotK ni DEVICE_LOST de Dragon Ball
++n'est déclaré résolu. Procédure, validations et limites : `docs/DIAGNOSTIC_PHASE1.txt`.
++
++### Diagnostic Android / JNI
++
++- Ajout de `DiagnosticSession.kt`, `DiagnosticExporter.kt`, `DiagnosticActivity.kt`,
++  layout et chaînes FR/EN. Sessions persistantes distinctes, collecte appareil/
++  réglages/CPU/RSS/threads hôtes/cadence des présentations réelles et logcat du PID.
++- Export ZIP plafonné avec manifeste d'intégrité structurelle et de disponibilité ;
++  les fichiers manquants, tronqués et captures actives sont explicitement signalés.
++- Sélection et suppression explicite des anciennes sessions ; verrou actif et
++  traversées de répertoires/symlinks refusés lors de la suppression.
++- Intégration dans `EmulationActivity.kt`, `StratoApplication.kt`, `MainActivity.kt`,
++  `SettingsHomeFragment.kt`, manifeste et FileProvider limité au cache diagnostics.
++- `emu_jni.cpp` : chemin de session, état JIT compilé, exceptions JNI, fin des traces
++  NCE après arrêt des threads. Aucun changement de signature publique hors liaison
++  Kotlin/JNI interne, modifiée des deux côtés.
++- `common/diagnostic_session.h` : publication atomique des JSON natifs ;
++  `common/diagnostic_metrics.h` et `presentation_engine.cpp` : compteur atomique des
++  présentations réelles, sans log par image et sans compter les images interpolées.
++
++### Vulkan / garde-fous
++
++- `gpu.cpp` et `gpu/diagnostic_snapshot.h` : snapshot d'initialisation du pilote,
++  extensions annoncées/activées, traits/quirks, heaps/types et budget éventuel.
++  Le budget du physical device n'exige pas l'activation de l'extension sur le device.
++- `gpu/diagnostics.cpp/.h` : fichier par session, événements bornés et horodatés,
++  initialisation réinitialisée, erreurs de diagnostic non propagées.
++- `os.cpp` : routage du journal NCE et arrêt watchdog sur exception d'exécution.
++- `loader/loader.cpp/.h` : vérification de fin/plage avant résolution de symboles,
++  copie des plages de modules avant démarrage des threads pour les traces NCE.
++
++### NCE / analyse hors ligne
++
++- `nce.cpp` : correction `mrs.srcReg` vers `msr.srcReg` dans le choix du registre
++  temporaire du patch MSR TLS.
++- `nce/jit_fallback.cpp/.h` : schéma v2 avec état avant JIT conservé, résultat séparé,
++  horodatages, threads, FPCR/FPSR, module+offset ; lecture opcode via `/proc/self/mem`,
++  compteurs cumulés dédoublonnés bornés et clôture non levante par `Flush()`.
++- L'indisponibilité de `/proc/self/mem` refuse désormais explicitement le fallback
++  SIGILL. La sûreté des accès données JIT n'est PAS démontrée par le `memcpy` mentionné
++  dans l'historique du 4 octobre ; droits/pages/rollback restent à traiter.
++- `tools/analyze_nce_fallback.py` : fréquences, ancien/nouveau schéma, données
++  tronquées et suggestions manuelles. Deux fichiers de tests dans `tools/tests/`.
++
++### Validation et travail restant
++
++- 21 tests Python réussis, dont quatre vérifications des formats JSON C++ extraits.
++- XML et parité FR/EN vérifiés ; revue croisée des changements. Le patch et ses
++  fichiers sont accompagnés d'un rapport de vérification dans la livraison.
++- Build Android, installation, performances et jeux : **non exécutés ici**.
++- Aucun ajout de dépendance Android ni modification de CMake/Gradle/workflows.
++- Axe B restant : watchdog étendu, threads/SVC/attentes, IPC/stubs, compteurs GPU.
++- Axe D restant : vrais descripteurs storage/texel, device_fault, SPIR-V et couleurs.
++- Axe C restant : mode forcé, sémantiques natives, oracle et accès mémoire JIT.
++- Axe A restant : refonte globale bibliothèque/paramètres/overlay.
+diff -ruN a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml	2026-10-07 23:36:04.805828900 +0200
++++ b/app/src/main/AndroidManifest.xml	2026-10-07 23:36:04.804143300 +0200
+@@ -47,6 +47,12 @@
+             android:exported="false" />
+ 
+         <activity
++            android:name=".diagnostics.DiagnosticActivity"
++            android:exported="false"
++            android:label="@string/diagnostic_title"
++            android:parentActivityName=".settings.SettingsActivity" />
++
++        <activity
+             android:name=".settings.SettingsActivity"
+             android:exported="true"
+             android:label="@string/settings"
+diff -ruN a/app/src/main/cpp/emu_jni.cpp b/app/src/main/cpp/emu_jni.cpp
+--- a/app/src/main/cpp/emu_jni.cpp	2026-10-07 23:36:04.806943400 +0200
++++ b/app/src/main/cpp/emu_jni.cpp	2026-10-07 23:36:04.805828900 +0200
+@@ -9,6 +9,8 @@
+ #include "skyline/common/language.h"
+ #include "skyline/common/signal.h"
+ #include "skyline/common/android_settings.h"
++#include "skyline/common/diagnostic_session.h"
++#include "skyline/common/diagnostic_metrics.h"
+ #include "skyline/common/trace.h"
+ #include "skyline/loader/loader.h"
+ #include "skyline/vfs/android_asset_filesystem.h"
+@@ -19,6 +21,7 @@
+ #include "skyline/input.h"
+ #include "skyline/kernel/types/KProcess.h"
+ #include "skyline/logger/logger.h"
++#include "skyline/nce/jit_fallback.h"
+ 
+ jint Fps; //!< An approximation of the amount of frames being submitted every second
+ jfloat AverageFrametimeMs; //!< The average time it takes for a frame to be rendered and presented in milliseconds
+@@ -55,6 +58,15 @@
+     return "GMT";
+ }
+ 
++static void RecordNativeFailure(std::string_view type, std::string_view message) noexcept {
++    try {
++        skyline::diagnostics::WriteJson("native_failure.json", fmt::format(R"({{"type":"{}","message":"{}"}})",
++            skyline::diagnostics::JsonEscape(type), skyline::diagnostics::JsonEscape(message)));
++    } catch (...) {
++        // Reporting must not throw a second exception across the JNI boundary.
++    }
++}
++
+ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApplication(
+     JNIEnv *env,
+     jobject instance,
+@@ -65,10 +77,12 @@
+     jstring publicAppFilesPathJstring,
+     jstring privateAppFilesPathJstring,
+     jstring nativeLibraryPathJstring,
+-    jobject assetManager
++    jobject assetManager,
++    jstring diagnosticPathJstring
+ ) {
+     skyline::signal::ScopedStackBlocker stackBlocker; // We do not want anything to unwind past JNI code as there are invalid stack frames which can lead to a segmentation fault
+     Fps = 0;
++    skyline::diagnostics::presentedFrames.store(0, std::memory_order_relaxed);
+     AverageFrametimeMs = AverageFrametimeDeviationMs = 0.0f;
+ 
+     pthread_setname_np(pthread_self(), "EmuMain");
+@@ -78,8 +92,16 @@
+     std::shared_ptr<skyline::Settings> settings{std::make_shared<skyline::AndroidSettings>(env, settingsInstance)};
+ 
+     skyline::JniString publicAppFilesPath(env, publicAppFilesPathJstring);
++    skyline::diagnostics::Configure(skyline::JniString(env, diagnosticPathJstring));
++
++    skyline::diagnostics::WriteJson("native.json",
++#ifdef STRATO_JIT_FALLBACK
++        R"({"schema_version":1,"jit_compiled":true,"jit_mode":"single_instruction_fallback"})");
++#else
++        R"({"schema_version":1,"jit_compiled":false,"jit_mode":"not_compiled"})");
++#endif
+ 
+-    skyline::AsyncLogger::Initialize(*settings->logLevel, publicAppFilesPath + "logs/emulation.log");
++    skyline::AsyncLogger::Initialize(*settings->logLevel, skyline::diagnostics::OutputPath("emulation.log", publicAppFilesPath + "logs/emulation.log"));
+ 
+     auto start{std::chrono::steady_clock::now()};
+ 
+@@ -116,10 +138,13 @@
+ 
+         os->Execute(romFd, static_cast<skyline::loader::RomFormat>(romType));
+     } catch (std::exception &e) {
++        RecordNativeFailure("exception", e.what());
+         LOGENF("An uncaught exception has occurred: {}", e.what());
+     } catch (const skyline::signal::SignalException &e) {
++        try { RecordNativeFailure("signal_exception", e.what()); } catch (...) { }
+         LOGENF("An uncaught signal exception has occurred: {}", e.what());
+     } catch (...) {
++        RecordNativeFailure("unknown_exception", "Unknown exception at the JNI execution boundary");
+         LOGENF("An unknown uncaught exception has occurred");
+     }
+ 
+@@ -130,10 +155,15 @@
+     auto end{std::chrono::steady_clock::now()};
+     LOGINF("Emulation has ended in {}ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+ 
++    skyline::nce::JitFallback::Flush();
+     skyline::AsyncLogger::Finalize(true);
+     close(romFd);
+ }
+ 
++extern "C" JNIEXPORT jlong Java_org_stratoemu_strato_EmulationActivity_getDiagnosticPresentedFrames(JNIEnv *, jobject) {
++    return static_cast<jlong>(skyline::diagnostics::presentedFrames.load(std::memory_order_relaxed));
++}
++
+ extern "C" JNIEXPORT jboolean Java_org_stratoemu_strato_EmulationActivity_stopEmulation(JNIEnv *, jobject, jboolean join) {
+     auto os{OsWeak.lock()};
+     if (!os)
+diff -ruN a/app/src/main/cpp/skyline/common/diagnostic_metrics.h b/app/src/main/cpp/skyline/common/diagnostic_metrics.h
+--- a/app/src/main/cpp/skyline/common/diagnostic_metrics.h	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/cpp/skyline/common/diagnostic_metrics.h	2026-10-07 23:36:04.807446800 +0200
+@@ -0,0 +1,11 @@
++// SPDX-License-Identifier: MPL-2.0
++#pragma once
++
++#include <atomic>
++#include <cstdint>
++
++namespace skyline::diagnostics {
++    // Count real frame submissions. The display's last moving-average FPS stays stale on a hang.
++    // No formatting, allocation, locks or disk writes occur on the presentation path.
++    inline std::atomic<std::uint64_t> presentedFrames{};
++}
+diff -ruN a/app/src/main/cpp/skyline/common/diagnostic_session.h b/app/src/main/cpp/skyline/common/diagnostic_session.h
+--- a/app/src/main/cpp/skyline/common/diagnostic_session.h	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/cpp/skyline/common/diagnostic_session.h	2026-10-07 23:36:04.807446800 +0200
+@@ -0,0 +1,116 @@
++// SPDX-License-Identifier: MPL-2.0
++
++#pragma once
++
++#include <cerrno>
++#include <cstdio>
++#include <filesystem>
++#include <string>
++#include <string_view>
++#include <utility>
++#include <fcntl.h>
++#include <unistd.h>
++
++namespace skyline::diagnostics {
++    namespace detail {
++        // Configure once before the emulation threads start; the path is read-only during a run.
++        inline std::string sessionDirectory;
++
++        inline bool IsFileName(std::string_view name) noexcept {
++            return !name.empty() && name != "." && name != ".." &&
++                   name.find_first_of("/\\") == std::string_view::npos &&
++                   name.find('\0') == std::string_view::npos;
++        }
++    }
++
++    inline void Configure(std::string directory) noexcept {
++        detail::sessionDirectory.clear();
++        try {
++            if (directory.empty())
++                return;
++            std::error_code error;
++            std::filesystem::create_directories(directory, error);
++            if (error || !std::filesystem::is_directory(directory, error) || error)
++                return;
++            if (directory.back() != '/')
++                directory += '/';
++            detail::sessionDirectory = std::move(directory);
++        } catch (...) {
++            // A diagnostic directory failure must not prevent the game from starting.
++        }
++    }
++
++    inline std::string OutputPath(std::string_view name, std::string fallback) noexcept {
++        try {
++            if (!detail::sessionDirectory.empty() && detail::IsFileName(name))
++                return detail::sessionDirectory + std::string{name};
++        } catch (...) {
++        }
++        return fallback;
++    }
++
++    // Returns escaped JSON string contents, without surrounding quotation marks.
++    inline std::string JsonEscape(std::string_view value) {
++        constexpr char Hex[]{"0123456789abcdef"};
++        std::string escaped;
++        escaped.reserve(value.size());
++        for (unsigned char character : value) {
++            switch (character) {
++                case '"': escaped += "\\\""; break;
++                case '\\': escaped += "\\\\"; break;
++                case '\b': escaped += "\\b"; break;
++                case '\f': escaped += "\\f"; break;
++                case '\n': escaped += "\\n"; break;
++                case '\r': escaped += "\\r"; break;
++                case '\t': escaped += "\\t"; break;
++                default:
++                    if (character < 0x20) {
++                        escaped += "\\u00";
++                        escaped += Hex[character >> 4];
++                        escaped += Hex[character & 0xf];
++                    } else {
++                        escaped += static_cast<char>(character);
++                    }
++            }
++        }
++        return escaped;
++    }
++
++    inline bool WriteJson(std::string_view name, std::string_view contents) noexcept {
++        int fd{-1};
++        std::string temporary;
++        try {
++            auto path{OutputPath(name, {})};
++            if (path.empty())
++                return false;
++            temporary = path + ".tmp";
++            fd = open(temporary.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
++            if (fd < 0)
++                return false;
++            size_t offset{};
++            while (offset < contents.size()) {
++                auto count{write(fd, contents.data() + offset, contents.size() - offset)};
++                if (count < 0 && errno == EINTR)
++                    continue;
++                if (count <= 0) {
++                    close(fd);
++                    fd = -1;
++                    unlink(temporary.c_str());
++                    return false;
++                }
++                offset += static_cast<size_t>(count);
++            }
++            auto closeResult{close(fd)};
++            fd = -1;
++            // Publish only complete JSON documents, including when export runs concurrently.
++            if (closeResult == 0 && rename(temporary.c_str(), path.c_str()) == 0)
++                return true;
++        } catch (...) {
++        }
++        if (fd >= 0)
++            close(fd);
++        if (!temporary.empty())
++            unlink(temporary.c_str());
++        return false;
++    }
++}
+diff -ruN a/app/src/main/cpp/skyline/gpu/diagnostic_snapshot.h b/app/src/main/cpp/skyline/gpu/diagnostic_snapshot.h
+--- a/app/src/main/cpp/skyline/gpu/diagnostic_snapshot.h	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/cpp/skyline/gpu/diagnostic_snapshot.h	2026-10-07 23:36:04.809988900 +0200
+@@ -0,0 +1,172 @@
++// SPDX-License-Identifier: MPL-2.0
++
++#pragma once
++
++#include <algorithm>
++#include <array>
++#include <locale>
++#include <sstream>
++#include <vector>
++#include <common/diagnostic_session.h>
++#include "trait_manager.h"
++#ifdef __ANDROID__
++#include <sys/system_properties.h>
++#endif
++
++namespace skyline::gpu::diagnostics {
++    /**
++     * A one-time snapshot taken after logical-device creation. No optional diagnostic
++     * feature is enabled here. Budget and usage are driver estimates, not allocator accounting.
++     */
++    inline void WriteVulkanSnapshot(const vk::raii::PhysicalDevice &physicalDevice,
++                                    const TraitManager::DeviceProperties2 &propertiesChain,
++                                    TraitManager &traits,
++                                    const std::vector<vk::ExtensionProperties> &supportedExtensions,
++                                    const std::vector<std::array<char, VK_MAX_EXTENSION_NAME_SIZE>> &enabledExtensions,
++                                    u32 queueFamilyIndex) noexcept {
++        try {
++            using skyline::diagnostics::JsonEscape;
++            auto quote{[](std::string_view value) { return '"' + JsonEscape(value) + '"'; }};
++            auto supported{[&](std::string_view name) {
++                return std::any_of(supportedExtensions.begin(), supportedExtensions.end(), [&](const auto &extension) {
++                    return std::string_view{extension.extensionName} == name;
++                });
++            }};
++            auto enabled{[&](std::string_view name) {
++                return std::any_of(enabledExtensions.begin(), enabledExtensions.end(), [&](const auto &extension) {
++                    return std::string_view{extension.data()} == name;
++                });
++            }};
++
++            const auto &properties{propertiesChain.get<vk::PhysicalDeviceProperties2>().properties};
++            const auto &driver{propertiesChain.get<vk::PhysicalDeviceDriverProperties>()};
++            const auto memory{physicalDevice.getMemoryProperties()};
++            bool budgetSupported{supported("VK_EXT_memory_budget")};
++            bool budgetAvailable{};
++            std::array<VkDeviceSize, VK_MAX_MEMORY_HEAPS> budgets{}, usages{};
++            std::string_view budgetStatus{budgetSupported ? "query_unavailable" : "unsupported"};
++#ifdef VK_EXT_memory_budget
++            if (budgetSupported && physicalDevice.getDispatcher()->vkGetPhysicalDeviceMemoryProperties2) {
++                VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{};
++                budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
++                VkPhysicalDeviceMemoryProperties2 queriedMemory{};
++                queriedMemory.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
++                queriedMemory.pNext = &budget;
++                physicalDevice.getDispatcher()->vkGetPhysicalDeviceMemoryProperties2(static_cast<VkPhysicalDevice>(*physicalDevice), &queriedMemory);
++                std::copy_n(budget.heapBudget, VK_MAX_MEMORY_HEAPS, budgets.begin());
++                std::copy_n(budget.heapUsage, VK_MAX_MEMORY_HEAPS, usages.begin());
++                budgetAvailable = true;
++                budgetStatus = "available";
++            }
++#else
++            if (budgetSupported)
++                budgetStatus = "headers_unavailable";
++#endif
++
++            std::ostringstream json;
++            json.imbue(std::locale::classic());
++            json << std::boolalpha;
++            json << "{\n\"schema_version\":1,\"snapshot_stage\":\"logical_device_created\","
++                    "\"memory_units\":\"bytes\",\"periodic_sampling\":false,";
++            json << "\n\"device\":{\"name\":" << quote(properties.deviceName.data())
++                 << ",\"type\":" << quote(vk::to_string(properties.deviceType))
++                 << ",\"vendor_id\":" << properties.vendorID << ",\"device_id\":" << properties.deviceID
++                 << ",\"api_version_raw\":" << properties.apiVersion
++                 << ",\"api_version\":" << quote(std::to_string(VK_API_VERSION_MAJOR(properties.apiVersion)) + "." + std::to_string(VK_API_VERSION_MINOR(properties.apiVersion)) + "." + std::to_string(VK_API_VERSION_PATCH(properties.apiVersion)))
++                 << ",\"queue_family_index\":" << queueFamilyIndex << "},";
++            // Driver versions use vendor-specific encodings; retain the raw value.
++            json << "\n\"driver\":{\"id\":" << quote(vk::to_string(driver.driverID))
++                 << ",\"name\":" << quote(driver.driverName.data())
++                 << ",\"info\":" << quote(driver.driverInfo.data())
++                 << ",\"version_raw\":" << properties.driverVersion << "},";
++
++            json << "\n\"android\":{";
++#ifdef __ANDROID__
++            constexpr const char *AndroidProperties[]{"ro.product.manufacturer", "ro.product.model", "ro.hardware", "ro.soc.manufacturer", "ro.soc.model", "ro.build.version.release", "ro.build.version.sdk"};
++            bool firstProperty{true};
++            for (const auto property : AndroidProperties) {
++                char value[PROP_VALUE_MAX]{};
++                if (__system_property_get(property, value) <= 0)
++                    continue;
++                if (!firstProperty)
++                    json << ',';
++                firstProperty = false;
++                json << quote(property) << ':' << quote(value);
++            }
++#endif
++            json << "},\n\"device_extensions_supported\":[";
++            for (size_t index{}; index < supportedExtensions.size(); index++) {
++                if (index)
++                    json << ',';
++                const auto &extension{supportedExtensions[index]};
++                json << "{\"name\":" << quote(extension.extensionName.data()) << ",\"spec_version\":" << extension.specVersion << '}';
++            }
++            json << "],\n\"device_extensions_enabled\":[";
++            for (size_t index{}; index < enabledExtensions.size(); index++) {
++                if (index)
++                    json << ',';
++                json << quote(enabledExtensions[index].data());
++            }
++            json << "],\n\"traits\":{\"summary\":" << quote(traits.Summary())
++                 << ",\"supports_null_descriptor\":" << traits.supportsNullDescriptor
++                 << ",\"supports_image_read_without_format\":" << traits.supportsImageReadWithoutFormat
++                 << ",\"supports_image_write_without_format\":" << traits.supportsShaderStorageImageWriteWithoutFormat
++                 << ",\"supports_adreno_direct_memory_import\":" << traits.supportsAdrenoDirectMemoryImport << "},";
++            const auto &quirks{traits.quirks};
++            json << "\n\"quirks\":{\"summary\":" << quote(traits.quirks.Summary())
++                 << ",\"needs_individual_texture_binding_writes\":" << quirks.needsIndividualTextureBindingWrites
++                 << ",\"image_mutable_format_costly\":" << quirks.vkImageMutableFormatCostly
++                 << ",\"adreno_relaxed_format_aliasing\":" << quirks.adrenoRelaxedFormatAliasing
++                 << ",\"adreno_broken_format_report\":" << quirks.adrenoBrokenFormatReport
++                 << ",\"relaxed_render_pass_compatibility\":" << quirks.relaxedRenderPassCompatibility
++                 << ",\"broken_push_descriptors\":" << quirks.brokenPushDescriptors
++                 << ",\"broken_spirv_position_input\":" << quirks.brokenSpirvPositionInput
++                 << ",\"broken_spirv_access_chain_opt\":" << quirks.brokenSpirvAccessChainOpt
++                 << ",\"broken_compute_shaders\":" << quirks.brokenComputeShaders
++                 << ",\"broken_multithreaded_pipeline_compilation\":" << quirks.brokenMultithreadedPipelineCompilation
++                 << ",\"broken_subgroup_mask_extract_dynamic\":" << quirks.brokenSubgroupMaskExtractDynamic
++                 << ",\"broken_subgroup_shuffle\":" << quirks.brokenSubgroupShuffle
++                 << ",\"broken_spirv_vector_access_chain\":" << quirks.brokenSpirvVectorAccessChain
++                 << ",\"broken_dynamic_state_vertex_bindings\":" << quirks.brokenDynamicStateVertexBindings
++                 << ",\"max_subpass_count\":" << quirks.maxSubpassCount
++                 << ",\"max_global_priority\":" << quote(vk::to_string(quirks.maxGlobalPriority)) << "},";
++
++            json << "\n\"memory_budget\":{\"supported\":" << budgetSupported
++                 << ",\"enabled\":" << enabled("VK_EXT_memory_budget")
++                 << ",\"available\":" << budgetAvailable << ",\"status\":" << quote(budgetStatus)
++                 << ",\"scope\":\"driver_heap_estimates\",\"process_gpu_allocated_bytes\":null},";
++            json << "\n\"memory_heaps\":[";
++            for (u32 index{}; index < memory.memoryHeapCount; index++) {
++                if (index)
++                    json << ',';
++                const auto &heap{memory.memoryHeaps[index]};
++                json << "{\"index\":" << index << ",\"size_bytes\":" << heap.size
++                     << ",\"flags_raw\":" << static_cast<VkMemoryHeapFlags>(heap.flags)
++                     << ",\"flags\":" << quote(vk::to_string(heap.flags)) << ",\"budget_bytes\":";
++                if (budgetAvailable)
++                    json << budgets[index];
++                else
++                    json << "null";
++                json << ",\"usage_bytes\":";
++                if (budgetAvailable)
++                    json << usages[index];
++                else
++                    json << "null";
++                json << '}';
++            }
++            json << "],\n\"memory_types\":[";
++            for (u32 index{}; index < memory.memoryTypeCount; index++) {
++                if (index)
++                    json << ',';
++                const auto &type{memory.memoryTypes[index]};
++                json << "{\"index\":" << index << ",\"heap_index\":" << type.heapIndex
++                     << ",\"property_flags_raw\":" << static_cast<VkMemoryPropertyFlags>(type.propertyFlags)
++                     << ",\"property_flags\":" << quote(vk::to_string(type.propertyFlags)) << '}';
++            }
++            json << "]\n}\n";
++            skyline::diagnostics::WriteJson("vulkan.json", json.str());
++        } catch (...) {
++            skyline::diagnostics::WriteJson("vulkan.json", "{\"schema_version\":1,\"status\":\"snapshot_failed\"}\n");
++        }
++    }
++}
+diff -ruN a/app/src/main/cpp/skyline/gpu/diagnostics.cpp b/app/src/main/cpp/skyline/gpu/diagnostics.cpp
+--- a/app/src/main/cpp/skyline/gpu/diagnostics.cpp	2026-10-07 23:36:04.811487600 +0200
++++ b/app/src/main/cpp/skyline/gpu/diagnostics.cpp	2026-10-07 23:36:04.810484700 +0200
+@@ -1,11 +1,13 @@
+ // SPDX-License-Identifier: MPL-2.0
+ 
+ #include <chrono>
++#include <cerrno>
+ #include <deque>
+ #include <mutex>
+ #include <fmt/format.h>
+ #include <fcntl.h>
+ #include <unistd.h>
++#include <common/diagnostic_session.h>
+ #include "diagnostics.h"
+ 
+ namespace skyline::gpu::diagnostics {
+@@ -16,41 +18,60 @@
+         std::deque<std::string> events;
+         std::string path;
+         bool reported{};
+-        const auto startTime{std::chrono::steady_clock::now()};
++        auto startTime{std::chrono::steady_clock::now()};
+     }
+ 
+-    void Initialize(std::string reportPath) {
+-        std::scoped_lock lock{mutex};
+-        path = std::move(reportPath);
+-        events.clear();
+-        reported = false;
+-    }
+-
+-    void Record(std::string_view category, std::string_view message) {
+-        auto elapsedMs{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count()};
+-        std::scoped_lock lock{mutex};
+-        if (events.size() >= MaxEvents)
+-            events.pop_front();
+-        events.push_back(fmt::format("[{:>8}ms] {:<9} {}", elapsedMs, category, message));
++    void Initialize(std::string reportPath) noexcept {
++        try {
++            std::scoped_lock lock{mutex};
++            path = skyline::diagnostics::OutputPath("gpu_fault.log", std::move(reportPath));
++            events.clear();
++            reported = false;
++            startTime = std::chrono::steady_clock::now();
++        } catch (...) {
++        }
+     }
+ 
+-    void DumpFaultReport(std::string_view reason) {
+-        std::scoped_lock lock{mutex};
+-        if (reported || path.empty())
+-            return;
+-        reported = true;
+-
+-        std::string report{fmt::format("===== GPU fault: {} =====\nThe {} most recent GPU events, oldest first:\n", reason, events.size())};
+-        for (const auto &event : events) {
+-            report += event;
+-            report += '\n';
++    void Record(std::string_view category, std::string_view message) noexcept {
++        try {
++            std::scoped_lock lock{mutex};
++            auto elapsedMs{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count()};
++            if (events.size() >= MaxEvents)
++                events.pop_front();
++            events.push_back(fmt::format("[{:>8}ms] {:<9} {}", elapsedMs, category, message));
++        } catch (...) {
++            // In particular, memory pressure while reporting a GPU failure is non-fatal.
+         }
+-        report += "===== end of report =====\n\n";
++    }
+ 
+-        int fd{open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644)};
+-        if (fd >= 0) {
+-            [[maybe_unused]] auto written{write(fd, report.data(), report.size())};
+-            close(fd);
++    void DumpFaultReport(std::string_view reason) noexcept {
++        try {
++            std::scoped_lock lock{mutex};
++            if (reported || path.empty())
++                return;
++
++            std::string report{fmt::format("===== GPU fault: {} =====\nThe {} most recent GPU events, oldest first:\n", reason, events.size())};
++            for (const auto &event : events) {
++                report += event;
++                report += '\n';
++            }
++            report += "===== end of report =====\n\n";
++
++            int fd{open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600)};
++            if (fd >= 0) {
++                size_t offset{};
++                while (offset < report.size()) {
++                    auto count{write(fd, report.data() + offset, report.size() - offset)};
++                    if (count < 0 && errno == EINTR)
++                        continue;
++                    if (count <= 0)
++                        break;
++                    offset += static_cast<size_t>(count);
++                }
++                reported = offset == report.size();
++                close(fd);
++            }
++        } catch (...) {
+         }
+     }
+ }
+diff -ruN a/app/src/main/cpp/skyline/gpu/diagnostics.h b/app/src/main/cpp/skyline/gpu/diagnostics.h
+--- a/app/src/main/cpp/skyline/gpu/diagnostics.h	2026-10-07 23:36:04.811986000 +0200
++++ b/app/src/main/cpp/skyline/gpu/diagnostics.h	2026-10-07 23:36:04.811487600 +0200
+@@ -9,17 +9,17 @@
+     /**
+      * @brief Sets the file that fault reports are appended to, must be called before anything else
+      */
+-    void Initialize(std::string reportPath);
++    void Initialize(std::string reportPath) noexcept;
+ 
+     /**
+      * @brief Remembers an event in a ring buffer of the most recent ones (nothing is written to disk)
+      * @param category A short tag such as "vulkan" or "pipeline"
+      */
+-    void Record(std::string_view category, std::string_view message);
++    void Record(std::string_view category, std::string_view message) noexcept;
+ 
+     /**
+      * @brief Writes the recent events to the report file, called when the GPU faults so the events leading up to it are kept
+      * @note Only the first report of a run is written (the faults that follow are consequences of the first one)
+      */
+-    void DumpFaultReport(std::string_view reason);
++    void DumpFaultReport(std::string_view reason) noexcept;
+ }
+diff -ruN a/app/src/main/cpp/skyline/gpu/presentation_engine.cpp b/app/src/main/cpp/skyline/gpu/presentation_engine.cpp
+--- a/app/src/main/cpp/skyline/gpu/presentation_engine.cpp	2026-10-07 23:36:04.813486300 +0200
++++ b/app/src/main/cpp/skyline/gpu/presentation_engine.cpp	2026-10-07 23:36:04.812485000 +0200
+@@ -12,6 +12,7 @@
+ #include <loader/loader.h>
+ #include <kernel/types/KProcess.h>
+ #include "presentation_engine.h"
++#include <common/diagnostic_metrics.h>
+ #include "native_window.h"
+ #include "texture/format.h"
+ 
+@@ -168,6 +169,7 @@
+             throw exception("Retrieving the next frame's ID failed with {}", result);
+ 
+         PresentSwapchainImage(lock, *frame.textureView, timestamp);
++        skyline::diagnostics::presentedFrames.fetch_add(1, std::memory_order_relaxed);
+ 
+         // Frame generation runs after the real frame has been submitted for presentation: it interpolates
+         // between the previous real frame and this one, then presents the results, effectively multiplying
+diff -ruN a/app/src/main/cpp/skyline/gpu.cpp b/app/src/main/cpp/skyline/gpu.cpp
+--- a/app/src/main/cpp/skyline/gpu.cpp	2026-10-07 23:36:04.809489000 +0200
++++ b/app/src/main/cpp/skyline/gpu.cpp	2026-10-07 23:36:04.808988600 +0200
+@@ -8,6 +8,7 @@
+ #include <common/settings.h>
+ #include "gpu.h"
+ #include "gpu/diagnostics.h"
++#include "gpu/diagnostic_snapshot.h"
+ 
+ namespace skyline::gpu {
+     static vk::raii::Instance CreateInstance(const DeviceState &state, const vk::raii::Context &context) {
+@@ -338,13 +339,15 @@
+                          queueString, extensionString, traits.Summary(), traits.quirks.Summary());
+         }
+ 
+-        return vk::raii::Device(physicalDevice, vk::DeviceCreateInfo{
++        auto device{vk::raii::Device(physicalDevice, vk::DeviceCreateInfo{
+             .pNext = &enabledFeatures2,
+             .queueCreateInfoCount = 1,
+             .pQueueCreateInfos = &queueCreateInfo.get<vk::DeviceQueueCreateInfo>(),
+             .enabledExtensionCount = static_cast<uint32_t>(pEnabledExtensions.size()),
+             .ppEnabledExtensionNames = pEnabledExtensions.data(),
+-        });
++        })};
++        diagnostics::WriteVulkanSnapshot(physicalDevice, deviceProperties2, traits, deviceExtensions, enabledExtensions, vkQueueFamilyIndex);
++        return device;
+     }
+ 
+     static PFN_vkGetInstanceProcAddr LoadVulkanDriver(const DeviceState &state, adrenotools_gpu_mapping *mapping) {
+diff -ruN a/app/src/main/cpp/skyline/loader/loader.cpp b/app/src/main/cpp/skyline/loader/loader.cpp
+--- a/app/src/main/cpp/skyline/loader/loader.cpp	2026-10-07 23:36:04.814485700 +0200
++++ b/app/src/main/cpp/skyline/loader/loader.cpp	2026-10-07 23:36:04.813486300 +0200
+@@ -106,13 +106,24 @@
+         return {guestBase, size, executableGuestBase + executable.text.offset};
+     }
+ 
++    std::vector<Loader::ExecutableRange> Loader::GetExecutableRanges() const {
++        std::vector<ExecutableRange> ranges;
++        ranges.reserve(executables.size());
++        for (const auto &executable : executables)
++            ranges.push_back({executable.name, reinterpret_cast<u64>(executable.patchStart),
++                              reinterpret_cast<u64>(executable.hookStart), reinterpret_cast<u64>(executable.programStart),
++                              reinterpret_cast<u64>(executable.programEnd)});
++        return ranges;
++    }
++
+     template<ElfSymbol ElfSym>
+     Loader::SymbolInfo Loader::ResolveSymbol(void *ptr) {
+-        auto executable{std::lower_bound(executables.begin(), executables.end(), ptr, [](const ExecutableSymbolicInfo &it, void *ptr) { return it.programEnd < ptr; })};
+-        auto symbols{executable->symbols.template cast<ElfSym>()};
++        auto executable{std::lower_bound(executables.begin(), executables.end(), ptr, [](const ExecutableSymbolicInfo &it, void *ptr) { return it.programEnd <= ptr; })};
+ 
+-        if (executable != executables.end() && ptr >= executable->patchStart && ptr <= executable->programEnd) {
++        // A sampled host PC may lie beyond every guest module. Never dereference end().
++        if (executable != executables.end() && ptr >= executable->patchStart && ptr < executable->programEnd) {
+             if (ptr >= executable->programStart) {
++                auto symbols{executable->symbols.template cast<ElfSym>()};
+                 auto offset{reinterpret_cast<u8 *>(ptr) - reinterpret_cast<u8 *>(executable->programStart)};
+                 auto symbol{std::find_if(symbols.begin(), symbols.end(), [&offset](const ElfSym &sym) { return sym.st_value <= offset && sym.st_value + sym.st_size > offset; })};
+                 if (symbol != symbols.end() && symbol->st_name && symbol->st_name < executable->symbolStrings.size()) {
+diff -ruN a/app/src/main/cpp/skyline/loader/loader.h b/app/src/main/cpp/skyline/loader/loader.h
+--- a/app/src/main/cpp/skyline/loader/loader.h	2026-10-07 23:36:04.814985800 +0200
++++ b/app/src/main/cpp/skyline/loader/loader.h	2026-10-07 23:36:04.814485700 +0200
+@@ -113,6 +113,14 @@
+             std::string_view executableName; //!< The executable that contained the symbol
+         };
+ 
++        /** A host-owned snapshot for diagnostics; obtain it before guest threads start. */
++        struct ExecutableRange {
++            std::string name;
++            u64 patchStart, hookStart, programStart, programEnd;
++        };
++
++        std::vector<ExecutableRange> GetExecutableRanges() const;
++
+         /**
+          * @return All symbolic information about the symbol for the specified address
+          * @note If a symbol isn't found then SymbolInfo::name will be nullptr
+diff -ruN a/app/src/main/cpp/skyline/nce/jit_fallback.cpp b/app/src/main/cpp/skyline/nce/jit_fallback.cpp
+--- a/app/src/main/cpp/skyline/nce/jit_fallback.cpp	2026-10-07 23:36:04.816485300 +0200
++++ b/app/src/main/cpp/skyline/nce/jit_fallback.cpp	2026-10-07 23:36:04.816485300 +0200
+@@ -2,11 +2,21 @@
+ 
+ #include <fcntl.h>
+ #include <unistd.h>
++#include <algorithm>
++#include <array>
++#include <atomic>
++#include <cerrno>
++#include <limits>
++#include <map>
++#include <tuple>
++#include <sys/syscall.h>
++#include <time.h>
+ #include <unordered_set>
+ #include <asm/sigcontext.h>
+ #include <common/signal.h>
+ #include <loader/loader.h>
+ #include <kernel/types/KProcess.h>
++#include <kernel/types/KThread.h>
+ #include <os.h>
+ #include "jit_fallback.h"
+ 
+@@ -19,8 +29,107 @@
+     namespace {
+         const DeviceState *deviceState{};
+         int logFd{-1};
++        int memoryFd{-1};
++        int memoryOpenError{EBADF};
+         std::mutex logMutex;
+-        std::unordered_set<u64> seen; //!< Failures already written, so a hot loop doesn't flood the file
++        constexpr size_t MaxTrackedFailures{1024};
++        constexpr size_t MaxLogBytes{8 * 1024 * 1024};
++        constexpr size_t FinalCountsReserve{1024 * 1024};
++        // Full tuple equality, not a lossy XOR: distinct faults must not silently merge.
++        using FailureKey = std::tuple<u64, u32, int, int, int, JitFallback::Outcome>;
++        struct FailureCount {
++            u64 id;
++            u64 count;
++            u64 reported;
++            u64 lastMonotonicNs;
++        };
++        std::map<FailureKey, FailureCount> seen;
++        std::vector<loader::Loader::ExecutableRange> executableRanges; // Copied before guest threads start; no symbol/stack reads in Log.
++        std::string sessionId;
++        u64 sessionSerial{};
++        std::atomic<u64> totalFaults{};
++        std::atomic<u64> contendedFaults{};
++        u64 untrackedFaults{};
++        size_t logBytes{};
++        u64 omittedLines{};
++        int writeError{};
++
++        u64 TimestampNs(clockid_t clock) {
++            timespec now{};
++            if (clock_gettime(clock, &now) != 0)
++                return 0; // Zero explicitly denotes an unavailable timestamp.
++            return static_cast<u64>(now.tv_sec) * 1'000'000'000ULL + static_cast<u64>(now.tv_nsec);
++        }
++
++        bool ReadInstruction(u64 pc, u32 &instruction, int &error) {
++            error = 0;
++            if (memoryFd < 0) {
++                error = memoryOpenError;
++                return false;
++            }
++            if ((pc & 3) || pc > static_cast<u64>(std::numeric_limits<off_t>::max()) - sizeof(instruction)) {
++                error = EINVAL;
++                return false;
++            }
++            ssize_t result;
++            do {
++                result = pread(memoryFd, &instruction, sizeof(instruction), static_cast<off_t>(pc));
++            } while (result < 0 && errno == EINTR);
++            if (result != static_cast<ssize_t>(sizeof(instruction))) {
++                error = result < 0 ? errno : EIO;
++                instruction = 0;
++                return false;
++            }
++            return true;
++        }
++
++        fpsimd_context *FindFpsimd(mcontext_t &mctx) {
++            auto *cursor{reinterpret_cast<u8 *>(mctx.__reserved)};
++            size_t remaining{sizeof(mctx.__reserved)};
++            while (remaining >= sizeof(_aarch64_ctx)) {
++                auto *head{reinterpret_cast<_aarch64_ctx *>(cursor)};
++                if (!head->magic || head->size < sizeof(_aarch64_ctx) || head->size > remaining || (head->size & 15))
++                    break;
++                if (head->magic == FPSIMD_MAGIC)
++                    return head->size >= sizeof(fpsimd_context) ? reinterpret_cast<fpsimd_context *>(head) : nullptr;
++                cursor += head->size;
++                remaining -= head->size;
++            }
++            return nullptr;
++        }
++
++        struct FaultSnapshot {
++            u64 pc, sp, pstate, faultAddress;
++            std::array<u64, 31> regs;
++            u64 unixNs, monotonicNs;
++            long hostTid;
++            i64 guestThreadId;
++            int signal, signalCode;
++            u32 instruction{};
++            int instructionReadError{};
++            bool fpAvailable{};
++            u32 fpcr{}, fpsr{};
++        };
++
++        FaultSnapshot CaptureFault(int signal, const siginfo &info, ucontext &ctx) {
++            const auto &mctx{ctx.uc_mcontext};
++            FaultSnapshot fault{
++                .pc = mctx.pc, .sp = mctx.sp, .pstate = mctx.pstate,
++                .faultAddress = info.si_code > 0 ? reinterpret_cast<u64>(info.si_addr) : 0,
++                .unixNs = TimestampNs(CLOCK_REALTIME), .monotonicNs = TimestampNs(CLOCK_MONOTONIC),
++                .hostTid = syscall(SYS_gettid),
++                .guestThreadId = DeviceState::thread ? static_cast<i64>(DeviceState::thread->id) : -1,
++                .signal = signal, .signalCode = info.si_code,
++            };
++            std::copy(std::begin(mctx.regs), std::end(mctx.regs), fault.regs.begin());
++            ReadInstruction(fault.pc, fault.instruction, fault.instructionReadError);
++            if (auto *fp{FindFpsimd(ctx.uc_mcontext)}) {
++                fault.fpAvailable = true;
++                fault.fpcr = fp->fpcr;
++                fault.fpsr = fp->fpsr;
++            }
++            return fault;
++        }
+ 
+         struct SysReg {
+             u8 op0, op1, crn, crm, op2;
+@@ -116,35 +225,135 @@
+             for (char c : in) {
+                 if (c == '"' || c == '\\') { out += '\\'; out += c; }
+                 else if (c == '\n') out += "\\n";
+-                else if (static_cast<unsigned char>(c) < 0x20) out += ' ';
++                else if (static_cast<unsigned char>(c) < 0x20) out += fmt::format("\\u{:04x}", static_cast<unsigned char>(c));
+                 else out += c;
+             }
+             return out;
+         }
+ 
+-        void WriteLine(const std::string &line) {
+-            if (logFd >= 0)
+-                [[maybe_unused]] auto result{write(logFd, line.data(), line.size())};
++        bool WriteLine(const std::string &line, bool finalCounts = false) {
++            const size_t limit{finalCounts ? MaxLogBytes : MaxLogBytes - FinalCountsReserve};
++            if (logFd < 0 || writeError || line.size() > limit - std::min(logBytes, limit)) {
++                ++omittedLines;
++                return false;
++            }
++            size_t offset{};
++            while (offset < line.size()) {
++                auto result{write(logFd, line.data() + offset, line.size() - offset)};
++                if (result < 0 && errno == EINTR)
++                    continue;
++                if (result <= 0) {
++                    writeError = result < 0 ? errno : EIO;
++                    ++omittedLines;
++                    return false; // Do not append more JSON to a potentially partial line.
++                }
++                offset += static_cast<size_t>(result);
++                logBytes += static_cast<size_t>(result);
++            }
++            return true;
+         }
+ 
+-        void Log(int signal, siginfo *info, ucontext *ctx, JitFallback::Outcome outcome, std::string_view detail, std::string_view trace) {
+-            auto &mctx{ctx->uc_mcontext};
+-            u32 insn{};
+-            if (mctx.pc)
+-                std::memcpy(&insn, reinterpret_cast<void *>(mctx.pc), sizeof(insn)); // Guest .text is readable, the instruction at PC is the one that failed
+-
+-            u64 key{mctx.pc ^ (static_cast<u64>(insn) << 32) ^ (static_cast<u64>(outcome) << 61) ^ static_cast<u64>(signal)};
+-            std::scoped_lock lock{logMutex};
+-            if (!seen.insert(key).second)
++        std::string_view OutcomeName(JitFallback::Outcome outcome) {
++            static constexpr std::array<std::string_view, 4> Names{"recovered_by_jit", "jit_unsupported", "jit_memory_fault", "not_attempted"};
++            return Names[static_cast<size_t>(outcome)];
++        }
++
++        std::string_view SignalClass(const FaultSnapshot &fault) {
++            if (fault.signalCode <= 0)
++                return "software_generated_signal";
++            if (fault.signal == SIGILL)
++                return "instruction_signal";
++            if (fault.signal == SIGSEGV || fault.signal == SIGBUS)
++                return "memory_signal";
++            if (fault.signal == SIGFPE)
++                return "arithmetic_signal";
++            return "other_signal";
++        }
++
++        std::string InstructionJson(u32 instruction, int readError) {
++            return readError ? "null" : fmt::format("\"0x{:08X}\"", instruction);
++        }
++
++        std::string LocationJson(u64 pc) {
++            for (const auto &range : executableRanges) {
++                if (pc < range.patchStart || pc >= range.programEnd)
++                    continue;
++                auto section{pc < range.hookStart ? "patch" : pc < range.programStart ? "hook" : "text_or_data"};
++                u64 sectionStart{pc < range.hookStart ? range.patchStart : pc < range.programStart ? range.hookStart : range.programStart};
++                i64 offset{pc >= range.programStart ? static_cast<i64>(pc - range.programStart) : -static_cast<i64>(range.programStart - pc)};
++                return fmt::format(R"(,"module":"{}","module_offset":{},"section":"{}","section_offset":"0x{:X}")",
++                                   JsonEscape(range.name), offset, section, pc - sectionStart);
++            }
++            return R"(,"module":null,"module_offset":null,"section":null,"section_offset":null)";
++        }
++
++        void WriteCount(const FailureKey &key, FailureCount &entry, bool finalCounts = false) {
++            auto [pc, instruction, readError, signal, signalCode, outcome]{key};
++            if (WriteLine(fmt::format(R"({{"type":"count","schema_version":2,"session_id":"{}","event_id":{},"count":{},"last_monotonic_ns":{},"pc":"0x{:X}","insn":{},"opcode_read_errno":{},"signal_number":{},"si_code":{},"outcome":"{}"{}}})" "\n",
++                                     sessionId, entry.id, entry.count, entry.lastMonotonicNs, pc, InstructionJson(instruction, readError), readError,
++                                     signal, signalCode, OutcomeName(outcome), LocationJson(pc)), finalCounts))
++                entry.reported = entry.count;
++        }
++
++        void FlushLocked() {
++            if (logFd >= 0) {
++                for (auto &[key, entry] : seen)
++                    if (entry.count != entry.reported)
++                        WriteCount(key, entry, true);
++                WriteLine(fmt::format(R"({{"type":"session_end","schema_version":2,"session_id":"{}","unix_ns":{},"monotonic_ns":{},"total_faults":{},"tracked_keys":{},"untracked_faults":{},"contended_faults":{},"omitted_lines":{},"write_errno":{}}})" "\n",
++                                      sessionId, TimestampNs(CLOCK_REALTIME), TimestampNs(CLOCK_MONOTONIC), totalFaults.load(std::memory_order_relaxed),
++                                      seen.size(), untrackedFaults, contendedFaults.load(std::memory_order_relaxed), omittedLines, writeError), true);
++                if (fdatasync(logFd) != 0)
++                    LOGW("NCE diagnostics: final file sync failed (errno={})", errno);
++                close(logFd);
++                logFd = -1;
++            }
++            if (memoryFd >= 0) {
++                close(memoryFd);
++                memoryFd = -1;
++            }
++        }
++
++        void Log(const FaultSnapshot &fault, const ucontext &result, JitFallback::Outcome outcome, std::string_view detail, std::string_view trace) {
++            // Avoid waiting on a concurrent/recursive logger. This does not make the complete fallback async-signal-safe.
++            std::unique_lock lock{logMutex, std::try_to_lock};
++            if (!lock.owns_lock()) {
++                contendedFaults.fetch_add(1, std::memory_order_relaxed);
+                 return;
+-
+-            static constexpr std::array<std::string_view, 4> OutcomeNames{"recovered_by_jit", "jit_unsupported", "jit_memory_fault", "not_attempted"};
+-            signal::StackFrame topFrame{.lr = reinterpret_cast<void *>(mctx.pc), .next = reinterpret_cast<signal::StackFrame *>(mctx.regs[29])};
+-            std::string where{deviceState && deviceState->loader ? deviceState->loader->GetStackTrace(&topFrame) : ""};
+-            std::replace(where.begin(), where.end(), '\n', ' ');
+-
+-            WriteLine(fmt::format(R"({{"type":"failure","pc":"0x{:X}","insn":"0x{:08X}","decoded":"{}","class":"{}","signal":"{}","si_code":{},"fault_addr":"0x{:X}","outcome":"{}","detail":"{}","where":"{}"{}}})" "\n",
+-                                  mctx.pc, insn, JsonEscape(Decode(insn)), Classify(insn), strsignal(signal), info->si_code, mctx.fault_address, OutcomeNames[static_cast<size_t>(outcome)], JsonEscape(detail), JsonEscape(where), trace));
++            }
++            if (logFd < 0)
++                return;
++            FailureKey key{fault.pc, fault.instruction, fault.instructionReadError, fault.signal, fault.signalCode, outcome};
++            if (auto found{seen.find(key)}; found != seen.end()) {
++                auto &entry{found->second};
++                ++entry.count;
++                entry.lastMonotonicNs = fault.monotonicNs;
++                if ((entry.count & (entry.count - 1)) == 0)
++                    WriteCount(key, entry); // Cumulative powers-of-two checkpoints; final counts are written by Flush.
++                return;
++            }
++            if (seen.size() >= MaxTrackedFailures) {
++                ++untrackedFaults;
++                if ((untrackedFaults & (untrackedFaults - 1)) == 0)
++                    WriteLine(fmt::format(R"({{"type":"overflow","schema_version":2,"session_id":"{}","untracked_faults":{}}})" "\n", sessionId, untrackedFaults));
++                return;
++            }
++            auto &entry{seen.emplace(key, FailureCount{seen.size() + 1, 1, 0, fault.monotonicNs}).first->second};
++            std::string regs;
++            for (auto value : fault.regs)
++                regs += fmt::format("{}\"0x{:X}\"", regs.empty() ? "" : ",", value);
++            const auto &after{result.uc_mcontext};
++            auto line{fmt::format(R"({{"type":"failure","schema_version":2,"session_id":"{}","event_id":{},"count":1,"unix_ns":{},"monotonic_ns":{},"host_tid":{},"guest_thread_id":{},"pc":"0x{:X}","insn":{},"opcode_read_errno":{},"decoded":"{}","class":"{}","signal_number":{},"si_code":{},"fault_addr":"0x{:X}","cause_class":"{}","cause_verified":false,"outcome":"{}","detail":"{}")",
++                                  sessionId, entry.id, fault.unixNs, fault.monotonicNs, fault.hostTid, fault.guestThreadId, fault.pc,
++                                  InstructionJson(fault.instruction, fault.instructionReadError), fault.instructionReadError,
++                                  JsonEscape(fault.instructionReadError ? "unavailable" : Decode(fault.instruction)),
++                                  fault.instructionReadError ? "unavailable" : Classify(fault.instruction), fault.signal, fault.signalCode,
++                                  fault.faultAddress, SignalClass(fault), OutcomeName(outcome), JsonEscape(detail))};
++            line += fmt::format(R"(,"initial_state":{{"pc":"0x{:X}","sp":"0x{:X}","pstate":"0x{:X}","x":[{}],"fp_available":{},"fpcr":"0x{:X}","fpsr":"0x{:X}"}},"resumed_state":{{"committed":{},"pc":"0x{:X}","sp":"0x{:X}","pstate":"0x{:X}"}}{}{})" "}}\n",
++                                fault.pc, fault.sp, fault.pstate, regs, fault.fpAvailable ? "true" : "false", fault.fpcr, fault.fpsr,
++                                outcome == JitFallback::Outcome::Recovered ? "true" : "false", after.pc, after.sp, after.pstate, LocationJson(fault.pc), trace);
++            if (WriteLine(line))
++                entry.reported = 1;
+         }
+ 
+ #ifdef STRATO_JIT_FALLBACK
+@@ -230,7 +439,11 @@
+                     return std::nullopt;
+ 
+                 u32 value{};
+-                std::memcpy(&value, reinterpret_cast<const void *>(vaddr), sizeof(value));
++                int error{};
++                if (!ReadInstruction(vaddr, value, error)) {
++                    Fail(JitFallback::Outcome::MemoryFault, fmt::format("instruction read at 0x{:X} failed (errno={})", vaddr, error));
++                    return std::nullopt;
++                }
+                 return value;
+             }
+             u8 MemoryRead8(u64 vaddr) override { return Read<u8>(vaddr); }
+@@ -267,18 +480,12 @@
+         struct StepJob {
+             ucontext *ctx;
+             ThreadContext *threadCtx;
++            const FaultSnapshot *fault;
+             JitFallback::Outcome outcome;
+             std::string detail;
+             std::string trace; //!< Extra JSON fields (leading comma) describing what the JIT did, appended to the log line
+         };
+ 
+-        fpsimd_context *FindFpsimd(mcontext_t &mctx) {
+-            for (auto *head{reinterpret_cast<_aarch64_ctx *>(mctx.__reserved)}; head->magic; head = reinterpret_cast<_aarch64_ctx *>(reinterpret_cast<u8 *>(head) + head->size))
+-                if (head->magic == FPSIMD_MAGIC)
+-                    return reinterpret_cast<fpsimd_context *>(head);
+-            return nullptr;
+-        }
+-
+         /**
+          * @brief Executes the instruction at the signal context's PC with Dynarmic and writes the state back, must run on the host stack
+          */
+@@ -292,7 +499,7 @@
+                 return;
+             }
+ 
+-            // One JIT per guest thread, its block cache then makes repeated failures of the same instruction cheap
++            // One JIT per guest thread. The faulting code range is invalidated before each step for correctness.
+             thread_local StepCallbacks callbacks;
+             thread_local std::unique_ptr<Dynarmic::A64::Jit> jit;
+             if (!jit) {
+@@ -309,15 +516,14 @@
+             callbacks.accesses.clear();
+             callbacks.accessCount = 0;
+ 
+-            u32 insn{};
+-            std::memcpy(&insn, reinterpret_cast<void *>(mctx.pc), sizeof(insn));
++            [[maybe_unused]] u32 insn{job.fault->instruction};
+             [[maybe_unused]] bool dumpDisassembly{};
+ #ifdef STRATO_JIT_DUMP_DISASSEMBLY
+             {
+                 static std::mutex dumpMutex;
+                 static std::unordered_set<u32> dumped; // Only dump the first time an instruction word is seen, it's expensive
+                 std::scoped_lock lock{dumpMutex};
+-                dumpDisassembly = dumped.insert(insn).second;
++                dumpDisassembly = dumped.size() < MaxTrackedFailures && dumped.insert(insn).second;
+             }
+             if (dumpDisassembly)
+                 jit->ClearCache(); // So the cache then only holds the block for this instruction
+@@ -326,7 +532,7 @@
+             std::array<u64, 31> regsBefore;
+             for (size_t i{}; i < 31; i++)
+                 regsBefore[i] = mctx.regs[i];
+-            u64 spBefore{mctx.sp}, pcBefore{mctx.pc};
++            u64 spBefore{mctx.sp};
+             u32 nzcvBefore{static_cast<u32>(mctx.pstate) & 0xF0000000};
+             auto *vregsBefore{fp->vregs};
+             std::array<std::array<u8, 16>, 32> vecBefore;
+@@ -364,6 +570,10 @@
+                     add("sp", fmt::format("0x{:X}", spBefore), fmt::format("0x{:X}", jit->GetSP()));
+                 if (nzcvBefore != (jit->GetPstate() & 0xF0000000))
+                     add("nzcv", fmt::format("0x{:X}", nzcvBefore >> 28), fmt::format("0x{:X}", (jit->GetPstate() & 0xF0000000) >> 28));
++                if (job.fault->fpcr != jit->GetFpcr())
++                    add("fpcr", fmt::format("0x{:X}", job.fault->fpcr), fmt::format("0x{:X}", jit->GetFpcr()));
++                if (job.fault->fpsr != jit->GetFpsr())
++                    add("fpsr", fmt::format("0x{:X}", job.fault->fpsr), fmt::format("0x{:X}", jit->GetFpsr()));
+                 auto vectorsAfter{jit->GetVectors()};
+                 for (size_t i{}; i < 32; i++) {
+                     if (std::memcmp(vecBefore[i].data(), &vectorsAfter[i], 16) != 0) {
+@@ -391,11 +601,12 @@
+                     disassembly = fmt::format(R"(,"jit_disassembly":"{}")", JsonEscape(text));
+                 }
+ #endif
+-                job.trace = fmt::format(R"(,"jit":{{"next_pc":"0x{:X}","regs_changed":{{{}}},"mem":[{}]}}{})", jit->GetPC(), changed, callbacks.accesses, disassembly);
++                job.trace = fmt::format(R"(,"jit":{{"next_pc":"0x{:X}","regs_changed":{{{}}},"mem":[{}],"mem_event_count":{},"mem_truncated":{}}}{})",
++                                       jit->GetPC(), changed, callbacks.accesses, callbacks.accessCount, callbacks.accessCount > 8 ? "true" : "false", disassembly);
+             }
+ 
+             if (job.outcome != JitFallback::Outcome::Recovered)
+-                return; // Leave the signal context untouched so the crash handler reports the original state
++                return; // Registers remain untouched. Guest memory writes made by callbacks are NOT rolled back.
+ 
+             auto regs{jit->GetRegisters()};
+             for (size_t i{}; i < 31; i++)
+@@ -431,18 +642,20 @@
+ 
+     void JitFallback::Initialize(const DeviceState &state, std::string logPath, std::string gameName) {
+         std::scoped_lock lock{logMutex};
++        FlushLocked();
+         deviceState = &state;
++        executableRanges = state.loader ? state.loader->GetExecutableRanges() : std::vector<loader::Loader::ExecutableRange>{};
+         seen.clear();
+-        if (logFd >= 0) {
+-            close(logFd);
+-            logFd = -1;
+-        }
+-        logFd = open(logPath.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+-        if (logFd < 0) {
+-            LOGW("NCE fallback: couldn't open '{}' for writing, failures won't be recorded", logPath);
+-            return;
+-        }
+-        LOGINF("NCE fallback: Dynarmic JIT {}, logging guest faults to '{}'",
++        totalFaults.store(0, std::memory_order_relaxed);
++        contendedFaults.store(0, std::memory_order_relaxed);
++        untrackedFaults = 0;
++        logBytes = 0;
++        omittedLines = 0;
++        writeError = 0;
++        sessionId = fmt::format("{}-{}-{}", getpid(), TimestampNs(CLOCK_REALTIME), ++sessionSerial);
++
++        // Report the compiled status even if the diagnostic directory is not writable.
++        LOGINF("NCE fallback: Dynarmic JIT {}; diagnostic path '{}'",
+ #ifdef STRATO_JIT_FALLBACK
+                "ENABLED",
+ #else
+@@ -450,24 +663,63 @@
+ #endif
+                logPath);
+ 
+-        std::replace(gameName.begin(), gameName.end(), '"', '\'');
+-        WriteLine(fmt::format(R"({{"type":"session","game":"{}","jit_compiled":{}}})" "\n", gameName,
++        memoryFd = open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
++        memoryOpenError = memoryFd < 0 ? errno : 0;
++        if (memoryFd < 0)
++            LOGW("NCE fallback: safe instruction reads unavailable (errno={}); SIGILL recovery will not be attempted", memoryOpenError);
++        logFd = open(logPath.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
++        if (logFd < 0) {
++            LOGW("NCE fallback: couldn't open '{}' for writing (errno={}); failures won't be recorded", logPath, errno);
++            return;
++        }
++        WriteLine(fmt::format(R"({{"type":"session","schema_version":2,"session_id":"{}","game":"{}","unix_ns":{},"monotonic_ns":{},"pid":{},"jit_compiled":{},"opcode_reader":"proc_self_mem_pread","opcode_reader_errno":{},"max_tracked_keys":{},"max_session_log_bytes":{},"count_policy":"cumulative_powers_of_two_then_final","limitations":["signal_path_not_async_signal_safe","guest_data_accesses_not_fully_validated","no_memory_rollback","jit_trace_not_equivalence_proof"]}})" "\n",
++                              sessionId, JsonEscape(gameName), TimestampNs(CLOCK_REALTIME), TimestampNs(CLOCK_MONOTONIC), getpid(),
+ #ifdef STRATO_JIT_FALLBACK
+                               "true"
+ #else
+                               "false"
+ #endif
+-        ));
++                              , memoryOpenError, MaxTrackedFailures, MaxLogBytes));
++    }
++
++    void JitFallback::Flush() noexcept {
++        try {
++            std::scoped_lock lock{logMutex};
++            FlushLocked();
++        } catch (...) {
++            // Called only after guest threads have stopped. A diagnostic allocation failure must not escape JNI teardown.
++            if (logFd >= 0) {
++                close(logFd);
++                logFd = -1;
++            }
++            if (memoryFd >= 0) {
++                close(memoryFd);
++                memoryFd = -1;
++            }
++            constexpr char message[]{"NCE diagnostics: final counts unavailable after an exception\n"};
++            [[maybe_unused]] auto result{write(STDERR_FILENO, message, sizeof(message) - 1)};
++        }
+     }
+ 
+     bool JitFallback::HandleFault(int signal, siginfo *info, ucontext *ctx, ThreadContext &threadCtx) {
++        const int savedErrno{errno};
++        totalFaults.fetch_add(1, std::memory_order_relaxed);
++        const FaultSnapshot fault{CaptureFault(signal, *info, *ctx)};
+         Outcome outcome{Outcome::NotAttempted};
+         std::string trace;
+-        std::string detail{signal == SIGILL ? "JIT not compiled in (build with -DSTRATO_JIT_FALLBACK=ON)" : "signal is not recoverable by instruction emulation"};
++        std::string detail;
++        if (signal != SIGILL)
++            detail = "signal is not eligible for instruction emulation";
++        else if (info->si_code <= 0)
++            detail = "software-generated SIGILL is not executed by the fallback";
++        else if (fault.instructionReadError)
++            detail = fmt::format("original opcode could not be read safely (errno={}); JIT not attempted", fault.instructionReadError);
++        else
++            detail = "JIT not compiled in (build with -DSTRATO_JIT_FALLBACK=ON)";
+ 
+ #ifdef STRATO_JIT_FALLBACK
+-        if (signal == SIGILL && info->si_code != SI_USER) {
+-            StepJob job{ctx, &threadCtx, Outcome::NotAttempted, {}};
++        if (signal == SIGILL && info->si_code > 0 && !fault.instructionReadError) {
++            StepJob job{ctx, &threadCtx, &fault, Outcome::NotAttempted, {}};
+             CallOnStack(&StepOnHostStack, &job, threadCtx.hostSp);
+             outcome = job.outcome;
+             detail = job.detail.empty() ? "single-stepped with Dynarmic" : job.detail;
+@@ -475,7 +727,8 @@
+         }
+ #endif
+ 
+-        Log(signal, info, ctx, outcome, detail, trace);
++        Log(fault, *ctx, outcome, detail, trace);
++        errno = savedErrno;
+         return outcome == Outcome::Recovered;
+     }
+ }
+diff -ruN a/app/src/main/cpp/skyline/nce/jit_fallback.h b/app/src/main/cpp/skyline/nce/jit_fallback.h
+--- a/app/src/main/cpp/skyline/nce/jit_fallback.h	2026-10-07 23:36:04.817992000 +0200
++++ b/app/src/main/cpp/skyline/nce/jit_fallback.h	2026-10-07 23:36:04.817488100 +0200
+@@ -10,8 +10,10 @@
+      * @brief Fallback for guest instructions that NCE cannot run natively
+      * @details When a guest thread faults (typically SIGILL on an instruction the host CPU lacks or traps), the single faulting
+      * instruction is executed by Dynarmic (if built with STRATO_JIT_FALLBACK), the resulting register state is written back into the
+-     * signal context and the guest resumes natively right after it. Every distinct failure is appended to a JSON-lines file with the
+-     * reason, so the instructions NCE is missing can be collected and later handled natively in NCE::PatchCode.
++     * signal context and the guest resumes natively. A bounded JSON-lines diagnostic keeps the original fault separate from the
++     * resulting JIT state. Recovery alone does not establish a missing host instruction or prove equivalent NCE/JIT semantics.
++     * @note The fallback still allocates and accesses guest data memory from a signal path; these diagnostics do not make that path
++     * async-signal-safe or provide memory rollback. Only instruction inspection uses a fault-contained read.
+      */
+     class JitFallback {
+       public:
+@@ -29,7 +31,14 @@
+         static void Initialize(const DeviceState &state, std::string logPath, std::string gameName);
+ 
+         /**
+-         * @brief Called from NCE::SignalHandler for a fault in guest code, always logs the failure
++         * @brief Writes final occurrence counts and closes the diagnostic descriptors
++         * @note Call from the host after guest threads have stopped, before destroying the logger. A hard kill may lose counts since
++         * the last checkpoint; the analyzer reports those counts as lower bounds when no session_end record is present.
++         */
++        static void Flush() noexcept;
++
++        /**
++         * @brief Called from NCE::SignalHandler for a fault in guest code; captures it before any JIT changes to the signal context
+          * @return If the guest can be resumed (the signal context was updated), otherwise the caller must treat the fault as fatal
+          */
+         static bool HandleFault(int signal, siginfo *info, ucontext *ctx, ThreadContext &threadCtx);
+diff -ruN a/app/src/main/cpp/skyline/nce.cpp b/app/src/main/cpp/skyline/nce.cpp
+--- a/app/src/main/cpp/skyline/nce.cpp	2026-10-07 23:36:04.815985800 +0200
++++ b/app/src/main/cpp/skyline/nce.cpp	2026-10-07 23:36:04.815485500 +0200
+@@ -488,7 +488,7 @@
+                 *instruction = instructions::B(static_cast<i32>(endOffset() + offset), true).raw;
+ 
+                 /* Allocate Scratch Registers */
+-                bool x0x1{mrs.srcReg != registers::X0 && mrs.srcReg != registers::X1};
++                bool x0x1{msr.srcReg != registers::X0 && msr.srcReg != registers::X1};
+                 *patch++ = x0x1 ? 0xA9BF07E0 : 0xA9BF0FE2; // STP X(0/2), X(1/3), [SP, #-16]!
+ 
+                 /* Store new TLS value into ThreadContext */
+diff -ruN a/app/src/main/cpp/skyline/os.cpp b/app/src/main/cpp/skyline/os.cpp
+--- a/app/src/main/cpp/skyline/os.cpp	2026-10-07 23:36:04.819046100 +0200
++++ b/app/src/main/cpp/skyline/os.cpp	2026-10-07 23:36:04.817992000 +0200
+@@ -6,6 +6,7 @@
+ #include "nce/guest.h"
+ #include "nce/jit_fallback.h"
+ #include "nce/hang_watchdog.h"
++#include "common/diagnostic_session.h"
+ #include "kernel/types/KProcess.h"
+ #include "vfs/os_backing.h"
+ #include "loader/nro.h"
+@@ -71,17 +72,23 @@
+ 
+         {
+             std::string gameName{nacp ? nacp->GetApplicationName(nacp->GetFirstSupportedTitleLanguage()) : "unknown"};
+-            nce::JitFallback::Initialize(state, publicAppFilesPath + "nce_fallback.jsonl", gameName);
++            nce::JitFallback::Initialize(state, diagnostics::OutputPath("nce_fallback.jsonl", publicAppFilesPath + "nce_fallback.jsonl"), gameName);
+         }
+ 
+         nce::HangWatchdog::Start(state);
+ 
+-        process->InitializeHeapTls();
+-        auto thread{process->CreateThread(entry)};
+-        if (thread) {
+-            LOGI("Starting main HOS thread");
+-            thread->Start(true);
+-            process->Kill(true, true, true);
++        try {
++            process->InitializeHeapTls();
++            auto thread{process->CreateThread(entry)};
++            if (thread) {
++                LOGI("Starting main HOS thread");
++                thread->Start(true);
++                process->Kill(true, true, true);
++            }
++        } catch (...) {
++            // The sampler holds a pointer into this OS: join it before unwinding destroys state.
++            nce::HangWatchdog::Stop();
++            throw;
+         }
+ 
+         nce::HangWatchdog::Stop();
+diff -ruN a/app/src/main/java/org/stratoemu/strato/EmulationActivity.kt b/app/src/main/java/org/stratoemu/strato/EmulationActivity.kt
+--- a/app/src/main/java/org/stratoemu/strato/EmulationActivity.kt	2026-10-07 23:36:04.820704800 +0200
++++ b/app/src/main/java/org/stratoemu/strato/EmulationActivity.kt	2026-10-07 23:36:04.819550200 +0200
+@@ -51,6 +51,7 @@
+ import org.stratoemu.strato.data.AppItem
+ import org.stratoemu.strato.data.AppItemTag
+ import org.stratoemu.strato.databinding.EmuActivityBinding
++import org.stratoemu.strato.diagnostics.DiagnosticSession
+ import org.stratoemu.strato.emulation.PipelineLoadingFragment
+ import org.stratoemu.strato.input.*
+ import org.stratoemu.strato.loader.RomFile
+@@ -128,6 +129,31 @@
+ 
+     private lateinit var emulationSettings : EmulationSettings
+ 
++    @Volatile
++    private var diagnosticSession : DiagnosticSession? = null
++    private val diagnosticHandler = Handler(Looper.getMainLooper())
++    private var lastDiagnosticSession : DiagnosticSession? = null
++    private var lastDiagnosticFrames = 0L
++    private var lastDiagnosticSampleMs = 0L
++    private val diagnosticStatistics = object : Runnable {
++        override fun run() {
++            diagnosticSession?.let {
++                val now = SystemClock.elapsedRealtime()
++                val frames = getDiagnosticPresentedFrames()
++                val interval = now - lastDiagnosticSampleMs
++                val delta = frames - lastDiagnosticFrames
++                if (lastDiagnosticSession === it && interval > 0 && delta >= 0) {
++                    val rate = 1000.0 * delta / interval
++                    it.updatePerformance(rate, if (delta > 0) interval.toFloat() / delta else 0f)
++                }
++                lastDiagnosticSession = it
++                lastDiagnosticFrames = frames
++                lastDiagnosticSampleMs = now
++            }
++            diagnosticHandler.postDelayed(this, 1000)
++        }
++    }
++
+     @Inject
+     lateinit var inputManager : InputManager
+ 
+@@ -147,7 +173,7 @@
+      * @param nativeLibraryPath The full path to the app native library directory
+      * @param assetManager The asset manager used for accessing app assets
+      */
+-    private external fun executeApplication(romUri : String, romType : Int, romFd : Int, nativeSettings : NativeSettings, publicAppFilesPath : String, privateAppFilesPath : String, nativeLibraryPath : String, assetManager : AssetManager)
++    private external fun executeApplication(romUri : String, romType : Int, romFd : Int, nativeSettings : NativeSettings, publicAppFilesPath : String, privateAppFilesPath : String, nativeLibraryPath : String, assetManager : AssetManager, diagnosticPath : String)
+ 
+     /**
+      * @param join If the function should only return after all the threads join or immediately
+@@ -177,6 +203,7 @@
+      * Writes the current performance statistics into [fps], [averageFrametime] and [averageFrametimeDeviation] fields
+      */
+     private external fun updatePerformanceStatistics()
++    private external fun getDiagnosticPresentedFrames() : Long
+ 
+     /**
+      * @see [InputHandler.initializeControllers]
+@@ -251,7 +278,30 @@
+ 
+         GpuDriverHelper.ensureFileRedirectDir(this)
+         emulationThread = Thread {
+-            executeApplication(rom.toString(), romType, romFd.detachFd(), NativeSettings(this, emulationSettings), applicationContext.getPublicFilesDir().canonicalPath + "/", applicationContext.filesDir.canonicalPath + "/", applicationInfo.nativeLibraryDir + "/", assets)
++            val nativeSettings = NativeSettings(this, emulationSettings)
++            val session = try {
++                DiagnosticSession.start(applicationContext, item.titleId ?: item.key(), item.title ?: "unknown", nativeSettings)
++            } catch (e : Exception) {
++                // A full disk must not prevent a game from starting.
++                Log.w(Tag, "Could not start diagnostic collection", e)
++                null
++            }
++            diagnosticSession = session
++            try {
++                executeApplication(rom.toString(), romType, romFd.detachFd(), nativeSettings, applicationContext.getPublicFilesDir().canonicalPath + "/", applicationContext.filesDir.canonicalPath + "/", applicationInfo.nativeLibraryDir + "/", assets, session?.directory?.absolutePath ?: "")
++            } catch (e : Throwable) {
++                session?.recordCrash(e)
++                throw e
++            } finally {
++                // Native exceptions may have been caught in JNI; "returned" is not a success verdict.
++                try {
++                    session?.finish("native_returned")
++                } catch (e : Exception) {
++                    Log.w(Tag, "Could not finalize diagnostic collection", e)
++                } finally {
++                    diagnosticSession = null
++                }
++            }
+             returnFromEmulation()
+         }
+ 
+@@ -286,6 +336,7 @@
+         window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+         inputHandler = InputHandler(inputManager, emulationSettings)
+         setContentView(binding.root)
++        diagnosticHandler.post(diagnosticStatistics)
+ 
+         builtinVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+             val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+@@ -341,7 +392,10 @@
+                     override fun run() {
+                         updatePerformanceStatistics()
+                         // We read the `VmRSS` value from the kernel
+-                        ramUsage = File("/proc/self/statm").readLines()[0].split(' ')[1].toLong() * 4096 / 1000000
++                        ramUsage = runCatching {
++                            File("/proc/self/statm").readText().trim().split(Regex("\\s+"))[1].toLong() *
++                                android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE) / 1000000
++                        }.getOrDefault(0L)
+                         text = "$fps FPS • $ramUsage MB"
+                         postDelayed(this, 250)
+                     }
+@@ -557,6 +611,7 @@
+ 
+     override fun onDestroy() {
+         super.onDestroy()
++        diagnosticHandler.removeCallbacks(diagnosticStatistics)
+         shouldFinish = false
+ 
+         // Stop forcing 60Hz on exit to allow the skyline UI to run at high refresh rates
+diff -ruN a/app/src/main/java/org/stratoemu/strato/MainActivity.kt b/app/src/main/java/org/stratoemu/strato/MainActivity.kt
+--- a/app/src/main/java/org/stratoemu/strato/MainActivity.kt	2026-10-07 23:36:04.821208400 +0200
++++ b/app/src/main/java/org/stratoemu/strato/MainActivity.kt	2026-10-07 23:36:04.821208400 +0200
+@@ -9,7 +9,6 @@
+ import android.graphics.Color
+ import android.net.Uri
+ import android.os.Bundle
+-import android.provider.DocumentsContract
+ import android.view.View
+ import android.view.inputmethod.InputMethodManager
+ import androidx.activity.OnBackPressedCallback
+@@ -21,7 +20,6 @@
+ import androidx.core.view.WindowCompat
+ import androidx.core.view.isInvisible
+ import androidx.core.view.isVisible
+-import androidx.documentfile.provider.DocumentFile
+ import androidx.lifecycle.lifecycleScope
+ import androidx.preference.PreferenceManager
+ import androidx.recyclerview.widget.GridLayoutManager
+@@ -38,7 +36,6 @@
+ import org.stratoemu.strato.databinding.MainActivityBinding
+ import org.stratoemu.strato.loader.AppEntry
+ import org.stratoemu.strato.loader.LoaderResult
+-import org.stratoemu.strato.provider.DocumentsProvider
+ import org.stratoemu.strato.settings.AppSettings
+ import org.stratoemu.strato.settings.EmulationSettings
+ import org.stratoemu.strato.settings.SettingsActivity
+@@ -154,16 +151,7 @@
+ 
+         binding.searchBar.apply {
+             binding.logIcon.setOnClickListener {
+-                val file = DocumentFile.fromSingleUri(this@MainActivity, DocumentsContract.buildDocumentUri(DocumentsProvider.AUTHORITY, "${DocumentsProvider.ROOT_ID}/logs/emulation.log"))!!
+-                if (file.exists() && file.length() != 0L) {
+-                    val intent = Intent(Intent.ACTION_SEND)
+-                        .setDataAndType(file.uri, "text/plain")
+-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+-                        .putExtra(Intent.EXTRA_STREAM, file.uri)
+-                    startActivity(Intent.createChooser(intent, getString(R.string.log_share_prompt)))
+-                } else {
+-                    Snackbar.make(this@MainActivity.findViewById(android.R.id.content), getString(R.string.logs_not_found), Snackbar.LENGTH_SHORT).show()
+-                }
++                startActivity(Intent(this@MainActivity, org.stratoemu.strato.diagnostics.DiagnosticActivity::class.java))
+             }
+             binding.settingsIcon.setOnClickListener { settingsCallback.launch(Intent(context, SettingsActivity::class.java)) }
+             binding.refreshIcon.setOnClickListener { loadRoms(false) }
+diff -ruN a/app/src/main/java/org/stratoemu/strato/StratoApplication.kt b/app/src/main/java/org/stratoemu/strato/StratoApplication.kt
+--- a/app/src/main/java/org/stratoemu/strato/StratoApplication.kt	2026-10-07 23:36:04.822856800 +0200
++++ b/app/src/main/java/org/stratoemu/strato/StratoApplication.kt	2026-10-07 23:36:04.822353800 +0200
+@@ -11,6 +11,7 @@
+ import com.google.android.material.color.DynamicColorsOptions
+ import dagger.hilt.android.HiltAndroidApp
+ import org.stratoemu.strato.di.getSettings
++import org.stratoemu.strato.diagnostics.DiagnosticSession
+ import java.io.File
+ 
+ /**
+@@ -39,6 +40,10 @@
+         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+             try {
++                DiagnosticSession.recordCurrentCrash(throwable)
++            } catch (_ : Throwable) {
++            }
++            try {
+                 File(getPublicFilesDir(), "crash.log").appendText("=== ${java.util.Date()} thread '${thread.name}'\n${throwable.stackTraceToString()}\n")
+             } catch (_ : Throwable) {
+             }
+diff -ruN a/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticActivity.kt b/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticActivity.kt
+--- a/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticActivity.kt	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticActivity.kt	2026-10-07 23:36:04.822856800 +0200
+@@ -0,0 +1,169 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++
++package org.stratoemu.strato.diagnostics
++
++import android.content.ClipData
++import android.content.Intent
++import android.os.Bundle
++import android.widget.Toast
++import androidx.appcompat.app.AppCompatActivity
++import androidx.core.content.FileProvider
++import androidx.core.view.WindowCompat
++import androidx.core.view.isVisible
++import androidx.lifecycle.lifecycleScope
++import com.google.android.material.dialog.MaterialAlertDialogBuilder
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++import org.json.JSONObject
++import org.stratoemu.strato.R
++import org.stratoemu.strato.databinding.DiagnosticActivityBinding
++import org.stratoemu.strato.utils.WindowInsetsHelper
++import java.io.File
++import java.text.DateFormat
++import java.util.Date
++
++/** Reads persisted sessions, including runs whose emulation process no longer exists. */
++class DiagnosticActivity : AppCompatActivity() {
++    private val binding by lazy { DiagnosticActivityBinding.inflate(layoutInflater) }
++    private data class Session(val directory : File, val label : String, val state : String)
++    private var sessions = emptyList<Session>()
++    private var selectedName : String? = null
++    private var busy = false
++
++    override fun onCreate(savedInstanceState : Bundle?) {
++        super.onCreate(savedInstanceState)
++        selectedName = savedInstanceState?.getString("selected_session")
++        setContentView(binding.root)
++        WindowCompat.setDecorFitsSystemWindows(window, false)
++        WindowInsetsHelper.applyToActivity(binding.root, binding.content)
++        setSupportActionBar(binding.titlebar.toolbar)
++        supportActionBar?.setDisplayHomeAsUpEnabled(true)
++        supportActionBar?.setTitle(R.string.diagnostic_title)
++        binding.chooseSession.setOnClickListener {
++            MaterialAlertDialogBuilder(this)
++                .setTitle(R.string.diagnostic_choose_session)
++                .setItems(sessions.map { it.label }.toTypedArray()) { _, index ->
++                    selectedName = sessions[index].directory.name
++                    render()
++                }
++                .show()
++        }
++        binding.refreshSessions.setOnClickListener { refresh() }
++        binding.exportDiagnostic.setOnClickListener { export() }
++        binding.deleteSession.setOnClickListener {
++            val session = sessions.firstOrNull { it.directory.name == selectedName } ?: return@setOnClickListener
++            MaterialAlertDialogBuilder(this)
++                .setTitle(R.string.diagnostic_delete)
++                .setMessage(getString(R.string.diagnostic_delete_confirmation, session.label))
++                .setNegativeButton(android.R.string.cancel, null)
++                .setPositiveButton(R.string.diagnostic_delete) { _, _ -> delete(session) }
++                .show()
++        }
++    }
++
++    override fun onResume() {
++        super.onResume()
++        refresh()
++    }
++
++    override fun onSaveInstanceState(outState : Bundle) {
++        outState.putString("selected_session", selectedName)
++        super.onSaveInstanceState(outState)
++    }
++
++    override fun onSupportNavigateUp() : Boolean {
++        finish()
++        return true
++    }
++
++    private fun render() {
++        val selected = sessions.firstOrNull { it.directory.name == selectedName }
++        binding.sessionLabel.text = selected?.label ?: getString(R.string.diagnostic_no_sessions)
++        binding.sessionStatus.text = selected?.state ?: ""
++        binding.progress.isVisible = busy
++        binding.chooseSession.isEnabled = !busy && sessions.isNotEmpty()
++        binding.exportDiagnostic.isEnabled = !busy && selected != null
++        binding.deleteSession.isEnabled = !busy && selected != null
++        binding.refreshSessions.isEnabled = !busy
++    }
++
++    private fun refresh() {
++        if (busy) return
++        busy = true
++        render()
++        lifecycleScope.launch {
++            try {
++                sessions = withContext(Dispatchers.IO) {
++                    DiagnosticSession.listSessions(applicationContext).map { directory ->
++                        val metadata = runCatching { JSONObject(File(directory, "session.json").readText()) }.getOrNull()
++                        val started = metadata?.optLong("started_at_epoch_ms", directory.lastModified()) ?: directory.lastModified()
++                        val game = metadata?.optString("game_name")?.takeIf { it.isNotBlank() } ?: getString(R.string.diagnostic_unknown_game)
++                        val state = when {
++                            DiagnosticSession.isSessionActive(directory) -> R.string.diagnostic_running
++                            metadata?.optString("status") == "finished" -> R.string.diagnostic_ended
++                            else -> R.string.diagnostic_interrupted
++                        }
++                        Session(directory, "$game\n${DateFormat.getDateTimeInstance().format(Date(started))}", getString(state))
++                    }
++                }
++                if (sessions.none { it.directory.name == selectedName })
++                    selectedName = sessions.firstOrNull()?.directory?.name
++            } catch (e : CancellationException) {
++                throw e
++            } catch (_ : Exception) {
++                Toast.makeText(this@DiagnosticActivity, R.string.diagnostic_read_failed, Toast.LENGTH_LONG).show()
++            } finally {
++                busy = false
++                render()
++            }
++        }
++    }
++
++    private fun delete(session : Session) {
++        if (busy) return
++        busy = true
++        render()
++        lifecycleScope.launch {
++            try {
++                withContext(Dispatchers.IO) { DiagnosticExporter.deleteSession(applicationContext, session.directory) }
++            } catch (e : CancellationException) {
++                throw e
++            } catch (_ : Exception) {
++                Toast.makeText(this@DiagnosticActivity, R.string.diagnostic_delete_failed, Toast.LENGTH_LONG).show()
++            } finally {
++                busy = false
++                render()
++            }
++            refresh()
++        }
++    }
++
++    private fun export() {
++        val session = sessions.firstOrNull { it.directory.name == selectedName } ?: return
++        if (busy) return
++        busy = true
++        render()
++        lifecycleScope.launch {
++            try {
++                val file = withContext(Dispatchers.IO) { DiagnosticExporter.export(applicationContext, session.directory) }
++                val uri = FileProvider.getUriForFile(this@DiagnosticActivity, "$packageName.fileprovider", file)
++                val share = Intent(Intent.ACTION_SEND).apply {
++                    type = "application/zip"
++                    putExtra(Intent.EXTRA_STREAM, uri)
++                    clipData = ClipData.newRawUri(getString(R.string.diagnostic_title), uri)
++                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
++                }
++                startActivity(Intent.createChooser(share, getString(R.string.diagnostic_export)))
++            } catch (e : CancellationException) {
++                throw e
++            } catch (_ : Exception) {
++                Toast.makeText(this@DiagnosticActivity, R.string.diagnostic_export_failed, Toast.LENGTH_LONG).show()
++            } finally {
++                busy = false
++                render()
++            }
++        }
++    }
++}
+diff -ruN a/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticExporter.kt b/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticExporter.kt
+--- a/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticExporter.kt	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticExporter.kt	2026-10-07 23:36:04.823955600 +0200
+@@ -0,0 +1,318 @@
++/*
++ * SPDX-License-Identifier: MPL-2.0
++ */
++
++package org.stratoemu.strato.diagnostics
++
++import android.content.Context
++import org.json.JSONArray
++import org.json.JSONObject
++import java.io.File
++import java.io.FileOutputStream
++import java.io.IOException
++import java.io.OutputStream
++import java.io.RandomAccessFile
++import java.nio.file.Files
++import java.nio.file.LinkOption
++import java.util.UUID
++import java.util.zip.ZipEntry
++import java.util.zip.ZipOutputStream
++
++/** Export a single session with explicit provenance and a finite byte budget. Run off the UI thread. */
++object DiagnosticExporter {
++    private const val MIB = 1024L * 1024L
++    private const val ZIP_LIMIT = 64 * MIB
++    // Reserve space for the manifest and ZIP headers, including worst-case deflate overhead.
++    private const val PAYLOAD_LIMIT = 62 * MIB
++
++    private data class Evidence(val name : String, val limit : Long, val description : String, val structured : Boolean = false)
++
++    // An allowlist intentionally excludes keys, firmware, saves, arbitrary app files and global logs.
++    private val evidence = listOf(
++        Evidence("session.json", MIB, "Launch identity, process and lifecycle", true),
++        Evidence("device.json", MIB, "Device, app, memory and firmware version at launch", true),
++        Evidence("settings.json", MIB, "Global, game and effective launch settings", true),
++        Evidence("collector.json", MIB, "Collector availability, errors and retention", true),
++        Evidence("native.json", MIB, "Native initialization and actual compiled JIT status", true),
++        Evidence("vulkan.json", 2 * MIB, "Vulkan driver, capabilities, quirks and memory snapshot", true),
++        Evidence("native_failure.json", MIB, "Exception caught at the JNI execution boundary", true),
++        Evidence("crash.log", MIB, "Uncaught Kotlin/Java exception in this session"),
++        Evidence("gpu_fault.log", 4 * MIB, "Native GPU fault evidence recorded in this session"),
++        Evidence("nce_fallback.jsonl", 8 * MIB, "Native JIT fallback records in this session"),
++        Evidence("timeline.previous.jsonl", MIB, "Previous chronological chunk of host counters"),
++        Evidence("timeline.jsonl", MIB, "Latest chronological chunk of host counters"),
++        Evidence("logcat.previous.log", 4 * MIB, "Previous logcat chunk, restricted to this session's process and start time"),
++        Evidence("logcat.log", 4 * MIB, "Latest logcat chunk, restricted to this session's process and start time"),
++        Evidence("emulation.log", 24 * MIB, "Native emulation log, including existing watchdog traces")
++    )
++
++    @JvmStatic
++    fun export(context : Context, sessionDirectory : File) : File {
++        val session = validatedDirectory(context, sessionDirectory)
++        val sessionMetadata = File(session, "session.json")
++        require(sessionMetadata.isFile && sessionMetadata.canonicalFile.parentFile == session && sessionMetadata.canonicalFile.name == "session.json") {
++            "The selected directory has no valid session metadata"
++        }
++
++        val destination = File(context.cacheDir, "diagnostics").canonicalFile
++        if (!destination.isDirectory && !destination.mkdirs()) throw IOException("Cannot create diagnostic export directory")
++        val output = File(destination, "diagnostic-${session.name}-${UUID.randomUUID().toString().take(8)}.zip")
++        val partial = File(destination, output.name + ".partial")
++        // Hold an inactive session's lock during export. A frozen but still live process remains
++        // exportable as an explicitly non-atomic snapshot; its logs are never deleted or reset.
++        val sessionLock = DiagnosticFileLock.acquire(session)
++        val liveSnapshot = sessionLock == null
++        try {
++            val manifest = JSONObject().put("schema_version", 1).put("exported_at_utc", utcNow())
++                .put("session_id", session.name).put("session_active_at_export_start", liveSnapshot)
++                .put("snapshot_consistency", if (liveSnapshot) "live_files_may_change_between_reads" else "inactive_session")
++                .put("archive_size_limit_bytes", ZIP_LIMIT).put("payload_size_limit_bytes", PAYLOAD_LIMIT)
++                .put("sources", "Only files in this selected launch directory; no global log is copied")
++                .put("excluded", JSONArray(listOf("prod.keys", "title.keys", "firmware files", "fonts", "ROMs", "saves", "other sessions")))
++                .put("interpretation", "Missing evidence is not proof that a subsystem succeeded or was unused. native_returned is not a success verdict.")
++                .put("limitations", limitations())
++            val availability = JSONArray()
++            var payloadBytes = 0L
++            ZipOutputStream(LimitedOutput(FileOutputStream(partial), ZIP_LIMIT).buffered()).use { zip ->
++                for (entry in evidence) {
++                    val record = JSONObject().put("file", entry.name).put("description", entry.description)
++                        .put("per_file_limit_bytes", entry.limit)
++                    availability.put(record)
++                    val file = File(session, entry.name)
++                    if (!file.exists()) {
++                        record.put("status", "missing").put("included_bytes", 0)
++                            .put("reason", missingReason(entry.name))
++                        continue
++                    }
++                    if (!file.isFile || file.canonicalFile.parentFile != session || file.canonicalFile.name != entry.name) {
++                        record.put("status", "omitted").put("included_bytes", 0).put("reason", "Not a regular file inside this session")
++                        continue
++                    }
++                    val remaining = (PAYLOAD_LIMIT - payloadBytes).coerceAtLeast(0)
++                    if (remaining == 0L) {
++                        record.put("status", "omitted").put("included_bytes", 0).put("reason", "Archive payload budget exhausted")
++                        continue
++                    }
++                    val source = try {
++                        RandomAccessFile(file, "r")
++                    } catch (e : IOException) {
++                        record.put("status", "unreadable").put("included_bytes", 0).put("error", safeError(e))
++                        continue
++                    }
++                    source.use {
++                        val sourceSize = source.length()
++                        record.put("source_size_at_open_bytes", sourceSize)
++                        val limit = minOf(entry.limit, remaining)
++                        if (entry.structured) {
++                            // Never turn a JSON object into an apparently valid tail fragment.
++                            if (sourceSize > limit) {
++                                record.put("status", "omitted").put("included_bytes", 0)
++                                    .put("reason", "Structured JSON exceeds available budget; not truncated")
++                            } else {
++                                val bytes = ByteArray(sourceSize.toInt())
++                                val readError = try { source.readFully(bytes); null } catch (e : IOException) { e }
++                                if (readError != null) {
++                                    record.put("status", "unreadable").put("included_bytes", 0).put("error", safeError(readError))
++                                } else {
++                                    val parseError = try { JSONObject(String(bytes, Charsets.UTF_8)); null } catch (e : Exception) { e }
++                                    zip.putNextEntry(ZipEntry(entry.name))
++                                    zip.write(bytes)
++                                    zip.closeEntry()
++                                    payloadBytes += bytes.size
++                                    record.put("included_bytes", bytes.size).put("status", if (parseError == null) "included" else "invalid_json_included_raw")
++                                    if (parseError != null) record.put("error", safeError(parseError))
++                                }
++                            }
++                        } else {
++                            val result = copyTextSnapshot(source, sourceSize, limit, entry.name, zip)
++                            payloadBytes += result.getLong("included_bytes")
++                            for (key in result.keys()) record.put(key, result.get(key))
++                        }
++                        record.put("source_size_after_read_bytes", file.length())
++                        record.put("source_may_have_changed", file.length() != sourceSize || liveSnapshot)
++                    }
++                }
++                manifest.put("files", availability).put("included_payload_bytes", payloadBytes)
++                manifest.put("session_state", readSessionState(session, liveSnapshot))
++                val manifestBytes = manifest.toString(2).toByteArray(Charsets.UTF_8)
++                if (manifestBytes.size > MIB) throw IOException("Diagnostic manifest exceeds its reserved budget")
++                zip.putNextEntry(ZipEntry("manifest.json"))
++                zip.write(manifestBytes)
++                zip.closeEntry()
++            }
++            if (!partial.renameTo(output)) throw IOException("Cannot finalize diagnostic ZIP")
++            return output
++        } finally {
++            sessionLock?.close()
++            // Only an incomplete export owned by this call is removed; session evidence is retained.
++            if (partial.exists()) partial.delete()
++        }
++    }
++
++    /** Explicit user action only. No automatic retention policy deletes diagnostic evidence. */
++    @JvmStatic
++    fun deleteSession(context : Context, sessionDirectory : File) {
++        val session = validatedDirectory(context, sessionDirectory)
++        val lock = DiagnosticFileLock.acquire(session) ?: throw IOException("The session is active or another operation holds its lock")
++        try {
++            val files = session.listFiles() ?: throw IOException("Cannot list the selected session")
++            // Validate the complete list before deleting anything. Do not traverse subdirectories
++            // or follow even an in-directory symbolic link supplied by a malformed session.
++            for (file in files) {
++                if (Files.isSymbolicLink(file.toPath()) || !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS) ||
++                    file.canonicalFile.parentFile != session || file.canonicalFile.name != file.name)
++                    throw IOException("Session contains an unsupported entry: ${file.name}")
++            }
++            for (file in files.filter { it.name != "session.json" && it.name != ".active.lock" }) {
++                if (!file.delete()) throw IOException("Cannot delete ${file.name}")
++            }
++            val metadata = File(session, "session.json")
++            if (metadata.exists() && !metadata.delete()) throw IOException("Cannot delete session metadata")
++            val lockFile = File(session, ".active.lock")
++            if (lockFile.exists() && !lockFile.delete()) throw IOException("Cannot delete session lock")
++            if (!session.delete()) throw IOException("Cannot delete session directory")
++        } finally {
++            lock.close()
++        }
++    }
++
++    private fun validatedDirectory(context : Context, directory : File) : File {
++        val root = DiagnosticSession.sessionRoot(context).canonicalFile
++        val session = directory.canonicalFile
++        if (Files.isSymbolicLink(directory.toPath()) || session.parentFile != root || !session.isDirectory)
++            throw IOException("Expected one diagnostic session directory")
++        return session
++    }
++
++    private fun limitations() = JSONObject()
++        .put("diagnosis", "Evidence supports diagnosis; it cannot guarantee a unique cause for every hang")
++        .put("gpu_memory", "vulkan.json is an initialization snapshot when available; no allocation/budget timeline in this delivery")
++        .put("ipc", "A bounded IPC command/stub ring is not implemented in this delivery; existing native logs may contain IPC messages")
++        .put("guest_threads", "Host thread counts are not guest thread states; see emulation.log for existing watchdog traces")
++        .put("pc_lr_sampling", "Existing watchdog samples may be present in emulation.log; this delivery adds no structured PC/LR capture or new progress-triggered watchdog")
++        .put("draws_dispatches_pipelines", "Periodic counters are unavailable in this delivery")
++        .put("logcat", "Finite process-filtered snapshots every 2 seconds; the last interval can be lost on abrupt death, and OS buffer overwrite or clock changes can lose records. System-wide tombstones and restricted buffers may be unavailable")
++        .put("retention", "timeline and logcat retain two bounded chunks; older records may be overwritten, see collector.json")
++        .put("native_log_retention", "Oversized native logs are tail-truncated in the export; this export does not cap native on-device writers")
++        .put("settings", "Launch snapshot only; later live changes are not recorded in this delivery")
++        .put("privacy", "Names and profile image fields are redacted from settings; game names and diagnostic logs can still contain paths or user-provided text")
++
++    private fun missingReason(name : String) = when (name) {
++        "crash.log" -> "No session-scoped Kotlin/Java uncaught exception was recorded; native crashes may appear in other files"
++        "native_failure.json" -> "No exception was recorded at the JNI boundary; fatal signals bypass that boundary"
++        "native.json", "vulkan.json" -> "Native capture was unavailable or initialization did not reach this stage"
++        "nce_fallback.jsonl" -> "No fallback file was produced; check native.json for compiled JIT availability, absence is not a JIT test"
++        "gpu_fault.log" -> "No session GPU fault file was produced; absence does not rule out a GPU failure"
++        "timeline.previous.jsonl", "logcat.previous.log" -> "The collector may not have rotated yet; see collector.json"
++        "logcat.log", "timeline.jsonl" -> "No retained collector data; see collector.json for availability and errors"
++        else -> "File was not recorded or is unavailable in this launch"
++    }
++
++    /** Keep the newest complete lines, fixing both ends so JSONL remains parseable after a kill. */
++    private fun copyTextSnapshot(source : RandomAccessFile, size : Long, limit : Long, name : String, zip : ZipOutputStream) : JSONObject {
++        var start = (size - limit).coerceAtLeast(0)
++        var end = size
++        try {
++            if (start > 0) {
++                source.seek(start - 1)
++                if (source.read() != '\n'.code) {
++                    val buffer = ByteArray(8192)
++                    source.seek(start)
++                    var cursor = start
++                    start = size
++                    search@ while (cursor < size) {
++                        val count = source.read(buffer, 0, minOf(buffer.size.toLong(), size - cursor).toInt())
++                        if (count <= 0) throw IOException("Source changed while finding a complete first line")
++                        for (index in 0 until count) {
++                            if (buffer[index] == '\n'.code.toByte()) { start = cursor + index + 1; break@search }
++                        }
++                        cursor += count
++                    }
++                }
++            }
++            if (name.endsWith(".jsonl") && end > start) {
++                // At most one bounded chunk is scanned. Native JSONL may end mid-write after a crash.
++                val buffer = ByteArray(8192)
++                var cursor = end
++                var completeEnd = start
++                search@ while (cursor > start) {
++                    val count = minOf(buffer.size.toLong(), cursor - start).toInt()
++                    val base = cursor - count
++                    source.seek(base)
++                    source.readFully(buffer, 0, count)
++                    for (index in count - 1 downTo 0) {
++                        if (buffer[index] == '\n'.code.toByte()) { completeEnd = base + index + 1; break@search }
++                    }
++                    cursor = base
++                }
++                end = completeEnd
++            }
++            source.seek(start)
++        } catch (e : IOException) {
++            return JSONObject().put("status", "unreadable").put("included_bytes", 0).put("error", safeError(e))
++        }
++        val record = JSONObject().put("source_start_offset_bytes", start).put("source_end_offset_bytes", end)
++            .put("omitted_prefix_bytes", start).put("omitted_partial_suffix_bytes", size - end)
++        var included = 0L
++        var readError : IOException? = null
++        zip.putNextEntry(ZipEntry(name))
++        val buffer = ByteArray(32 * 1024)
++        while (included < end - start) {
++            val count = try {
++                source.read(buffer, 0, minOf(buffer.size.toLong(), end - start - included).toInt())
++            } catch (e : IOException) {
++                readError = e
++                break
++            }
++            if (count <= 0) { readError = IOException("Source changed or ended before its snapshot length"); break }
++            // Output failures propagate: a broken ZIP must never be returned as a successful export.
++            zip.write(buffer, 0, count)
++            included += count
++        }
++        zip.closeEntry()
++        record.put("included_bytes", included).put("status", when {
++            readError != null -> "partial_read_error"
++            start > 0 || end < size -> "truncated"
++            else -> "included"
++        })
++        if (readError != null) record.put("error", safeError(readError))
++        return record
++    }
++
++    private fun readSessionState(session : File, active : Boolean) : JSONObject = try {
++        val file = File(session, "session.json")
++        if (file.length() > MIB) throw IOException("Session metadata exceeds size limit")
++        val metadata = JSONObject(file.readText())
++        JSONObject().put("recorded_status", metadata.optString("status", "unknown"))
++            .put("finish_reason", metadata.opt("finish_reason") ?: JSONObject.NULL)
++            .put("interrupted_without_finish", !active && metadata.optString("status") == "running")
++            .put("note", "An unlocked running session ended without finish; this can be a native crash, process kill or interrupted startup, not a proven cause")
++    } catch (e : Exception) {
++        unavailable(safeError(e))
++    }
++
++    private fun safeError(error : Exception) = error.javaClass.simpleName + ": " + error.message.orEmpty().take(512)
++
++    private class LimitedOutput(private val target : OutputStream, private val limit : Long) : OutputStream() {
++        private var count = 0L
++
++        override fun write(value : Int) {
++            ensureCapacity(1)
++            target.write(value)
++            count++
++        }
++
++        override fun write(buffer : ByteArray, offset : Int, length : Int) {
++            ensureCapacity(length)
++            target.write(buffer, offset, length)
++            count += length
++        }
++
++        private fun ensureCapacity(length : Int) {
++            if (length > limit - count) throw IOException("Diagnostic ZIP exceeded its 64 MiB limit")
++        }
++
++        override fun flush() = target.flush()
++        override fun close() = target.close()
++    }
++}
+diff -ruN a/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticSession.kt b/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticSession.kt
+--- a/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticSession.kt	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticSession.kt	2026-10-07 23:36:04.824959800 +0200
+@@ -0,0 +1,630 @@
++/*
++ * SPDX-License-Identifier: MPL-2.0
++ */
++
++package org.stratoemu.strato.diagnostics
++
++import android.app.ActivityManager
++import android.content.Context
++import android.os.Build
++import android.os.Process
++import android.os.SystemClock
++import android.system.Os
++import android.system.OsConstants
++import android.util.AtomicFile
++import androidx.preference.PreferenceManager
++import kotlinx.serialization.encodeToString
++import kotlinx.serialization.json.Json
++import org.json.JSONArray
++import org.json.JSONObject
++import org.stratoemu.strato.BuildConfig
++import org.stratoemu.strato.settings.EmulationSettings
++import org.stratoemu.strato.settings.NativeSettings
++import java.io.Closeable
++import java.io.ByteArrayOutputStream
++import java.io.File
++import java.io.FileOutputStream
++import java.io.IOException
++import java.io.RandomAccessFile
++import java.nio.channels.FileLock
++import java.nio.channels.OverlappingFileLockException
++import java.nio.file.Files
++import java.security.MessageDigest
++import java.text.SimpleDateFormat
++import java.util.Date
++import java.util.Locale
++import java.util.TimeZone
++import java.util.UUID
++import java.util.concurrent.Executors
++import java.util.concurrent.TimeUnit
++import java.util.concurrent.ScheduledFuture
++import java.util.concurrent.atomic.AtomicBoolean
++import java.util.concurrent.atomic.AtomicReference
++
++/**
++ * One launch, in the emulation process. Native writers must use [directory] directly;
++ * copying global logs here would silently attribute an earlier game's failure to this one.
++ * A held OS file lock distinguishes a live session from a process killed without cleanup.
++ */
++class DiagnosticSession private constructor(
++    private val context : Context,
++    val directory : File,
++    private val sessionLock : DiagnosticFileLock,
++    private val sessionInfo : JSONObject
++) {
++    private data class Performance(val fps : Double, val frametimeMs : Float, val sampledAtMs : Long)
++
++    private val finished = AtomicBoolean(false)
++    private val performance = AtomicReference<Performance?>(null)
++    private val stateLock = Any()
++    private val issues = linkedMapOf<String, JSONObject>()
++    private val timeline = DiagnosticRollingLog(directory, "timeline.jsonl", "timeline.previous.jsonl", MIB)
++    private val logcat = DiagnosticRollingLog(directory, "logcat.log", "logcat.previous.log", 4 * MIB)
++    private val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
++        Thread(runnable, "diagnostic-timeline").apply { isDaemon = true }
++    }
++    private val logcatTimeouts = Executors.newSingleThreadScheduledExecutor { runnable ->
++        Thread(runnable, "diagnostic-logcat-timeout").apply { isDaemon = true }
++    }
++    @Volatile private var logcatProcess : java.lang.Process? = null
++    private var logcatThread : Thread? = null
++    private var logcatState = "not_started"
++    private var logcatExitCode : Int? = null
++    private var timelineState = "not_started"
++    private var previousCpuMs = Process.getElapsedCpuTime()
++    private var previousElapsedMs = SystemClock.elapsedRealtime()
++    private val startedElapsedMs = previousElapsedMs
++    private val pageSizeBytes = try {
++        Os.sysconf(OsConstants._SC_PAGESIZE).takeIf { it > 0 }
++    } catch (_ : Exception) {
++        null
++    }
++    private val processors = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
++
++    /** Called by the activity's periodic statistics update, including when its overlay is hidden. */
++    fun updatePerformance(fps : Double, averageFrametimeMs : Float) {
++        if (!finished.get() && fps.isFinite() && fps >= 0 && averageFrametimeMs.isFinite() && averageFrametimeMs >= 0)
++            performance.set(Performance(fps, averageFrametimeMs, SystemClock.elapsedRealtime()))
++    }
++
++    /** Best effort only: this must never replace or mask the original uncaught exception. */
++    fun recordCrash(throwable : Throwable) {
++        try {
++            synchronized(stateLock) {
++                if (finished.get()) return
++                val text = buildString {
++                    append("UTC: ").append(utcNow()).append("\nPID: ").append(Process.myPid()).append('\n')
++                    append("Thread: ").append(Thread.currentThread().name.take(256)).append('\n')
++                    var cause : Throwable? = throwable
++                    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
++                    var count = 0
++                    while (count++ < 8 && length < 60 * 1024) {
++                        val currentCause = cause ?: break
++                        if (!seen.add(currentCause)) break
++                        append(currentCause.javaClass.name).append(": ").append(currentCause.message?.take(2048)).append('\n')
++                        currentCause.stackTrace.take(128).forEach { append("  at ").append(it.toString().take(512)).append('\n') }
++                        if (currentCause.suppressed.isNotEmpty()) append("Suppressed exceptions: ").append(currentCause.suppressed.size).append('\n')
++                        cause = currentCause.cause
++                    }
++                    append("Trace limited to 8 causes and 128 frames per cause.\n")
++                }.take(64 * 1024)
++                // Only this session is written; the application's existing crash log remains intact.
++                writeDiagnosticBytes(File(directory, "crash.log"), text.toByteArray(Charsets.UTF_8))
++                sessionInfo.put("uncaught_exception_recorded", true)
++                persistSession()
++            }
++        } catch (_ : Throwable) {
++        }
++    }
++
++    /** "native_returned" means execution returned, not that the guest finished successfully. */
++    fun finish(reason : String) {
++        if (!finished.compareAndSet(false, true)) return
++        try {
++            stopCollectors()
++            synchronized(stateLock) {
++                sessionInfo.put("status", "finished")
++                    .put("finish_reason", reason.take(256))
++                    .put("ended_at_utc", utcNow())
++                    .put("ended_at_epoch_ms", System.currentTimeMillis())
++                persistSession()
++            }
++            persistCollectorStatus(force = true)
++        } catch (_ : Throwable) {
++            // Cleanup must not replace an exception propagated from native execution.
++        } finally {
++            try { timeline.close() } catch (_ : Throwable) { }
++            try { logcat.close() } catch (_ : Throwable) { }
++            try { sessionLock.close() } catch (_ : Throwable) { }
++            synchronized(CURRENT_LOCK) {
++                if (current === this) current = null
++            }
++        }
++    }
++
++    private fun initialize(titleId : String?, nativeSettings : NativeSettings) {
++        // These snapshots are persisted before JNI starts, even if no native initialization succeeds.
++        writeDiagnosticJson(File(directory, "session.json"), sessionInfo)
++        writeDiagnosticJson(File(directory, "device.json"), deviceSnapshot())
++        writeDiagnosticJson(File(directory, "settings.json"), settingsSnapshot(titleId, nativeSettings))
++        startLogcat()
++        synchronized(stateLock) { timelineState = "running" }
++        persistCollectorStatus()
++        scheduler.scheduleAtFixedRate({
++            if (!finished.get()) {
++                try {
++                    sampleTimeline()
++                } catch (e : Exception) {
++                    issue("timeline_sample", e)
++                }
++                persistCollectorStatus()
++            }
++        }, 0, 1, TimeUnit.SECONDS)
++    }
++
++    private fun deviceSnapshot() = JSONObject().apply {
++        put("schema_version", 1)
++        put("captured_at_utc", utcNow())
++        put("manufacturer", Build.MANUFACTURER)
++        put("model", Build.MODEL)
++        put("device", Build.DEVICE)
++        put("board", Build.BOARD)
++        put("hardware", Build.HARDWARE)
++        put("supported_abis", JSONArray(Build.SUPPORTED_ABIS.toList()))
++        put("android_release", Build.VERSION.RELEASE)
++        put("android_sdk", Build.VERSION.SDK_INT)
++        put("android_security_patch", Build.VERSION.SECURITY_PATCH)
++        put("soc", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
++            JSONObject().put("manufacturer", Build.SOC_MANUFACTURER).put("model", Build.SOC_MODEL).put("source", "android.os.Build")
++        } else {
++            unavailable("Build.SOC_MODEL requires Android 12; hardware/board are reported separately and are not an exact SoC identification")
++        })
++        put("available_processors", processors)
++        put("page_size_bytes", pageSizeBytes ?: JSONObject.NULL)
++        put("memory", capture("device_memory") { memorySnapshot() })
++        put("app", JSONObject().put("package", context.packageName)
++            .put("version_name", BuildConfig.VERSION_NAME).put("version_code", BuildConfig.VERSION_CODE)
++            .put("build_type", BuildConfig.BUILD_TYPE).put("commit", BuildConfig.BUILD_COMMIT_FULL)
++            .put("build_timestamp_seconds", BuildConfig.BUILD_TIMESTAMP))
++        put("firmware_version", PreferenceManager.getDefaultSharedPreferences(context).getString("firmware", null) ?: JSONObject.NULL)
++        put("vulkan", JSONObject().put("source", "vulkan.json").put("status", "see_native_capture"))
++        put("jit_compiled", JSONObject().put("source", "native.json").put("status", "see_native_capture"))
++    }
++
++    private fun memorySnapshot() : JSONObject {
++        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
++            ?: throw IOException("ActivityManager unavailable")
++        val info = ActivityManager.MemoryInfo()
++        manager.getMemoryInfo(info)
++        return JSONObject().put("total_bytes", info.totalMem).put("available_bytes", info.availMem)
++            .put("low_memory", info.lowMemory).put("low_memory_threshold_bytes", info.threshold)
++            .put("available_note", "Android available memory, not an estimate of GPU memory")
++    }
++
++    private fun settingsSnapshot(titleId : String?, effective : NativeSettings) = JSONObject().apply {
++        put("schema_version", 1)
++        put("captured_at_utc", utcNow())
++        put("scope", "launch_snapshot; later settings changes are not tracked in this delivery")
++        put("redacted_fields", JSONArray(listOf("usernameValue", "profilePictureValue")))
++        put("global", capture("global_settings") { emulationSnapshot(EmulationSettings.global) })
++        put("game", if (titleId != null) capture("game_settings") { emulationSnapshot(EmulationSettings.forTitleId(titleId)) }
++            else unavailable("No title preference identifier was supplied"))
++        put("effective_native", sanitizedNativeSettings(effective))
++        put("effective_ui", capture("effective_ui_settings") {
++            uiSettings(if (titleId != null) EmulationSettings.forEmulation(titleId) else EmulationSettings.global)
++        })
++    }
++
++    private fun emulationSnapshot(settings : EmulationSettings) = JSONObject()
++        .put("is_global", settings.isGlobal).put("custom_settings_enabled", settings.useCustomSettings)
++        .put("native", sanitizedNativeSettings(NativeSettings(context, settings))).put("ui", uiSettings(settings))
++
++    private fun uiSettings(settings : EmulationSettings) = JSONObject()
++        .put("perf_stats", settings.perfStats).put("max_refresh_rate", settings.maxRefreshRate)
++        .put("orientation", settings.orientation).put("aspect_ratio", settings.aspectRatio)
++        .put("respect_display_cutout", settings.respectDisplayCutout).put("enable_foldable_layout", settings.enableFoldableLayout)
++        .put("show_pause_button", settings.showPauseButton)
++
++    private fun sanitizedNativeSettings(settings : NativeSettings) = JSONObject(Json.encodeToString(settings)).apply {
++        put("usernameValue", "[redacted]")
++        put("profilePictureValue", "[redacted]")
++    }
++
++    private fun capture(name : String, block : () -> JSONObject) : JSONObject = try {
++        block()
++    } catch (e : Exception) {
++        issue(name, e)
++        unavailable(e.javaClass.simpleName + ": " + e.message.orEmpty().take(512))
++    }
++
++    private fun sampleTimeline() {
++        val now = SystemClock.elapsedRealtime()
++        val cpu = Process.getElapsedCpuTime()
++        val interval = now - previousElapsedMs
++        val cpuDelta = cpu - previousCpuMs
++        val stats = performance.get()
++        val statsAge = stats?.let { now - it.sampledAtMs }
++        val freshStats = stats?.takeIf { statsAge != null && statsAge in 0L..2500L }
++        val sample = JSONObject().put("utc", utcNow()).put("elapsed_ms", now - startedElapsedMs)
++            .put("pid", Process.myPid()).put("sample_interval_ms", interval)
++            .put("cpu_percent_one_core", if (interval > 0 && cpuDelta >= 0) 100.0 * cpuDelta / interval else JSONObject.NULL)
++            .put("cpu_percent_available_cores", if (interval > 0 && cpuDelta >= 0) 100.0 * cpuDelta / interval / processors else JSONObject.NULL)
++            .put("available_processors", processors)
++            .put("fps", freshStats?.fps ?: JSONObject.NULL)
++            .put("average_frametime_ms", freshStats?.takeIf { it.fps > 0 }?.frametimeMs ?: JSONObject.NULL)
++            .put("fps_sample_age_ms", statsAge ?: JSONObject.NULL)
++            .put("fps_status", if (freshStats != null) "available" else if (stats == null) "not_sampled" else "stale")
++        previousElapsedMs = now
++        previousCpuMs = cpu
++        try {
++            val rss = if (pageSizeBytes != null) {
++                val fields = File("/proc/self/statm").readText().trim().split(Regex("\\s+"))
++                fields[1].toLong() * pageSizeBytes
++            } else {
++                val rssLine = File("/proc/self/status").useLines { lines -> lines.firstOrNull { it.startsWith("VmRSS:") } }
++                    ?: throw IOException("VmRSS is unavailable and page size could not be read")
++                rssLine.substringAfter(':').trim().substringBefore(' ').toLong() * 1024L
++            }
++            sample.put("rss_bytes", rss).put("rss_source", if (pageSizeBytes != null) "statm_resident_times_sysconf_pagesize" else "status_VmRSS_kib")
++        } catch (e : Exception) {
++            sample.put("rss_bytes", JSONObject.NULL).put("rss_error", e.javaClass.simpleName)
++            issue("rss", e)
++        }
++        try {
++            sample.put("host_thread_count", File("/proc/self/task").list()?.size ?: throw IOException("Cannot list process threads"))
++        } catch (e : Exception) {
++            sample.put("host_thread_count", JSONObject.NULL)
++            issue("host_threads", e)
++        }
++        // Host threads are not guest threads. Native GPU/IPC counters are deliberately not fabricated.
++        sample.put("guest_thread_count", JSONObject.NULL).put("gpu_allocated_bytes", JSONObject.NULL)
++            .put("draws", JSONObject.NULL).put("dispatches", JSONObject.NULL).put("pipelines_compiled", JSONObject.NULL)
++        timeline.append(sample.toString())
++    }
++
++    private fun startLogcat() {
++        logcatThread = Thread({
++            // A finite -d command also exits on its own if our parent process is killed. A
++            // persistent follower could be orphaned, waiting forever for logs from a dead PID.
++            var cursor = sessionInfo.getLong("started_at_epoch_ms") / 1000.0
++            var cursorCounts = mutableMapOf<String, Int>()
++            val digest = MessageDigest.getInstance("SHA-256")
++            while (!finished.get()) {
++                val pollStartedAt = SystemClock.elapsedRealtime()
++                try {
++                    val cutoff = cursor
++                    val previousCounts = cursorCounts.toMap()
++                    val seenAtCutoff = mutableMapOf<String, Int>()
++                    val newestCounts = cursorCounts.toMutableMap()
++                    cursorCounts = newestCounts
++                    val since = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date((cursor * 1000).toLong()))
++                    val child = ProcessBuilder("/system/bin/logcat", "-d", "--pid=${Process.myPid()}",
++                        "-b", "main", "-b", "system", "-b", "crash", "-v", "threadtime", "-v", "epoch", "-v", "usec", "-T", since)
++                        .redirectErrorStream(true).start()
++                    logcatProcess = child
++                    synchronized(stateLock) { logcatState = "polling" }
++                    val timedOut = AtomicBoolean(false)
++                    var timeout : ScheduledFuture<*>? = null
++                    try {
++                        if (finished.get()) break
++                        timeout = logcatTimeouts.schedule(Runnable {
++                            timedOut.set(true)
++                            try { child.destroyForcibly() } catch (_ : Exception) { }
++                        }, 2, TimeUnit.SECONDS)
++                        readLogcatLines(child) { line ->
++                            val epochSeconds = line.trimStart().substringBefore(' ').toDoubleOrNull()
++                            if (epochSeconds != null && epochSeconds.isFinite() && epochSeconds >= cutoff) {
++                                val identity = digest.digest(line.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
++                                var include = true
++                                if (epochSeconds == cutoff) {
++                                    val occurrence = (seenAtCutoff[identity] ?: 0) + 1
++                                    if (seenAtCutoff.size < 4096 || identity in seenAtCutoff) seenAtCutoff[identity] = occurrence
++                                    include = occurrence > (previousCounts[identity] ?: 0)
++                                    if (cursor == cutoff && (newestCounts.size < 4096 || identity in newestCounts))
++                                        newestCounts[identity] = maxOf(occurrence, newestCounts[identity] ?: 0)
++                                } else {
++                                    if (epochSeconds > cursor) { cursor = epochSeconds; newestCounts.clear() }
++                                    if (epochSeconds == cursor && (newestCounts.size < 4096 || identity in newestCounts))
++                                        newestCounts[identity] = (newestCounts[identity] ?: 0) + 1
++                                }
++                                if (newestCounts.size >= 4096) issue("logcat_dedup_capacity", IOException("Timestamp deduplication reached its 4096-record bound; duplicates may remain"))
++                                if (include && !finished.get()) logcat.append(line)
++                            } else if (line.isNotBlank() && !line.startsWith("---------")) {
++                                if (epochSeconds == null) issue("logcat_output", IOException(line.take(512)))
++                            }
++                        }
++                        if (!child.waitFor(200, TimeUnit.MILLISECONDS)) child.destroyForcibly()
++                        synchronized(stateLock) { logcatExitCode = if (child.isAlive) null else child.exitValue() }
++                        if (timedOut.get()) {
++                            synchronized(stateLock) { logcatState = "incomplete" }
++                            issue("logcat_timeout", IOException("A logcat snapshot exceeded 2 seconds; it may be incomplete"))
++                        } else if (!finished.get() && logcatExitCode != 0) {
++                            synchronized(stateLock) { logcatState = "failed" }
++                            issue("logcat_exit", IOException("Logcat snapshot exit code $logcatExitCode"))
++                        } else synchronized(stateLock) { logcatState = "available" }
++                    } finally {
++                        timeout?.cancel(false)
++                        try { if (child.isAlive) child.destroyForcibly() } catch (_ : Exception) { }
++                        try { child.inputStream.close() } catch (_ : Exception) { }
++                        logcatProcess = null
++                    }
++                } catch (e : Exception) {
++                    if (!finished.get()) {
++                        synchronized(stateLock) { logcatState = "failed" }
++                        issue("logcat_snapshot", e)
++                    }
++                } finally {
++                    persistCollectorStatus()
++                }
++                val delayMs = (2000 - (SystemClock.elapsedRealtime() - pollStartedAt)).coerceAtLeast(0)
++                try { Thread.sleep(delayMs) } catch (_ : InterruptedException) { break }
++            }
++        }, "diagnostic-logcat").apply { isDaemon = true; start() }
++    }
++
++    private fun readLogcatLines(child : java.lang.Process, consume : (String) -> Unit) {
++        val buffer = ByteArray(8192)
++        val line = ByteArrayOutputStream(4096)
++        var oversize = false
++        var total = 0L
++        child.inputStream.buffered().use { input ->
++            while (!finished.get() && total < 4 * MIB) {
++                val count = input.read(buffer, 0, minOf(buffer.size.toLong(), 4 * MIB - total).toInt())
++                if (count < 0) return
++                total += count
++                var segmentStart = 0
++                for (index in 0..count) {
++                    if (index == count || buffer[index] == '\n'.code.toByte()) {
++                        if (!oversize && line.size() + index - segmentStart <= 64 * 1024) line.write(buffer, segmentStart, index - segmentStart)
++                        else oversize = true
++                        if (index < count) {
++                            if (oversize) issue("logcat_line_size", IOException("A line over 64 KiB was omitted"))
++                            else consume(line.toString("UTF-8"))
++                            line.reset()
++                            oversize = false
++                        }
++                        segmentStart = index + 1
++                    }
++                }
++            }
++        }
++        if (total >= 4 * MIB) issue("logcat_poll_size", IOException("A snapshot reached its 4 MiB read limit; unread buffer entries may be lost"))
++    }
++
++    private fun issue(key : String, error : Exception) {
++        synchronized(stateLock) {
++            // Coalesce errors instead of repeating an inaccessible counter once per second.
++            val old = issues[key]
++            if (old != null) old.put("count", old.optLong("count") + 1)
++            else if (issues.size < 64) issues[key] = JSONObject().put("component", key).put("count", 1)
++                .put("first_seen_utc", utcNow()).put("error", error.javaClass.simpleName + ": " + error.message.orEmpty().take(512))
++        }
++    }
++
++    private fun persistSession() {
++        try {
++            writeDiagnosticJson(File(directory, "session.json"), sessionInfo)
++        } catch (e : Exception) {
++            issue("session_write", e)
++        }
++    }
++
++    private fun persistCollectorStatus(force : Boolean = false) {
++        try {
++            synchronized(stateLock) {
++                if (finished.get() && !force) return
++                writeDiagnosticJson(File(directory, "collector.json"), JSONObject().put("schema_version", 1)
++                    .put("updated_at_utc", utcNow()).put("pid", Process.myPid())
++                    .put("logcat", logcat.snapshot().put("status", logcatState).put("exit_code", logcatExitCode ?: JSONObject.NULL)
++                        .put("scope", "current emulation PID, entries since session start; Android may restrict buffers")
++                        .put("poll_interval_ms", 2000).put("poll_timeout_ms", 2000).put("poll_read_limit_bytes", 4 * MIB)
++                        .put("polling_limitations", "The final interval may be absent after abrupt process death; Android buffer overwrite or wall-clock changes can lose records"))
++                    .put("timeline", timeline.snapshot().put("status", timelineState).put("interval_ms", 1000)
++                        .put("fps_source", "real frame present submissions per callback interval; not physical display/GPU timing")
++                        .put("average_frametime_ms", "callback interval divided by real frame submissions; unavailable when fps is zero"))
++                    .put("errors", JSONArray(issues.values.toList()))
++                    .put("cpu_definition", "100% one_core = one logical CPU fully busy; available_cores divides by Runtime.availableProcessors at launch")
++                    .put("unavailable_in_this_delivery", JSONArray(listOf("gpu_utilization_percent", "gpu_allocation_timeline", "draw_dispatch_pipeline_counters", "guest_thread_timeline", "ipc_command_ring"))))
++            }
++        } catch (e : Exception) {
++            issue("collector_status_write", e)
++        }
++    }
++
++    private fun stopCollectors() {
++        try { scheduler.shutdownNow() } catch (_ : Throwable) { }
++        try { logcatTimeouts.shutdownNow() } catch (_ : Throwable) { }
++        try { logcatThread?.interrupt() } catch (_ : Throwable) { }
++        try { logcatProcess?.destroyForcibly() } catch (_ : Throwable) { }
++        try { logcatProcess?.inputStream?.close() } catch (_ : Throwable) { }
++        try { scheduler.awaitTermination(500, TimeUnit.MILLISECONDS) } catch (_ : InterruptedException) { Thread.currentThread().interrupt() }
++        try { logcatThread?.join(500) } catch (_ : InterruptedException) { Thread.currentThread().interrupt() }
++        try { timeline.close() } catch (_ : Throwable) { }
++        try { logcat.close() } catch (_ : Throwable) { }
++        synchronized(stateLock) {
++            timelineState = "stopped"
++            if (logcatState == "polling" || logcatState == "available") logcatState = "stopped"
++        }
++    }
++
++    private fun rollback(error : Exception) {
++        finished.set(true)
++        try {
++            stopCollectors()
++            synchronized(stateLock) {
++                sessionInfo.put("status", "collector_start_failed").put("finish_reason", error.javaClass.simpleName)
++                persistSession()
++            }
++        } catch (_ : Throwable) {
++        } finally {
++            try { timeline.close() } catch (_ : Throwable) { }
++            try { logcat.close() } catch (_ : Throwable) { }
++            try { sessionLock.close() } catch (_ : Throwable) { }
++        }
++    }
++
++    companion object {
++        private const val MIB = 1024L * 1024L
++        private val CURRENT_LOCK = Any()
++        @Volatile private var current : DiagnosticSession? = null
++
++        @JvmStatic
++        fun start(context : Context, titleId : String?, gameName : String, nativeSettings : NativeSettings) : DiagnosticSession = synchronized(CURRENT_LOCK) {
++            if (current?.finished?.get() == false) throw IOException("A diagnostic session is already active in this process")
++            val appContext = context.applicationContext
++            val root = sessionRoot(appContext)
++            if (!root.isDirectory && !root.mkdirs()) throw IOException("Cannot create diagnostic sessions directory")
++            val startTime = System.currentTimeMillis()
++            val directory = File(root, "$startTime-${Process.myPid()}-${UUID.randomUUID().toString().take(8)}")
++            if (!directory.mkdir()) throw IOException("Cannot create diagnostic session")
++            val lock = DiagnosticFileLock.acquire(directory) ?: throw IOException("Cannot lock new diagnostic session")
++            val metadata = JSONObject().put("schema_version", 1).put("session_id", directory.name)
++                .put("game_name", gameName.take(512)).put("title_id", titleId?.take(256) ?: JSONObject.NULL)
++                .put("started_at_utc", utcTime(startTime)).put("started_at_epoch_ms", startTime)
++                .put("pid", Process.myPid()).put("status", "running").put("finish_reason", JSONObject.NULL)
++                .put("ended_at_utc", JSONObject.NULL)
++            val session = try {
++                DiagnosticSession(appContext, directory, lock, metadata)
++            } catch (e : Exception) {
++                lock.close()
++                throw e
++            }
++            try {
++                session.initialize(titleId, nativeSettings)
++                current = session
++                session
++            } catch (e : Exception) {
++                session.rollback(e)
++                throw e
++            }
++        }
++
++        @JvmStatic
++        fun listSessions(context : Context) : List<File> {
++            val root = sessionRoot(context).canonicalFile
++            return root.listFiles()?.filter {
++                try { !Files.isSymbolicLink(it.toPath()) && it.isDirectory && it.canonicalFile.parentFile == root && File(it, "session.json").isFile }
++                catch (_ : IOException) { false }
++            }?.sortedByDescending { it.name } ?: emptyList()
++        }
++
++        /** On an inspection error, conservatively treat the session as active. No sessions are pruned here. */
++        @JvmStatic
++        fun isSessionActive(directory : File) : Boolean = try {
++            val lock = DiagnosticFileLock.acquire(directory)
++            if (lock == null) true else { lock.close(); false }
++        } catch (_ : Exception) {
++            true
++        }
++
++        @JvmStatic
++        fun recordCurrentCrash(throwable : Throwable) {
++            try { current?.recordCrash(throwable) } catch (_ : Throwable) { }
++        }
++
++        internal fun sessionRoot(context : Context) = File(context.filesDir, "diagnostics/sessions")
++    }
++}
++
++internal fun utcTime(time : Long) = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
++    timeZone = TimeZone.getTimeZone("UTC")
++}.format(Date(time))
++
++internal fun utcNow() = utcTime(System.currentTimeMillis())
++
++internal fun unavailable(reason : String) = JSONObject().put("status", "unavailable").put("reason", reason)
++
++internal fun writeDiagnosticJson(file : File, value : JSONObject) = writeDiagnosticBytes(file, value.toString(2).toByteArray(Charsets.UTF_8))
++
++internal fun writeDiagnosticBytes(file : File, bytes : ByteArray) {
++    val atomic = AtomicFile(file)
++    val output = atomic.startWrite()
++    try {
++        output.write(bytes)
++        atomic.finishWrite(output)
++    } catch (e : Exception) {
++        atomic.failWrite(output)
++        throw e
++    }
++}
++
++/** Each lock is released automatically by the kernel if its owning process dies. */
++internal class DiagnosticFileLock private constructor(private val path : String, private val file : RandomAccessFile, private val lock : FileLock) : Closeable {
++    private val closed = AtomicBoolean(false)
++
++    override fun close() {
++        if (!closed.compareAndSet(false, true)) return
++        synchronized(HELD) {
++            try { lock.release() } catch (_ : Exception) { }
++            try { file.close() } catch (_ : Exception) { }
++            if (HELD[path] === this) HELD.remove(path)
++        }
++    }
++
++    companion object {
++        private val HELD = mutableMapOf<String, DiagnosticFileLock>()
++
++        fun acquire(directory : File) : DiagnosticFileLock? = synchronized(HELD) {
++            val lockFile = File(directory, ".active.lock")
++            if (Files.isSymbolicLink(lockFile.toPath())) throw IOException("A session lock must not be a symbolic link")
++            val path = lockFile.canonicalPath
++            // POSIX locks can be dropped when another descriptor for the same file is closed.
++            // Do not even open a second descriptor for locks already held in this JVM.
++            if (path in HELD) return@synchronized null
++            val file = RandomAccessFile(path, "rw")
++            try {
++                val lock = try { file.channel.tryLock() } catch (_ : OverlappingFileLockException) { null }
++                if (lock == null) { file.close(); return@synchronized null }
++                DiagnosticFileLock(path, file, lock).also { HELD[path] = it }
++            } catch (e : Exception) {
++                file.close()
++                throw e
++            }
++        }
++    }
++}
++
++/** Keep the latest two chunks, with complete JSONL records. Never allocate an unbounded log in RAM. */
++private class DiagnosticRollingLog(directory : File, name : String, previousName : String, private val chunkLimit : Long) : Closeable {
++    private val file = File(directory, name)
++    private val previous = File(directory, previousName)
++    private var output : FileOutputStream? = null
++    private var size = 0L
++    private var bytesObserved = 0L
++    private var rotations = 0L
++    private var oversizeLines = 0L
++    private var closed = false
++
++    @Synchronized
++    fun append(line : String) {
++        if (closed) return
++        val bytes = (line + "\n").toByteArray(Charsets.UTF_8)
++        bytesObserved += bytes.size
++        // No truncated JSON is written; an oversized record is reported as omitted.
++        if (bytes.size > 64 * 1024) { oversizeLines++; return }
++        if (size + bytes.size > chunkLimit) {
++            output?.close()
++            output = null
++            if (previous.exists() && !previous.delete()) throw IOException("Cannot rotate ${file.name}")
++            if (file.exists() && !file.renameTo(previous)) throw IOException("Cannot rotate ${file.name}")
++            size = 0
++            rotations++
++        }
++        if (output == null) output = FileOutputStream(file, true)
++        output!!.write(bytes)
++        size += bytes.size
++    }
++
++    @Synchronized
++    fun snapshot() = JSONObject().put("chunk_limit_bytes", chunkLimit).put("retention_limit_bytes", chunkLimit * 2)
++        .put("bytes_observed", bytesObserved).put("retained_bytes", file.length() + previous.length())
++        .put("rotations", rotations).put("oversize_records_omitted", oversizeLines)
++        .put("retention", "latest current and previous chunks; older chunks are discarded")
++
++    @Synchronized
++    override fun close() {
++        closed = true
++        try { output?.close() } catch (_ : IOException) { }
++        output = null
++    }
++}
+diff -ruN a/app/src/main/java/org/stratoemu/strato/settings/SettingsHomeFragment.kt b/app/src/main/java/org/stratoemu/strato/settings/SettingsHomeFragment.kt
+--- a/app/src/main/java/org/stratoemu/strato/settings/SettingsHomeFragment.kt	2026-10-07 23:36:04.826578700 +0200
++++ b/app/src/main/java/org/stratoemu/strato/settings/SettingsHomeFragment.kt	2026-10-07 23:36:04.826074500 +0200
+@@ -21,6 +21,7 @@
+ import org.stratoemu.strato.R
+ import org.stratoemu.strato.UpdateChecker
+ import org.stratoemu.strato.UpdateInstaller
++import org.stratoemu.strato.diagnostics.DiagnosticActivity
+ import org.stratoemu.strato.databinding.FragmentSettingsHomeBinding
+ import org.stratoemu.strato.databinding.SettingsHomeItemBinding
+ import org.stratoemu.strato.utils.WindowInsetsHelper
+@@ -45,6 +46,7 @@
+     )
+ 
+     private enum class Action {
++        DIAGNOSTIC,
+         ABOUT
+     }
+ 
+@@ -56,6 +58,7 @@
+         Entry(R.string.settings_layout, R.drawable.ic_settings_layout, arrayOf("category_presentation")),
+         Entry(R.string.audio, R.drawable.ic_settings_audio, arrayOf("category_audio")),
+         Entry(R.string.debug, R.drawable.ic_settings_debug, arrayOf("category_debug")),
++        Entry(R.string.diagnostic_title, R.drawable.ic_settings_debug, action = Action.DIAGNOSTIC),
+         Entry(R.string.licenses, R.drawable.ic_settings_licenses, arrayOf("category_licenses")),
+         Entry(R.string.about, R.drawable.ic_settings_licenses, action = Action.ABOUT),
+         Entry(R.string.settings_defaults, R.drawable.ic_settings_defaults)
+@@ -72,6 +75,7 @@
+     private fun onEntryClicked(entry : Entry) {
+         entry.action?.let {
+             when (it) {
++                Action.DIAGNOSTIC -> startActivity(Intent(requireContext(), DiagnosticActivity::class.java))
+                 Action.ABOUT -> showAboutDialog()
+             }
+             return
+diff -ruN a/app/src/main/res/layout/diagnostic_activity.xml b/app/src/main/res/layout/diagnostic_activity.xml
+--- a/app/src/main/res/layout/diagnostic_activity.xml	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/res/layout/diagnostic_activity.xml	2026-10-07 23:36:04.826578700 +0200
+@@ -0,0 +1,77 @@
++<?xml version="1.0" encoding="utf-8"?>
++<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    android:background="?android:attr/colorBackground">
++
++    <include android:id="@+id/titlebar" layout="@layout/titlebar" />
++
++    <androidx.core.widget.NestedScrollView
++        android:id="@+id/content"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:fillViewport="true"
++        app:layout_behavior="@string/appbar_scrolling_view_behavior">
++        <LinearLayout
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:orientation="vertical"
++            android:padding="24dp">
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:text="@string/diagnostic_description"
++                android:textAppearance="?attr/textAppearanceBodyLarge" />
++            <TextView
++                android:id="@+id/session_label"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="24dp"
++                android:textAppearance="?attr/textAppearanceTitleMedium" />
++            <TextView
++                android:id="@+id/session_status"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="8dp"
++                android:textAppearance="?attr/textAppearanceBodyMedium" />
++            <com.google.android.material.button.MaterialButton
++                android:id="@+id/choose_session"
++                style="?attr/materialButtonOutlinedStyle"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="16dp"
++                android:text="@string/diagnostic_choose_session" />
++            <com.google.android.material.button.MaterialButton
++                android:id="@+id/export_diagnostic"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:text="@string/diagnostic_export" />
++            <com.google.android.material.button.MaterialButton
++                android:id="@+id/refresh_sessions"
++                style="?attr/borderlessButtonStyle"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:text="@string/diagnostic_refresh" />
++            <com.google.android.material.progressindicator.LinearProgressIndicator
++                android:id="@+id/progress"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:indeterminate="true"
++                android:visibility="gone" />
++            <com.google.android.material.button.MaterialButton
++                android:id="@+id/delete_session"
++                style="?attr/materialButtonOutlinedStyle"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="16dp"
++                android:text="@string/diagnostic_delete" />
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="24dp"
++                android:text="@string/diagnostic_contents"
++                android:textAppearance="?attr/textAppearanceBodyMedium" />
++        </LinearLayout>
++    </androidx.core.widget.NestedScrollView>
++</androidx.coordinatorlayout.widget.CoordinatorLayout>
+diff -ruN a/app/src/main/res/values/diagnostic_strings.xml b/app/src/main/res/values/diagnostic_strings.xml
+--- a/app/src/main/res/values/diagnostic_strings.xml	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/res/values/diagnostic_strings.xml	2026-10-07 23:36:04.828496200 +0200
+@@ -0,0 +1,19 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="diagnostic_title">Diagnostic</string>
++    <string name="diagnostic_description">Share a technical report for one game session. Reports remain available after restarting the app.</string>
++    <string name="diagnostic_no_sessions">No recorded session. Launch a game, then return here to export its diagnostic.</string>
++    <string name="diagnostic_unknown_game">Unknown game</string>
++    <string name="diagnostic_choose_session">Choose a session</string>
++    <string name="diagnostic_export">Export diagnostic</string>
++    <string name="diagnostic_refresh">Refresh</string>
++    <string name="diagnostic_delete">Delete session</string>
++    <string name="diagnostic_delete_confirmation">Delete the saved diagnostic for %1$s? This frees storage. Already shared ZIP files are kept.</string>
++    <string name="diagnostic_delete_failed">Could not delete this session. Stop the game and wait for any export to finish, then try again.</string>
++    <string name="diagnostic_running">Session in progress. The export contains data collected so far.</string>
++    <string name="diagnostic_ended">Session ended. The report may contain errors encountered during the run.</string>
++    <string name="diagnostic_interrupted">The session stopped without a final status. Its saved data can still be exported.</string>
++    <string name="diagnostic_contents">The ZIP includes device and Vulkan information, settings, logs and performance samples. Missing or limited data is listed in the report. Logs may contain game titles and file paths. Keys and firmware files are excluded.</string>
++    <string name="diagnostic_read_failed">Could not read saved sessions.</string>
++    <string name="diagnostic_export_failed">Could not export or share the diagnostic. Check free storage and try again.</string>
++</resources>
+diff -ruN a/app/src/main/res/values-fr/diagnostic_strings.xml b/app/src/main/res/values-fr/diagnostic_strings.xml
+--- a/app/src/main/res/values-fr/diagnostic_strings.xml	1970-01-01 02:00:00.000000000 +0200
++++ b/app/src/main/res/values-fr/diagnostic_strings.xml	2026-10-07 23:36:04.826578700 +0200
+@@ -0,0 +1,19 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="diagnostic_title">Diagnostic</string>
++    <string name="diagnostic_description">Partage un rapport technique pour une session de jeu. Les rapports restent accessibles après le redémarrage de l’application.</string>
++    <string name="diagnostic_no_sessions">Aucune session enregistrée. Lance un jeu, puis reviens ici pour exporter son diagnostic.</string>
++    <string name="diagnostic_unknown_game">Jeu inconnu</string>
++    <string name="diagnostic_choose_session">Choisir une session</string>
++    <string name="diagnostic_export">Exporter le diagnostic</string>
++    <string name="diagnostic_refresh">Actualiser</string>
++    <string name="diagnostic_delete">Supprimer la session</string>
++    <string name="diagnostic_delete_confirmation">Supprimer le diagnostic enregistré pour %1$s ? Cela libère de l’espace. Les ZIP déjà partagés sont conservés.</string>
++    <string name="diagnostic_delete_failed">Impossible de supprimer cette session. Arrête le jeu et attends la fin des exports, puis réessaie.</string>
++    <string name="diagnostic_running">Session en cours. L’export contient les données collectées jusqu’à présent.</string>
++    <string name="diagnostic_ended">Session terminée. Le rapport peut contenir des erreurs survenues pendant le jeu.</string>
++    <string name="diagnostic_interrupted">La session s’est arrêtée sans état final. Ses données sauvegardées restent exportables.</string>
++    <string name="diagnostic_contents">Le ZIP contient les informations de l’appareil et de Vulkan, les réglages, les journaux et les mesures de performances. Les données absentes ou limitées sont signalées dans le rapport. Les journaux peuvent contenir des titres de jeux et des chemins de fichiers. Les clés et les fichiers du firmware sont exclus.</string>
++    <string name="diagnostic_read_failed">Impossible de lire les sessions enregistrées.</string>
++    <string name="diagnostic_export_failed">Impossible d’exporter ou de partager le diagnostic. Vérifie l’espace disponible et réessaie.</string>
++</resources>
+diff -ruN a/app/src/main/res/xml/update_file_paths.xml b/app/src/main/res/xml/update_file_paths.xml
+--- a/app/src/main/res/xml/update_file_paths.xml	2026-10-07 23:36:04.829537300 +0200
++++ b/app/src/main/res/xml/update_file_paths.xml	2026-10-07 23:36:04.828496200 +0200
+@@ -2,4 +2,5 @@
+ <paths xmlns:android="http://schemas.android.com/apk/res/android">
+     <!-- APK updates are downloaded into the app's own external files dir (see UpdateInstaller.kt) -->
+     <external-files-path name="updates" path="updates/" />
++    <cache-path name="diagnostics" path="diagnostics/" />
+ </paths>
+diff -ruN a/docs/DIAGNOSTIC_PHASE1.txt b/docs/DIAGNOSTIC_PHASE1.txt
+--- a/docs/DIAGNOSTIC_PHASE1.txt	1970-01-01 02:00:00.000000000 +0200
++++ b/docs/DIAGNOSTIC_PHASE1.txt	2026-10-07 23:36:04.830041700 +0200
+@@ -0,0 +1,134 @@
++STRATO — LIVRAISON 1 : SOCLE DU DIAGNOSTIC
++Date : 2026-10-07
++
++Ce lot est la première étape de la refonte, pas sa version complète. Il est
++préparé à partir de l'archive strato.zip.txt fournie. Aucun build Android ni
++essai sur Snapdragon 888 n'a été effectué ici. La compilation GitHub Actions
++et les essais ci-dessous sont nécessaires avant de le considérer validé.
++
++INSTALLATION SUR LE PROJET DE TON AMI
++
++1. Sauvegarder/committer ses changements actuels.
++2. Comparer les fichiers concernés avec BASE_SHA256.csv livré dans le paquet.
++   Si un fichier a été corrigé depuis l'archive de référence, fusionner les
++   changements du patch ; ne pas remplacer aveuglément cette nouvelle version.
++3. Choisir UNE méthode : appliquer le patch ou copier le contenu de fichiers/
++   dans la racine du projet en conservant l'arborescence.
++   À la racine, avec GNU patch :
++     patch -p1 --dry-run --binary -i /chemin/Strato_phase1.patch
++     patch -p1 --binary -i /chemin/Strato_phase1.patch
++4. Compiler avec le workflow existant (NDK 26.1, CMake 3.31). Aucun changement
++   CMake/Gradle, aucune bibliothèque Android ajoutée par ce lot.
++5. En cas d'échec, transmettre la PREMIÈRE ligne error: ou CMake Error et son
++   contexte immédiat. Ne pas intégrer les phases GPU/NCE/UI suivantes avant
++   d'avoir une base compilable.
++
++CE QUI EST IMPLÉMENTÉ
++
++- Écran Diagnostic Material 3 FR/EN, accessible via Paramètres et l'action
++  journaux de la liste de jeux : choisir, exporter, actualiser ou supprimer
++  explicitement une session terminée. Suppression refusée si active/verrouillée.
++- Un répertoire privé distinct par lancement ; métadonnées, verrou système
++  relâché à la mort du processus, export possible après redémarrage.
++- Snapshots appareil, SoC, RAM, app, version de firmware déclarée par les
++  préférences, réglages globaux/par jeu/effectifs. Champs nom/profil masqués.
++- native.json indique le JIT réellement compilé ; vulkan.json contient pilote,
++  extensions annoncées/activées, traits/quirks, heaps/types mémoire et budget
++  si l'extension est annoncée. C'est un snapshot d'initialisation uniquement.
++- Journaux emulation.log, nce_fallback.jsonl et gpu_fault.log dirigés vers la
++  session. Exceptions Kotlin/Java et certaines exceptions JNI enregistrées.
++- Chronologie chaque seconde : RSS avec taille de page réelle, CPU processus,
++  nombre de threads hôtes, cadence décimale des présentations réelles. Le
++  compteur exclut les images interpolées ; il ne mesure pas la fin du travail
++  GPU ni l'affichage physique. Les mesures périmées deviennent indisponibles.
++- Logcat limité au PID et au démarrage de la session, par instantanés finis.
++- Export ZIP avec manifest.json listant les données absentes, tronquées ou
++  invalides et leurs limites ; aucun mélange avec une autre session.
++- Trace NCE v2 : PC/opcode avant le JIT séparés du résultat, horodatages,
++  threads, registres, FPCR/FPSR, module+offset ; comptes dédoublonnés bornés et
++  réconciliés à l'arrêt propre. Les catégories de signal ne prouvent pas une
++  cause précise. L'opcode est lu via pread(/proc/self/mem), sans déréférence
++  risquée ajoutée pour les traces. Lecture impossible => fallback SIGILL refusé.
++- Analyseur Python hors ligne, sans dépendance tierce. Classe par fréquence,
++  accepte plusieurs journaux et l'ancien schéma, indique données incomplètes
++  et attribution PC ancienne incertaine. Ses stratégies natives sont des
++  pistes à valider manuellement, pas des patches automatiquement prouvés.
++- Corrections ciblées : sélection de registre temporaire pour MSR TLS,
++  ResolveSymbol hors plages (fin de vecteur), arrêt watchdog lors d'une
++  exception avant destruction de l'état invité.
++
++UTILISATION DE L'ANALYSEUR
++
++Python 3.9 ou plus récent. Extraire nce_fallback.jsonl du ZIP diagnostic puis :
++  python tools/analyze_nce_fallback.py chemin/nce_fallback.jsonl
++  python tools/analyze_nce_fallback.py session1.jsonl session2.jsonl --top 30
++  python tools/analyze_nce_fallback.py chemin/nce_fallback.jsonl --json
++
++TESTS RÉALISÉS ICI
++
++- 21 tests Python : parsing, déduplication des comptes cumulés, fichiers
++  tronqués, compatibilité ancien schéma, et contrat JSON de véritables chaînes
++  de format C++ extraites du code. Ce n'est pas une compilation C++.
++  Commande : python -B -m unittest discover -s tools/tests -p "test_*nce*.py"
++- XML manifest/layout/provider/chaînes analysés ; parité FR/EN contrôlée.
++- Revue croisée Kotlin/JNI/C++ et du cycle de vie des fichiers.
++- Le rapport VERIFICATION.txt du paquet décrit la validation du patch et du ZIP.
++
++TESTS À FAIRE SUR ANDROID
++
++1. Compiler l'APK dans GitHub Actions, installer sans effacer les données.
++2. Lancer un petit jeu pendant 30 secondes, overlay désactivé, sortir proprement.
++   Exporter via Diagnostic. Vérifier game_name/title_id, réglages effectifs,
++   started_at, JIT ENABLED / NOT compiled in, pilote Vulkan, timeline et logcat.
++3. Tester des réglages par jeu différents des réglages globaux et vérifier
++   que le rapport distingue les trois snapshots. Les changements en cours
++   de partie ne sont pas historisés dans ce lot.
++4. Lancer TotK puis Dragon Ball avec un dossier de diagnostic distinct par
++   essai. À l'apparition du gel, forcer l'arrêt si nécessaire, rouvrir Strato,
++   sélectionner la dernière session puis exporter. Ne pas effacer ses données.
++5. Si possible, exporter pendant une session active et contrôler l'indication
++   de snapshot non atomique. Tester deux exports successifs, FR puis EN.
++6. Supprimer une ancienne session via confirmation : seule cette session doit
++   disparaître. Une session active doit être refusée. Les ZIP déjà exportés
++   restent dans le cache et peuvent être nettoyés via Android.
++7. Vérifier que les jeux/paramètres/imports existants fonctionnent toujours.
++8. Transmettre le ZIP complet du diagnostic et le résultat du build. Sans SIGILL,
++   l'absence de fallback ne valide pas l'exécution JIT : mode forcé encore à faire.
++
++LIMITES ET SUITE DU PLAN
++
++- Ce socle ne garantit pas encore un diagnostic causal en une seule exécution.
++  Le watchdog existant reste présent dans emulation.log ; cette livraison
++  n'ajoute pas le déclenchement sur absence de progrès, les états SVC/objets
++  attendus, la capture structurée PC/LR ni l'anneau IPC/stubs. À compléter
++  pour finir l'axe B avant les correctifs de rendu.
++- Pas encore de courbe d'allocations/budget GPU ni compteurs draws/dispatches/
++  pipelines ; valeurs explicitement indisponibles. Un GPU% portable fiable
++  n'est pas inventé à partir du CPU ou des FPS.
++- Les images de stockage, texel buffers, couleurs, device_fault, dump/validation
++  SPIR-V (axe D) ne sont pas corrigés. Le contournement compute demeure.
++- Pas de nouvelles familles de patches NCE, de mode forcé ou d'oracle comparatif
++  (axe C). Accès données JIT et rollback mémoire restent à auditer. La chaîne
++  de traitement des signaux n'est pas rendue globalement async-signal-safe.
++- Refonte bibliothèque/navigation/overlay complet (axe A) à venir.
++- Sessions non purgées automatiquement. Timeline : deux blocs de 1 Mio ;
++  logcat : deux blocs de 4 Mio, interrogation toutes les 2 secondes, pertes
++  possibles après mort brutale/saturation des buffers/changement d'heure.
++- NCE : 8 Mio maximum par session, 1024 clés dédupliquées et compteurs finaux
++  réservés. D'autres journaux natifs restent sans limite sur le stockage local ;
++  leurs queues seulement sont exportées au-delà de leurs plafonds respectifs.
++  ZIP limité à 64 Mio, charge utile 62 Mio ; le manifeste précise les omissions.
++- Un export actif peut combiner des fichiers pris à des instants différents.
++  Une absence de crash.log/gpu_fault.log ne prouve pas une absence de panne.
++  Les logs peuvent contenir des noms de jeux, chemins et textes utilisateur.
++  Aucun fichier de clés, firmware, ROM ou sauvegarde n'est ajouté à l'export.
++- Licences existantes conservées. LICENSE.md racine contient GPLv3 ; plusieurs
++  fichiers portent MPL-2.0. Aucun code d'un autre émulateur ajouté dans ce lot.
++
++INSTRUCTION POUR L'IA DU DESTINATAIRE
++
++Lis STRATO_AI_CHANGES.md, ce document et BASE_SHA256.csv. Compare les sources
++actuelles avant toute application. Vérifie le build, puis complète l'axe B,
++ensuite D, C et A par livraisons de fichiers modifiés uniquement. N'annonce
++pas les gels résolus sans trace et essai correspondants. Le prompt d'origine
++et le plan détaillé figurent dans contexte/ du paquet de transmission.
+diff -ruN a/tools/analyze_nce_fallback.py b/tools/analyze_nce_fallback.py
+--- a/tools/analyze_nce_fallback.py	1970-01-01 02:00:00.000000000 +0200
++++ b/tools/analyze_nce_fallback.py	2026-10-07 23:36:04.830041700 +0200
+@@ -0,0 +1,312 @@
++#!/usr/bin/env python3
++# SPDX-License-Identifier: MPL-2.0
++"""Summarize Strato NCE JSONL diagnostics, without generating or applying patches.
++
++Usage: python tools/analyze_nce_fallback.py path/to/nce_fallback.jsonl [--json]
++Only the Python standard library is required (Python 3.9+).
++Schema 2 count rows are cumulative checkpoints, not additional occurrences.
++Legacy logs and sessions interrupted before session_end provide lower bounds.
++"""
++
++import argparse
++import json
++import sys
++from collections import Counter
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any, Iterable, Optional, TextIO
++
++
++def integer(value: Any) -> Optional[int]:
++    if isinstance(value, bool):
++        return None
++    if isinstance(value, int):
++        return value
++    if isinstance(value, str):
++        try:
++            return int(value, 0)
++        except ValueError:
++            return None
++    return None
++
++
++def nonnegative(value: Any) -> Optional[int]:
++    number = integer(value)
++    return number if number is not None and number >= 0 else None
++
++
++def hex_value(value: Any) -> Optional[str]:
++    number = nonnegative(value)
++    return f"0x{number:X}" if number is not None else None
++
++
++@dataclass
++class Session:
++    source: str
++    identity: str
++    schema: int = 1
++    jit_compiled: Optional[bool] = None
++    events: dict = field(default_factory=dict)
++    ended: bool = False
++    total_faults: Optional[int] = None
++    untracked_faults: int = 0
++    contended_faults: int = 0
++    omitted_lines: int = 0
++    write_errno: int = 0
++    invalid_records: int = 0
++    legacy_records: int = 0
++
++
++class Analyzer:
++    def __init__(self) -> None:
++        self.sessions = []
++        self.warnings = []
++        self.warning_count = 0
++
++    def warn(self, message: str) -> None:
++        self.warning_count += 1
++        if len(self.warnings) < 100:
++            self.warnings.append(message)
++
++    def read(self, stream: TextIO, source: str = "<stream>") -> None:
++        current = None
++        serial = 0
++        for line_number, line in enumerate(stream, 1):
++            if not line.strip():
++                continue
++            location = f"{source}:{line_number}"
++            try:
++                row = json.loads(line)
++                if not isinstance(row, dict):
++                    raise ValueError("record is not an object")
++            except (ValueError, json.JSONDecodeError) as error:
++                self.warn(f"{location}: ligne JSON ignoree ({error})")
++                if current:
++                    current.invalid_records += 1
++                continue
++
++            kind = row.get("type")
++            if kind not in {"session", "failure", "count", "overflow", "session_end"}:
++                self.warn(f"{location}: type de record inconnu {kind!r}")
++                if current:
++                    current.invalid_records += 1
++                continue
++            schema = nonnegative(row.get("schema_version", 1))
++            if schema not in (1, 2):
++                self.warn(f"{location}: schema non pris en charge {schema!r}")
++                if current:
++                    current.invalid_records += 1
++                continue
++
++            identity = row.get("session_id")
++            if identity is not None and not isinstance(identity, str):
++                self.warn(f"{location}: session_id invalide")
++                if current:
++                    current.invalid_records += 1
++                continue
++            if kind == "session" or current is None or (identity and identity != current.identity):
++                serial += 1
++                current = Session(source, identity or f"legacy-{serial}", schema=schema)
++                self.sessions.append(current)
++                if kind != "session":
++                    self.warn(f"{location}: en-tete de session absent; metadonnees partielles")
++                compiled = row.get("jit_compiled")
++                current.jit_compiled = compiled if isinstance(compiled, bool) else None
++            if kind == "session":
++                continue
++            if current.ended:
++                current.invalid_records += 1
++                current.ended = False
++                self.warn(f"{location}: record apres session_end; completude incertaine")
++
++            if kind in {"overflow", "session_end"}:
++                for name in ("untracked_faults", "contended_faults", "omitted_lines", "write_errno"):
++                    if name in row:
++                        value = nonnegative(row[name])
++                        if value is None:
++                            current.invalid_records += 1
++                            self.warn(f"{location}: compteur {name} invalide")
++                        else:
++                            setattr(current, name, max(getattr(current, name), value))
++                if kind == "session_end":
++                    current.total_faults = nonnegative(row.get("total_faults"))
++                    current.ended = schema == 2 and current.total_faults is not None
++                    if not current.ended:
++                        current.invalid_records += 1
++                        self.warn(f"{location}: fin de session sans total valide")
++                continue
++
++            count = nonnegative(row.get("count"))
++            event_id = nonnegative(row.get("event_id"))
++            legacy = schema == 1 or event_id is None
++            if legacy:
++                if schema == 2 and event_id is None:
++                    current.invalid_records += 1
++                    self.warn(f"{location}: event_id absent du schema 2; compte rendu minimal")
++                if kind == "count":
++                    current.invalid_records += 1
++                    self.warn(f"{location}: compteur sans event_id ignore")
++                    continue
++                current.legacy_records += 1
++                event_id = f"sample-{line_number}"
++                count = max(count or 1, 1)
++            elif count is None or count == 0:
++                current.invalid_records += 1
++                self.warn(f"{location}: nombre d'occurrences invalide")
++                continue
++
++            event = current.events.setdefault(event_id, {"count": 0, "row": {}, "has_sample": False, "legacy": legacy})
++            if count < event["count"] and kind == "count":
++                current.invalid_records += 1
++                self.warn(f"{location}: compteur cumulatif decroissant; maximum conserve")
++            event["count"] = max(event["count"], count)
++            # Counts can survive a truncated/omitted detailed sample. Preserve sample
++            # metadata when later, smaller count-only checkpoints are encountered.
++            event["row"].update({key: value for key, value in row.items() if key not in {"type", "count"}})
++            event["has_sample"] |= kind == "failure"
++
++    def report(self) -> dict:
++        groups = {}
++        session_reports = []
++        all_exact = bool(self.sessions) and not self.warning_count
++        reported_final_total = 0
++        sessions_with_final_total = 0
++        for session in self.sessions:
++            known = sum(event["count"] for event in session.events.values())
++            distributed_missing = session.untracked_faults + session.contended_faults
++            accounting_matches = session.total_faults == known + distributed_missing
++            exact = (session.schema == 2 and session.ended and accounting_matches
++                     and not session.invalid_records and not session.legacy_records
++                     and not distributed_missing and not session.write_errno)
++            all_exact &= exact
++            if session.total_faults is not None:
++                reported_final_total += session.total_faults
++                sessions_with_final_total += 1
++            session_reports.append({
++                "source": session.source, "session_id": session.identity,
++                "schema_version": session.schema, "jit_compiled": session.jit_compiled,
++                "has_session_end": session.ended, "observed_occurrences_at_least": known,
++                "reported_final_total": session.total_faults, "counts_exact": exact,
++                "untracked_faults": session.untracked_faults,
++                "contended_faults": session.contended_faults,
++                "omitted_lines": session.omitted_lines,
++                "invalid_records": session.invalid_records,
++                "legacy_records": session.legacy_records,
++                "accounting_matches": accounting_matches if session.ended else None,
++            })
++            for event in session.events.values():
++                row = event["row"]
++                module = row.get("module")
++                offset = integer(row.get("module_offset"))
++                module = module if isinstance(module, str) and module else None
++                pc = hex_value(row.get("pc"))
++                insn = hex_value(row.get("insn"))
++                outcome = row.get("outcome", "unknown")
++                outcome = outcome if isinstance(outcome, str) else "unknown"
++                signal = integer(row.get("signal_number"))
++                if signal is None:
++                    signal = row.get("signal") if isinstance(row.get("signal"), str) else None
++                # Only module-relative locations may aggregate across ASLR sessions.
++                # An unidentified absolute PC is scoped to its source/session.
++                stable_location = (module, offset) if module and offset is not None else (session.source, session.identity, pc)
++                key = (stable_location, insn, outcome, signal, integer(row.get("si_code")))
++                if key not in groups:
++                    instruction_class = row.get("class", "unavailable")
++                    instruction_class = instruction_class if isinstance(instruction_class, str) else "unavailable"
++                    groups[key] = {
++                        "module": module, "module_offset": offset,
++                        "example_pc": pc, "insn": insn, "outcome": outcome,
++                        "signal": signal, "si_code": integer(row.get("si_code")),
++                        "class": instruction_class, "occurrences_at_least": 0,
++                        "legacy_pc_unreliable": False, "detailed_sample_missing": False,
++                        "native_strategy": native_strategy(instruction_class, outcome, insn),
++                    }
++                group = groups[key]
++                group["occurrences_at_least"] += event["count"]
++                group["legacy_pc_unreliable"] |= event["legacy"] and outcome == "recovered_by_jit"
++                group["detailed_sample_missing"] |= not event["has_sample"]
++        results = sorted(groups.values(), key=lambda item: (-item["occurrences_at_least"], str(item["module"]), str(item["example_pc"])))
++        for group in results:
++            group["counts_exact"] = all_exact
++            if group["legacy_pc_unreliable"]:
++                group["native_strategy"] = "Recapturer avec le schema 2 : un succes de l'ancien logger peut designer le PC apres execution. Aucun patch ne doit etre deduit de ce PC."
++        outcomes = Counter()
++        for group in results:
++            outcomes[group["outcome"]] += group["occurrences_at_least"]
++        return {
++            "analysis_schema": 1, "counts_exact": all_exact,
++            "observed_occurrences_at_least": sum(outcomes.values()),
++            "reported_final_total": reported_final_total if sessions_with_final_total else None,
++            "sessions_with_final_total": sessions_with_final_total,
++            "outcomes": dict(outcomes), "sessions": session_reports,
++            "groups": results, "warning_count": self.warning_count, "warnings": self.warnings,
++            "limitations": [
++                "Sans session_end et reconciliation des compteurs, les frequences sont des minima.",
++                "Un succes JIT ne prouve ni l'equivalence NCE/JIT ni la cause d'un gel.",
++                "L'ancien schema attribue parfois les recuperations au PC apres execution.",
++                "Les strategies sont des pistes de validation manuelle; aucun code natif n'est genere.",
++            ],
++        }
++
++
++def native_strategy(instruction_class: str, outcome: str, insn: Optional[str]) -> str:
++    if insn is None:
++        return "Retablir la lecture sure de l'opcode et collecter le contexte initial avant toute proposition native."
++    if outcome != "recovered_by_jit":
++        return "Conserver le constat d'echec; verifier signal, mapping et semantique invitee. Aucun remplacement natif n'est etabli."
++    if "system register" in instruction_class:
++        return "Verifier le contrat du registre invite (TLS, frequence, compteur, permissions), puis comparer des etats controles avant un patch NCE."
++    if "load/store" in instruction_class or "atomic" in instruction_class:
++        return "Verifier alignement, permissions, ordre memoire et reservations exclusives; ne jamais rejouer deux fois des ecritures sur la memoire reelle."
++    if "SIMD" in instruction_class or "FP" in instruction_class:
++        return "Comparer registres vectoriels, FPCR/FPSR et cas limites dans un banc isole avant une implementation native."
++    return "Confirmer le decodage et la semantique invitee, construire un cas reproductible puis comparer PC, registres et effets memoire isoles."
++
++
++def text_report(report: dict, top: int = 20) -> str:
++    count_label = "exactes" if report["counts_exact"] else "minimales, completude non etablie"
++    lines = [f"NCE : {report['observed_occurrences_at_least']} occurrences {count_label} ; {len(report['sessions'])} session(s)."]
++    if report["reported_final_total"] is not None:
++        lines.append(f"Total final annonce par {report['sessions_with_final_total']} session(s) : {report['reported_final_total']}.")
++    for group in report["groups"][:top]:
++        location = group["example_pc"] or "PC inconnu"
++        if group["module"] and group["module_offset"] is not None:
++            offset = group["module_offset"]
++            location = f"{group['module']}{'+' if offset >= 0 else '-'}0x{abs(offset):X}"
++        lines.append(f"  {group['occurrences_at_least']:>8}  {location}  {group['insn'] or 'opcode inconnu'}  {group['outcome']}")
++        lines.append(f"            {group['native_strategy']}")
++    lines.extend(f"Attention : {warning}" for warning in report["warnings"][:10])
++    if report["warning_count"] > 10:
++        lines.append(f"... {report['warning_count'] - 10} autre(s) avertissement(s), consulter --json.")
++    lines.extend(report["limitations"])
++    return "\n".join(lines)
++
++
++def main(argv: Optional[Iterable[str]] = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
++    parser.add_argument("files", nargs="+", type=Path, help="Un ou plusieurs fichiers JSONL NCE")
++    parser.add_argument("--json", action="store_true", help="Rapport JSON complet")
++    parser.add_argument("--top", type=int, default=20, help="Nombre de groupes affiches en texte (defaut : 20)")
++    args = parser.parse_args(argv)
++    if args.top < 1:
++        parser.error("--top doit etre positif")
++    analyzer = Analyzer()
++    seen_paths = set()
++    for path in args.files:
++        resolved = path.resolve()
++        if resolved in seen_paths:
++            continue
++        seen_paths.add(resolved)
++        try:
++            with path.open("r", encoding="utf-8-sig") as stream:
++                analyzer.read(stream, str(path))
++        except (OSError, UnicodeError) as error:
++            print(f"Lecture impossible : {path}: {error}", file=sys.stderr)
++            return 2
++    report = analyzer.report()
++    print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else text_report(report, args.top))
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff -ruN a/tools/tests/test_analyze_nce_fallback.py b/tools/tests/test_analyze_nce_fallback.py
+--- a/tools/tests/test_analyze_nce_fallback.py	1970-01-01 02:00:00.000000000 +0200
++++ b/tools/tests/test_analyze_nce_fallback.py	2026-10-07 23:36:04.830041700 +0200
+@@ -0,0 +1,161 @@
++# SPDX-License-Identifier: MPL-2.0
++import importlib.util
++import io
++import json
++import sys
++import unittest
++from pathlib import Path
++
++MODULE_PATH = Path(__file__).resolve().parents[1] / "analyze_nce_fallback.py"
++SPEC = importlib.util.spec_from_file_location("analyze_nce_fallback", MODULE_PATH)
++analyzer_module = importlib.util.module_from_spec(SPEC)
++sys.modules[SPEC.name] = analyzer_module
++SPEC.loader.exec_module(analyzer_module)
++
++
++def session(name="one"):
++    return {"type": "session", "schema_version": 2, "session_id": name, "jit_compiled": True}
++
++
++def failure(name="one", event_id=1, **fields):
++    result = {
++        "type": "failure", "schema_version": 2, "session_id": name,
++        "event_id": event_id, "count": 1, "pc": "0x1000", "insn": "0xD53BE040",
++        "module": "main", "module_offset": 16, "signal_number": 4, "si_code": 1,
++        "class": "system register access", "outcome": "recovered_by_jit",
++    }
++    result.update(fields)
++    return result
++
++
++def count(value, **fields):
++    result = failure(**fields)
++    result.update(type="count", count=value)
++    result.pop("class", None)
++    return result
++
++
++def end(value, name="one", **fields):
++    result = {
++        "type": "session_end", "schema_version": 2, "session_id": name,
++        "total_faults": value, "untracked_faults": 0, "contended_faults": 0,
++        "omitted_lines": 0, "write_errno": 0,
++    }
++    result.update(fields)
++    return result
++
++
++def analyze(*rows):
++    analyzer = analyzer_module.Analyzer()
++    data = "\n".join(row if isinstance(row, str) else json.dumps(row) for row in rows)
++    analyzer.read(io.StringIO(data), "fixture.jsonl")
++    return analyzer.report()
++
++
++class AnalyzeNceFallbackTests(unittest.TestCase):
++    def test_cumulative_checkpoints_are_not_added_together(self):
++        report = analyze(session(), failure(), count(2), count(4), count(5), end(5))
++        self.assertEqual(report["observed_occurrences_at_least"], 5)
++        self.assertTrue(report["counts_exact"])
++        self.assertEqual(report["groups"][0]["class"], "system register access")
++
++    def test_hard_kill_is_a_lower_bound_even_with_a_checkpoint(self):
++        report = analyze(session(), failure(), count(4))
++        self.assertEqual(report["observed_occurrences_at_least"], 4)
++        self.assertFalse(report["counts_exact"])
++        self.assertIsNone(report["reported_final_total"])
++
++    def test_same_event_id_in_separate_sessions_and_aslr(self):
++        report = analyze(session(), failure(), count(3), end(3),
++                         session("two"), failure(name="two", pc="0x9000"),
++                         count(5, name="two", pc="0x9000"), end(5, name="two"))
++        self.assertEqual(report["observed_occurrences_at_least"], 8)
++        self.assertEqual(len(report["groups"]), 1)
++        self.assertTrue(report["counts_exact"])
++
++    def test_unidentified_absolute_pc_does_not_merge_across_sessions(self):
++        report = analyze(session(), failure(module=None, module_offset=None), end(1),
++                         session("two"), failure(name="two", module=None, module_offset=None), end(1, name="two"))
++        self.assertEqual(len(report["groups"]), 2)
++
++    def test_legacy_recovery_warns_about_pc_attribution(self):
++        report = analyze({"type": "session", "game": "old"},
++                         {"type": "failure", "pc": "0x1004", "insn": "0xD503201F", "outcome": "recovered_by_jit"})
++        self.assertEqual(report["observed_occurrences_at_least"], 1)
++        self.assertFalse(report["counts_exact"])
++        self.assertTrue(report["groups"][0]["legacy_pc_unreliable"])
++        self.assertIn("Recapturer", report["groups"][0]["native_strategy"])
++
++    def test_unreadable_opcode_is_not_zero_instruction(self):
++        report = analyze(session(), failure(insn=None), failure(event_id=2, insn="0x00000000"), end(2))
++        self.assertEqual(len(report["groups"]), 2)
++        unreadable = next(group for group in report["groups"] if group["insn"] is None)
++        self.assertIn("lecture sure", unreadable["native_strategy"])
++
++    def test_truncated_row_preserves_prior_count_but_not_completeness(self):
++        report = analyze(session(), failure(), count(4), '{"type":"count",', end(4))
++        self.assertEqual(report["observed_occurrences_at_least"], 4)
++        self.assertFalse(report["counts_exact"])
++        self.assertEqual(report["warning_count"], 1)
++
++    def test_final_count_can_recover_missing_detailed_sample(self):
++        report = analyze(session(), count(9), end(9, omitted_lines=1))
++        self.assertEqual(report["observed_occurrences_at_least"], 9)
++        self.assertTrue(report["counts_exact"])
++        self.assertTrue(report["groups"][0]["detailed_sample_missing"])
++
++    def test_export_tail_without_header_is_not_called_exact(self):
++        report = analyze(count(9), end(9))
++        self.assertEqual(report["observed_occurrences_at_least"], 9)
++        self.assertFalse(report["counts_exact"])
++        self.assertTrue(report["groups"][0]["detailed_sample_missing"])
++        self.assertEqual(report["warning_count"], 1)
++
++    def test_overflow_and_contention_are_not_attributed_to_known_instruction(self):
++        report = analyze(session(), failure(), count(5), end(8, untracked_faults=2, contended_faults=1))
++        self.assertEqual(report["observed_occurrences_at_least"], 5)
++        self.assertEqual(report["reported_final_total"], 8)
++        self.assertFalse(report["groups"][0]["counts_exact"])
++        self.assertTrue(report["sessions"][0]["accounting_matches"])
++
++    def test_decreasing_cumulative_count_does_not_erase_observations(self):
++        report = analyze(session(), failure(), count(8), count(4), end(8))
++        self.assertEqual(report["observed_occurrences_at_least"], 8)
++        self.assertFalse(report["counts_exact"])
++
++    def test_final_accounting_mismatch_is_not_called_exact(self):
++        report = analyze(session(), failure(), count(4), end(7))
++        self.assertFalse(report["counts_exact"])
++        self.assertFalse(report["sessions"][0]["accounting_matches"])
++
++    def test_missing_count_or_event_id_is_explicit(self):
++        missing_count = failure()
++        missing_count.pop("count")
++        missing_id = failure()
++        missing_id.pop("event_id")
++        report = analyze(session(), missing_count, missing_id, end(2))
++        self.assertFalse(report["counts_exact"])
++        self.assertEqual(report["warning_count"], 2)
++
++    def test_negative_module_offset_and_escaped_names(self):
++        report = analyze(session(), failure(module='module "test"\n\\', module_offset=-64), end(1))
++        self.assertEqual(report["groups"][0]["module_offset"], -64)
++        self.assertIn("-0x40", analyzer_module.text_report(report))
++        self.assertEqual(json.loads(json.dumps(report))["groups"][0]["module"], 'module "test"\n\\')
++
++    def test_unknown_schema_and_leading_damage_preclude_exact_total(self):
++        report = analyze('{"broken":', {"type": "session", "schema_version": 99}, session(), failure(), end(1))
++        self.assertFalse(report["counts_exact"])
++        self.assertEqual(report["warning_count"], 2)
++
++    def test_unsupported_jit_does_not_suggest_native_replacement(self):
++        report = analyze(session(), failure(outcome="jit_unsupported"), end(1))
++        self.assertIn("Aucun remplacement natif", report["groups"][0]["native_strategy"])
++
++    def test_no_records_is_not_an_exact_zero(self):
++        report = analyze()
++        self.assertFalse(report["counts_exact"])
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff -ruN a/tools/tests/test_nce_json_contract.py b/tools/tests/test_nce_json_contract.py
+--- a/tools/tests/test_nce_json_contract.py	1970-01-01 02:00:00.000000000 +0200
++++ b/tools/tests/test_nce_json_contract.py	2026-10-07 23:36:04.831845000 +0200
+@@ -0,0 +1,75 @@
++# SPDX-License-Identifier: MPL-2.0
++"""Check the actual producer's JSON format literals without an Android compiler.
++
++These tests exercise the portable fmt replacement-field subset shared with
++Python str.format. They verify the JSON wire contract, not C++ execution,
++instruction emulation, Android signal behavior or memory safety.
++"""
++import json
++import re
++import unittest
++from pathlib import Path
++
++SOURCE = (Path(__file__).resolve().parents[2] / "app/src/main/cpp/skyline/nce/jit_fallback.cpp").read_text(encoding="utf-8")
++
++
++def producer_format(after):
++    start = SOURCE.index(after)
++    match = re.search(r'R"\((.*?)\)"((?:\s*"(?:[^"\\]|\\.)*")*)', SOURCE[start:], re.DOTALL)
++    if match is None:
++        raise AssertionError(f"No raw format literal after {after}")
++    suffix = "".join(json.loads(token) for token in re.findall(r'"(?:[^"\\]|\\.)*"', match[2]))
++    return match[1] + suffix
++
++
++def escaped(value):
++    return json.dumps(value, ensure_ascii=False)[1:-1]
++
++
++class NceJsonContractTests(unittest.TestCase):
++    def test_full_failure_keeps_initial_pc_and_result_pc_distinct(self):
++        location = producer_format("std::string LocationJson").format(escaped('main "test"\\'), -16, "patch", 32)
++        jit = producer_format("job.trace = fmt::format").format(0x2000, '"x0":["0x1","0x2"]', '"R64@0x3000=0x4"', 1, "false", "")
++        first = producer_format("auto line{fmt::format").format(
++            "session-1", 7, 100, 90, 11, 2, 0x1000, '"0xD53BE040"', 0,
++            "MRS", "system register access", 4, 1, 0x1000,
++            "instruction_signal", "recovered_by_jit", escaped('detail\n\t"quoted"'))
++        second = producer_format("line += fmt::format").format(
++            0x1000, 0x3000, 0, ','.join(['"0x1"'] * 31), "true", 0, 0,
++            "true", 0x2000, 0x3000, 0, location, jit)
++        row = json.loads(first + second)
++        self.assertEqual(row["pc"], "0x1000")
++        self.assertEqual(row["initial_state"]["pc"], "0x1000")
++        self.assertEqual(row["resumed_state"]["pc"], "0x2000")
++        self.assertEqual(row["jit"]["next_pc"], "0x2000")
++        self.assertEqual(len(row["initial_state"]["x"]), 31)
++        self.assertFalse(row["cause_verified"])
++        self.assertEqual(row["module_offset"], -16)
++        self.assertEqual(row["detail"], 'detail\n\t"quoted"')
++
++    def test_missing_opcode_remains_json_null(self):
++        first = producer_format("auto line{fmt::format").format(
++            "session-1", 1, 100, 90, 11, -1, 0xFFFFFFFF, "null", 5,
++            "unavailable", "unavailable", 11, 1, 0xFFFFFFFF,
++            "memory_signal", "not_attempted", "opcode read failed")
++        second = producer_format("line += fmt::format").format(
++            0xFFFFFFFF, 0, 0, "", "false", 0, 0, "false", 0xFFFFFFFF, 0, 0, "", "")
++        self.assertIsNone(json.loads(first + second)["insn"])
++
++    def test_cumulative_count_and_session_end_are_valid_json(self):
++        count = producer_format("void WriteCount").format(
++            "session-1", 1, 123, 1000, 0x1000, '"0xD53BE040"', 0, 4, 1, "recovered_by_jit", "")
++        end = producer_format("void FlushLocked").format("session-1", 2000, 1000, 126, 1, 2, 1, 0, 0)
++        self.assertEqual(json.loads(count)["count"], 123)
++        self.assertEqual(json.loads(end)["total_faults"], 126)
++
++    def test_session_header_accepts_json_escaped_names(self):
++        game = 'game "quote"\n\t\\\x00'
++        header = producer_format("void JitFallback::Initialize").format(
++            "session-1", escaped(game), 2000, 1000, 42, "true", 0, 1024, 8 * 1024 * 1024)
++        self.assertEqual(json.loads(header)["game"], game)
++        self.assertEqual(json.loads(header)["schema_version"], 2)
++
++
++if __name__ == "__main__":
++    unittest.main()

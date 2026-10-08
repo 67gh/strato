@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- APK updates are downloaded into the app's own external files dir (see UpdateInstaller.kt) -->
     <external-files-path name="updates" path="updates/" />
+    <cache-path name="diagnostics" path="diagnostics/" />
 </paths>

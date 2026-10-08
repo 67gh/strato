@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="diagnostic_title">Diagnostic</string>
+    <string name="diagnostic_description">Share a technical report for one game session. Reports remain available after restarting the app.</string>
+    <string name="diagnostic_no_sessions">No recorded session. Launch a game, then return here to export its diagnostic.</string>
+    <string name="diagnostic_unknown_game">Unknown game</string>
+    <string name="diagnostic_choose_session">Choose a session</string>
+    <string name="diagnostic_export">Export diagnostic</string>
+    <string name="diagnostic_refresh">Refresh</string>
+    <string name="diagnostic_delete">Delete session</string>
+    <string name="diagnostic_delete_confirmation">Delete the saved diagnostic for %1$s? This frees storage. Already shared ZIP files are kept.</string>
+    <string name="diagnostic_delete_failed">Could not delete this session. Stop the game and wait for any export to finish, then try again.</string>
+    <string name="diagnostic_running">Session in progress. The export contains data collected so far.</string>
+    <string name="diagnostic_ended">Session ended. The report may contain errors encountered during the run.</string>
+    <string name="diagnostic_interrupted">The session stopped without a final status. Its saved data can still be exported.</string>
+    <string name="diagnostic_contents">The ZIP includes device and Vulkan information, settings, logs and performance samples. Missing or limited data is listed in the report. Logs may contain game titles and file paths. Keys and firmware files are excluded.</string>
+    <string name="diagnostic_read_failed">Could not read saved sessions.</string>
+    <string name="diagnostic_export_failed">Could not export or share the diagnostic. Check free storage and try again.</string>
+</resources>

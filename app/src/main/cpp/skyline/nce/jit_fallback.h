@@ -10,8 +10,10 @@ namespace skyline::nce {
      * @brief Fallback for guest instructions that NCE cannot run natively
      * @details When a guest thread faults (typically SIGILL on an instruction the host CPU lacks or traps), the single faulting
      * instruction is executed by Dynarmic (if built with STRATO_JIT_FALLBACK), the resulting register state is written back into the
-     * signal context and the guest resumes natively right after it. Every distinct failure is appended to a JSON-lines file with the
-     * reason, so the instructions NCE is missing can be collected and later handled natively in NCE::PatchCode.
+     * signal context and the guest resumes natively. A bounded JSON-lines diagnostic keeps the original fault separate from the
+     * resulting JIT state. Recovery alone does not establish a missing host instruction or prove equivalent NCE/JIT semantics.
+     * @note The fallback still allocates and accesses guest data memory from a signal path; these diagnostics do not make that path
+     * async-signal-safe or provide memory rollback. Only instruction inspection uses a fault-contained read.
      */
     class JitFallback {
       public:
@@ -29,7 +31,14 @@ namespace skyline::nce {
         static void Initialize(const DeviceState &state, std::string logPath, std::string gameName);
 
         /**
-         * @brief Called from NCE::SignalHandler for a fault in guest code, always logs the failure
+         * @brief Writes final occurrence counts and closes the diagnostic descriptors
+         * @note Call from the host after guest threads have stopped, before destroying the logger. A hard kill may lose counts since
+         * the last checkpoint; the analyzer reports those counts as lower bounds when no session_end record is present.
+         */
+        static void Flush() noexcept;
+
+        /**
+         * @brief Called from NCE::SignalHandler for a fault in guest code; captures it before any JIT changes to the signal context
          * @return If the guest can be resumed (the signal context was updated), otherwise the caller must treat the fault as fatal
          */
         static bool HandleFault(int signal, siginfo *info, ucontext *ctx, ThreadContext &threadCtx);

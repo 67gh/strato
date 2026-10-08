@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="diagnostic_title">Diagnostic</string>
+    <string name="diagnostic_description">Partage un rapport technique pour une session de jeu. Les rapports restent accessibles après le redémarrage de l’application.</string>
+    <string name="diagnostic_no_sessions">Aucune session enregistrée. Lance un jeu, puis reviens ici pour exporter son diagnostic.</string>
+    <string name="diagnostic_unknown_game">Jeu inconnu</string>
+    <string name="diagnostic_choose_session">Choisir une session</string>
+    <string name="diagnostic_export">Exporter le diagnostic</string>
+    <string name="diagnostic_refresh">Actualiser</string>
+    <string name="diagnostic_delete">Supprimer la session</string>
+    <string name="diagnostic_delete_confirmation">Supprimer le diagnostic enregistré pour %1$s ? Cela libère de l’espace. Les ZIP déjà partagés sont conservés.</string>
+    <string name="diagnostic_delete_failed">Impossible de supprimer cette session. Arrête le jeu et attends la fin des exports, puis réessaie.</string>
+    <string name="diagnostic_running">Session en cours. L’export contient les données collectées jusqu’à présent.</string>
+    <string name="diagnostic_ended">Session terminée. Le rapport peut contenir des erreurs survenues pendant le jeu.</string>
+    <string name="diagnostic_interrupted">La session s’est arrêtée sans état final. Ses données sauvegardées restent exportables.</string>
+    <string name="diagnostic_contents">Le ZIP contient les informations de l’appareil et de Vulkan, les réglages, les journaux et les mesures de performances. Les données absentes ou limitées sont signalées dans le rapport. Les journaux peuvent contenir des titres de jeux et des chemins de fichiers. Les clés et les fichiers du firmware sont exclus.</string>
+    <string name="diagnostic_read_failed">Impossible de lire les sessions enregistrées.</string>
+    <string name="diagnostic_export_failed">Impossible d’exporter ou de partager le diagnostic. Vérifie l’espace disponible et réessaie.</string>
+</resources>

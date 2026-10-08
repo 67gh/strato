@@ -8,6 +8,7 @@
 #include <common/settings.h>
 #include "gpu.h"
 #include "gpu/diagnostics.h"
+#include "gpu/diagnostic_snapshot.h"
 
 namespace skyline::gpu {
     static vk::raii::Instance CreateInstance(const DeviceState &state, const vk::raii::Context &context) {
@@ -338,13 +339,15 @@ namespace skyline::gpu {
                          queueString, extensionString, traits.Summary(), traits.quirks.Summary());
         }
 
-        return vk::raii::Device(physicalDevice, vk::DeviceCreateInfo{
+        auto device{vk::raii::Device(physicalDevice, vk::DeviceCreateInfo{
             .pNext = &enabledFeatures2,
             .queueCreateInfoCount = 1,
             .pQueueCreateInfos = &queueCreateInfo.get<vk::DeviceQueueCreateInfo>(),
             .enabledExtensionCount = static_cast<uint32_t>(pEnabledExtensions.size()),
             .ppEnabledExtensionNames = pEnabledExtensions.data(),
-        });
+        })};
+        diagnostics::WriteVulkanSnapshot(physicalDevice, deviceProperties2, traits, deviceExtensions, enabledExtensions, vkQueueFamilyIndex);
+        return device;
     }
 
     static PFN_vkGetInstanceProcAddr LoadVulkanDriver(const DeviceState &state, adrenotools_gpu_mapping *mapping) {

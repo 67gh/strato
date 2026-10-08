@@ -12,6 +12,7 @@
 #include <loader/loader.h>
 #include <kernel/types/KProcess.h>
 #include "presentation_engine.h"
+#include <common/diagnostic_metrics.h>
 #include "native_window.h"
 #include "texture/format.h"
 
@@ -168,6 +169,7 @@ namespace skyline::gpu {
             throw exception("Retrieving the next frame's ID failed with {}", result);
 
         PresentSwapchainImage(lock, *frame.textureView, timestamp);
+        skyline::diagnostics::presentedFrames.fetch_add(1, std::memory_order_relaxed);
 
         // Frame generation runs after the real frame has been submitted for presentation: it interpolates
         // between the previous real frame and this one, then presents the results, effectively multiplying

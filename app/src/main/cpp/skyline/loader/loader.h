@@ -113,6 +113,14 @@ namespace skyline::loader {
             std::string_view executableName; //!< The executable that contained the symbol
         };
 
+        /** A host-owned snapshot for diagnostics; obtain it before guest threads start. */
+        struct ExecutableRange {
+            std::string name;
+            u64 patchStart, hookStart, programStart, programEnd;
+        };
+
+        std::vector<ExecutableRange> GetExecutableRanges() const;
+
         /**
          * @return All symbolic information about the symbol for the specified address
          * @note If a symbol isn't found then SymbolInfo::name will be nullptr

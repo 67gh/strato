@@ -6,6 +6,7 @@
 #include "nce/guest.h"
 #include "nce/jit_fallback.h"
 #include "nce/hang_watchdog.h"
+#include "common/diagnostic_session.h"
 #include "kernel/types/KProcess.h"
 #include "vfs/os_backing.h"
 #include "loader/nro.h"
@@ -71,17 +72,23 @@ namespace skyline::kernel {
 
         {
             std::string gameName{nacp ? nacp->GetApplicationName(nacp->GetFirstSupportedTitleLanguage()) : "unknown"};
-            nce::JitFallback::Initialize(state, publicAppFilesPath + "nce_fallback.jsonl", gameName);
+            nce::JitFallback::Initialize(state, diagnostics::OutputPath("nce_fallback.jsonl", publicAppFilesPath + "nce_fallback.jsonl"), gameName);
         }
 
         nce::HangWatchdog::Start(state);
 
-        process->InitializeHeapTls();
-        auto thread{process->CreateThread(entry)};
-        if (thread) {
-            LOGI("Starting main HOS thread");
-            thread->Start(true);
-            process->Kill(true, true, true);
+        try {
+            process->InitializeHeapTls();
+            auto thread{process->CreateThread(entry)};
+            if (thread) {
+                LOGI("Starting main HOS thread");
+                thread->Start(true);
+                process->Kill(true, true, true);
+            }
+        } catch (...) {
+            // The sampler holds a pointer into this OS: join it before unwinding destroys state.
+            nce::HangWatchdog::Stop();
+            throw;
         }
 
         nce::HangWatchdog::Stop();

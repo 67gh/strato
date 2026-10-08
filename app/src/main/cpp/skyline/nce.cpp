@@ -488,7 +488,7 @@ namespace skyline::nce {
                 *instruction = instructions::B(static_cast<i32>(endOffset() + offset), true).raw;
 
                 /* Allocate Scratch Registers */
-                bool x0x1{mrs.srcReg != registers::X0 && mrs.srcReg != registers::X1};
+                bool x0x1{msr.srcReg != registers::X0 && msr.srcReg != registers::X1};
                 *patch++ = x0x1 ? 0xA9BF07E0 : 0xA9BF0FE2; // STP X(0/2), X(1/3), [SP, #-16]!
 
                 /* Store new TLS value into ThreadContext */
