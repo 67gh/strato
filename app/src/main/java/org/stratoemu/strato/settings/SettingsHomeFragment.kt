@@ -21,7 +21,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.stratoemu.strato.R
 import org.stratoemu.strato.UpdateChecker
 import org.stratoemu.strato.UpdateInstaller
-import org.stratoemu.strato.diagnostics.DiagnosticActivity
 import org.stratoemu.strato.databinding.FragmentSettingsHomeBinding
 import org.stratoemu.strato.databinding.SettingsHomeItemBinding
 import org.stratoemu.strato.utils.WindowInsetsHelper
@@ -46,7 +45,6 @@ class SettingsHomeFragment : Fragment() {
     )
 
     private enum class Action {
-        DIAGNOSTIC,
         ABOUT
     }
 
@@ -58,7 +56,6 @@ class SettingsHomeFragment : Fragment() {
         Entry(R.string.settings_layout, R.drawable.ic_settings_layout, arrayOf("category_presentation")),
         Entry(R.string.audio, R.drawable.ic_settings_audio, arrayOf("category_audio")),
         Entry(R.string.debug, R.drawable.ic_settings_debug, arrayOf("category_debug")),
-        Entry(R.string.diagnostic_title, R.drawable.ic_settings_debug, action = Action.DIAGNOSTIC),
         Entry(R.string.licenses, R.drawable.ic_settings_licenses, arrayOf("category_licenses")),
         Entry(R.string.about, R.drawable.ic_settings_licenses, action = Action.ABOUT),
         Entry(R.string.settings_defaults, R.drawable.ic_settings_defaults)
@@ -75,7 +72,6 @@ class SettingsHomeFragment : Fragment() {
     private fun onEntryClicked(entry : Entry) {
         entry.action?.let {
             when (it) {
-                Action.DIAGNOSTIC -> startActivity(Intent(requireContext(), DiagnosticActivity::class.java))
                 Action.ABOUT -> showAboutDialog()
             }
             return
