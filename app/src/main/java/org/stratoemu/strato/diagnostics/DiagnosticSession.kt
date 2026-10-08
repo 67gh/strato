@@ -395,9 +395,15 @@ class DiagnosticSession private constructor(
         synchronized(stateLock) {
             // Coalesce errors instead of repeating an inaccessible counter once per second.
             val old = issues[key]
-            if (old != null) old.put("count", old.optLong("count") + 1)
-            else if (issues.size < 64) issues[key] = JSONObject().put("component", key).put("count", 1)
-                .put("first_seen_utc", utcNow()).put("error", error.javaClass.simpleName + ": " + error.message.orEmpty().take(512))
+            if (old != null) {
+                old.put("count", old.optLong("count") + 1)
+            } else if (issues.size < 64) {
+                issues[key] = JSONObject()
+                    .put("component", key)
+                    .put("count", 1)
+                    .put("first_seen_utc", utcNow())
+                    .put("error", error.javaClass.simpleName + ": " + error.message.orEmpty().take(512))
+            }
         }
     }
 
