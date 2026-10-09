@@ -7,6 +7,7 @@ package org.stratoemu.strato.fragments
 
 import android.app.Dialog
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.activityViewModels
@@ -25,6 +26,11 @@ class IndeterminateProgressDialogFragment : DialogFragment() {
             .setView(progressBar)
             .create()
         dialog.setCanceledOnTouchOutside(false)
+
+        taskViewModel.result.observe(this) { result ->
+            if (result is Exception)
+                Toast.makeText(context, R.string.error, Toast.LENGTH_LONG).show()
+        }
 
         taskViewModel.isComplete.observe(this) { isComplete ->
             if (!isComplete)

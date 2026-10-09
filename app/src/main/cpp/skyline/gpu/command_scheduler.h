@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <type_traits>
+
 #include <common/thread_local.h>
 #include <common/circular_queue.h>
 #include "fence_cycle.h"
@@ -129,7 +131,10 @@ namespace skyline::gpu {
                 commandBuffer->begin(vk::CommandBufferBeginInfo{
                     .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
                 });
-                recordFunction(*commandBuffer);
+                if constexpr (std::is_invocable_v<RecordFunction, vk::raii::CommandBuffer &, std::shared_ptr<FenceCycle>>)
+                    recordFunction(*commandBuffer, commandBuffer.GetFenceCycle());
+                else
+                    recordFunction(*commandBuffer);
                 commandBuffer->end();
 
                 auto cycle{commandBuffer.GetFenceCycle()};

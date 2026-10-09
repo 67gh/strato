@@ -120,6 +120,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setContentView(binding.root)
+        onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsHelper.applyToActivity(binding.root, binding.appList)
 
@@ -169,6 +170,7 @@ class MainActivity : AppCompatActivity() {
             binding.refreshIcon.setOnClickListener { loadRoms(false) }
             addTextChangedListener(afterTextChanged = { editable ->
                 editable?.let { text -> adapter.filter.filter(text.toString()) }
+                onBackPressedCallback.isEnabled = hasFocus() || !editable.isNullOrEmpty()
             })
         }
 
@@ -308,12 +310,18 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val currentBuildTimeMs = BuildConfig.BUILD_TIMESTAMP * 1000L
 
-            val updateInfo = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, currentBuildTimeMs, BuildConfig.BUILD_COMMIT_FULL)
             }
 
             if (isFinishing || isDestroyed) return@launch
 
+            if (result.isFailure) {
+                if (showUpToDateMessage)
+                    Snackbar.make(findViewById(android.R.id.content), getString(R.string.error), Snackbar.LENGTH_SHORT).show()
+                return@launch
+            }
+            val updateInfo = result.getOrNull()
             if (updateInfo == null) {
                 if (showUpToDateMessage)
                     Snackbar.make(findViewById(android.R.id.content), getString(R.string.update_up_to_date), Snackbar.LENGTH_SHORT).show()
@@ -361,13 +369,6 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
 
-        binding.searchBar.addTextChangedListener { text ->
-            if (!onBackPressedCallback.isEnabled && !text.isNullOrEmpty()) {
-                onBackPressedCallback.isEnabled = true
-            }
-        }
-
-        onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
         onBackPressedCallback.isEnabled = binding.searchBar.hasFocus() || binding.searchBar.text.isNotEmpty()
     }
 

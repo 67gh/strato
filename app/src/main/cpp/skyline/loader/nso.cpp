@@ -22,7 +22,9 @@ namespace skyline::loader {
             std::vector<u8> compressedBuffer(compressedSize);
             backing->Read(compressedBuffer, segment.fileOffset);
 
-            LZ4_decompress_safe(reinterpret_cast<char *>(compressedBuffer.data()), reinterpret_cast<char *>(outputBuffer.data()), static_cast<int>(compressedSize), static_cast<int>(segment.decompressedSize));
+            const auto decodedSize{LZ4_decompress_safe(reinterpret_cast<char *>(compressedBuffer.data()), reinterpret_cast<char *>(outputBuffer.data()), static_cast<int>(compressedSize), static_cast<int>(segment.decompressedSize))};
+            if (decodedSize < 0 || static_cast<size_t>(decodedSize) != outputBuffer.size())
+                throw exception("Invalid compressed NSO segment: decoded {} of {} bytes", decodedSize, outputBuffer.size());
         } else {
             backing->Read(outputBuffer, segment.fileOffset);
         }
@@ -76,12 +78,15 @@ namespace skyline::loader {
 
         std::string contentsRaw(contents.begin(), contents.end());
         std::string modulePath;
-        if (memcmp(&contents[0], "\x00\x00\x00\x00", 4) == 0) {
+        if (contents.size() >= 8 && memcmp(contents.data(), "\x00\x00\x00\x00", 4) == 0) {
             i32 length;
             std::memcpy(&length, &contents[4], sizeof(i32));
 
-            if (length > 0)
-                modulePath = reinterpret_cast<const char *>(&contents[4 + sizeof(i32)]);
+            if (length > 0 && static_cast<size_t>(length) <= contents.size() - 8) {
+                const auto begin{contents.begin() + 8};
+                const auto end{std::find(begin, begin + length, 0)};
+                modulePath.assign(begin, end);
+            }
         }
 
         if (modulePath.empty()) {
