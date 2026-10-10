@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <common.h>
 #include <common/wregister.h>
 
@@ -68,7 +69,7 @@ namespace skyline {
          * @note FPSR/FPCR are 64-bit system registers but only the lower 32-bits are used
          * @note Read about ARMv8 ABI here: https://github.com/ARM-software/abi-aa/blob/2f1ac56a7d79f3e753e6ca88d4d3e083c31d6f64/aapcs64/aapcs64.rst#612simd-and-floating-point-registers
          */
-        union alignas(16) FpRegisters {
+        struct alignas(16) FpRegisters {
             std::array<u128, 32> regs;
             u32 fpsr;
             u32 fpcr;
@@ -89,6 +90,16 @@ namespace skyline {
             const DeviceState *state;
             u64 magic{constant::SkyTlsMagic};
         };
+
+        // Keep these in sync with guest.S, NCE trampolines and KThread::StartThread.
+        static_assert(offsetof(ThreadContext, fpr) == 0xA0);
+        static_assert(offsetof(FpRegisters, fpsr) == 0x200);
+        static_assert(offsetof(FpRegisters, fpcr) == 0x204);
+        static_assert(offsetof(ThreadContext, hostTpidrEl0) == 0x2B0);
+        static_assert(offsetof(ThreadContext, hostSp) == 0x2B8);
+        static_assert(offsetof(ThreadContext, tpidrroEl0) == 0x2C0);
+        static_assert(offsetof(ThreadContext, tpidrEl0) == 0x2C8);
+        static_assert(offsetof(ThreadContext, nzcv) == 0x2D0);
 
         namespace guest {
             constexpr size_t SaveCtxSize{38}; //!< The size of the SaveCtx function in 32-bit ARMv8 instructions

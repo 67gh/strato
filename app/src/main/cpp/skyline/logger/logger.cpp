@@ -34,10 +34,14 @@ namespace skyline {
             return {threadNameStorage.begin() + PrefixLength, threadNameStorage.end()};
         }
 
+        constexpr std::span<const char> GetThreadName() const {
+            return {threadNameStorage.begin() + PrefixLength, threadNameStorage.end()};
+        }
+
         /**
          * @return A span of the log tag
          */
-        constexpr std::span<char> GetLogTag() {
+        constexpr std::span<const char> GetLogTag() const {
             return {threadNameStorage.begin(), threadNameStorage.end()};
         }
     } threadContext;
@@ -53,9 +57,9 @@ namespace skyline {
         const char *function; //!< The name of the function that pushed this message
         std::string str; //!< The log message string
         log_time_point time; //!< The time when the message was pushed
-        ThreadLogContext *threadContext; //!< The context for the thread that pushed this message
+        ThreadLogContext threadContext; //!< Owned snapshot, valid after the producer thread exits
 
-        LogMessage(LogLevel level, const char *function, std::string &&str, log_time_point time, ThreadLogContext *threadContext)
+        LogMessage(LogLevel level, const char *function, std::string &&str, log_time_point time, const ThreadLogContext &threadContext)
             : level(level), function(function), str(std::move(str)), time(time), threadContext(threadContext) {}
 
         // Disable copy constructor to prevent copying the string
@@ -172,7 +176,7 @@ namespace skyline {
                 ANDROID_LOG_ERROR,
             }; // The LogLevel as Android NDK log level
 
-            __android_log_write(androidLevel[static_cast<u32>(message.level)], message.threadContext->GetLogTag().data(), message.str.c_str());
+            __android_log_write(androidLevel[static_cast<u32>(message.level)], message.threadContext.GetLogTag().data(), message.str.c_str());
         }
 
         void WriteFile(const LogMessage &message) {
@@ -191,7 +195,7 @@ namespace skyline {
                 "{:7} | {:>10} | {:^15} | {}\n",
                 levelTag[static_cast<u32>(message.level)],
                 duration_cast<microseconds>(message.time - start).count(),
-                message.threadContext->GetThreadName().data(),
+                message.threadContext.GetThreadName().data(),
                 message.str
             );
             logFile.flush();
@@ -224,7 +228,7 @@ namespace skyline {
             function,
             std::move(str),
             clock::now(),
-            &threadContext
+            threadContext
         });
     }
 
@@ -234,7 +238,7 @@ namespace skyline {
             function,
             std::move(str),
             clock::now(),
-            &threadContext
+            threadContext
         };
         impl.Write(message);
     }

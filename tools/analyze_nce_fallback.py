@@ -86,7 +86,7 @@ class Analyzer:
                 continue
 
             kind = row.get("type")
-            if kind not in {"session", "failure", "count", "overflow", "session_end"}:
+            if not isinstance(kind, str) or kind not in {"session", "failure", "count", "overflow", "session_end"}:
                 self.warn(f"{location}: type de record inconnu {kind!r}")
                 if current:
                     current.invalid_records += 1

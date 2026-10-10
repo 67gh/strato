@@ -26,7 +26,7 @@ namespace skyline::nce {
         TRACE_EVENT_END("guest");
 
         const auto &state{*ctx->state};
-        auto svc{kernel::svc::SvcTable[svcId]};
+        auto svc{svcId < kernel::svc::SvcTable.size() ? kernel::svc::SvcTable[svcId] : kernel::svc::SvcDescriptor{}};
         try {
             if (svc) [[likely]] {
                 TRACE_EVENT("kernel", perfetto::StaticString{svc.name});
@@ -167,8 +167,8 @@ namespace skyline::nce {
                 cpuContext += fmt::format("\n  Fault Address: 0x{:X}", mctx.fault_address);
             if (mctx.sp)
                 cpuContext += fmt::format("\n  Stack Pointer: 0x{:X}", mctx.sp);
-            for (size_t index{}; index < (sizeof(mcontext_t::regs) / sizeof(u64)); index += 2)
-                cpuContext += fmt::format("\n  X{:<2}: 0x{:<16X} X{:<2}: 0x{:X}", index, mctx.regs[index], index + 1, mctx.regs[index + 1]);
+            for (size_t index{}; index < (sizeof(mcontext_t::regs) / sizeof(u64)); index++)
+                cpuContext += fmt::format("\n  X{:<2}: 0x{:X}", index, mctx.regs[index]);
 
             LOGE("Thread #{} has crashed due to signal: {}\nStack Trace:{}\nCPU Context:{}", state.thread->id, strsignal(signal), trace, cpuContext);
 
@@ -252,12 +252,12 @@ namespace skyline::nce {
 
         /* Replace Skyline TLS with host TLS */
         *code++ = 0xD53BD041; // MRS X1, TPIDR_EL0
-        *code++ = 0xF9415022; // LDR X2, [X1, #0x2A0] (ThreadContext::hostTpidrEl0)
+        *code++ = 0xF9415822; // LDR X2, [X1, #0x2B0] (ThreadContext::hostTpidrEl0)
         *code++ = 0xD51BD042; // MSR TPIDR_EL0, X2
 
         /* Replace guest stack with host stack */
         *code++ = 0x910003E2; // MOV X2, SP
-        *code++ = 0xF9415423; // LDR X3, [X1, #0x2A8] (ThreadContext::hostSp)
+        *code++ = 0xF9415C23; // LDR X3, [X1, #0x2B8] (ThreadContext::hostSp)
         *code++ = 0x9100007F; // MOV SP, X3
 
         /* Store Skyline TLS + guest SP on stack */
@@ -435,9 +435,9 @@ namespace skyline::nce {
                     /* Retrieve emulated TLS register from ThreadContext */
                     *patch++ = 0xD53BD040; // MRS X0, TPIDR_EL0
                     if (mrs.srcReg == TpidrroEl0)
-                        *patch++ = 0xF9415800; // LDR X0, [X0, #0x2B0] (ThreadContext::tpidrroEl0)
+                        *patch++ = 0xF9416000; // LDR X0, [X0, #0x2C0] (ThreadContext::tpidrroEl0)
                     else
-                        *patch++ = 0xF9415C00; // LDR X0, [X0, #0x2B8] (ThreadContext::tpidrEl0)
+                        *patch++ = 0xF9416400; // LDR X0, [X0, #0x2C8] (ThreadContext::tpidrEl0)
 
                     /* Restore Scratch Register and Return */
                     if (mrs.destReg != registers::X0) {
@@ -494,7 +494,7 @@ namespace skyline::nce {
                 /* Store new TLS value into ThreadContext */
                 *patch++ = x0x1 ? 0xD53BD040 : 0xD53BD042; // MRS X(0/2), TPIDR_EL0
                 *patch++ = instructions::Mov(x0x1 ? registers::X1 : registers::X3, registers::X(msr.srcReg)).raw;
-                *patch++ = x0x1 ? 0xF9015C01 : 0xF9015C43; // STR X(1/3), [X(0/2), #0x4B8] (ThreadContext::tpidrEl0)
+                *patch++ = x0x1 ? 0xF9016401 : 0xF9016443; // STR X(1/3), [X(0/2), #0x2C8] (ThreadContext::tpidrEl0)
 
                 /* Restore Scratch Registers and Return */
                 *patch++ = x0x1 ? 0xA8C107E0 : 0xA8C10FE2; // LDP X(0/2), X(1/3), [SP], #16
@@ -566,9 +566,9 @@ namespace skyline::nce {
                 /* TLS LR Store */
                 *hook++ = 0xA9BF07E0; // STP X0, X1, [SP, #-16]!
                 *hook++ = 0xD53BD040; // MRS X0, TPIDR_EL0
-                *hook++ = 0xF9415401; // LDR X1, [X0, #0x2A8] (ThreadContext::hostSp)
+                *hook++ = 0xF9415C01; // LDR X1, [X0, #0x2B8] (ThreadContext::hostSp)
                 *hook++ = 0xF81F0C3E; // STR LR, [X1, #-16]!
-                *hook++ = 0xF9015401; // STR X1, [X0, #0x2A8] (ThreadContext::hostSp)
+                *hook++ = 0xF9015C01; // STR X1, [X0, #0x2B8] (ThreadContext::hostSp)
                 *hook++ = 0xA8C107E0; // LDP X0, X1, [SP], #16
 
                 /* Entry Hook */
@@ -583,9 +583,9 @@ namespace skyline::nce {
                 /* TLS LR Load */
                 *hook++ = 0xA9BF07E0; // STP X0, X1, [SP, #-16]!
                 *hook++ = 0xD53BD040; // MRS X0, TPIDR_EL0
-                *hook++ = 0xF9415401; // LDR X1, [X0, #0x2A8] (ThreadContext::hostSp)
+                *hook++ = 0xF9415C01; // LDR X1, [X0, #0x2B8] (ThreadContext::hostSp)
                 *hook++ = 0xF841043E; // LDR LR, [X1], #16
-                *hook++ = 0xF9015401; // STR X1, [X0, #0x2A8] (ThreadContext::hostSp)
+                *hook++ = 0xF9015C01; // STR X1, [X0, #0x2B8] (ThreadContext::hostSp)
                 *hook++ = 0xA8C107E0; // LDP X0, X1, [SP], #16
             }
 

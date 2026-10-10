@@ -29,6 +29,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.FilenameFilter
 import java.io.IOException
+import java.nio.file.Files
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.zip.ZipEntry
@@ -157,26 +158,25 @@ interface SaveManagementUtils {
          * @param zipUri The Uri of the zip file containing the save file(s) to import.
          */
         private fun importSave(context : Context, zipUri : Uri, onImportComplete : () -> Unit = {}) {
-            val inputZip = StratoApplication.instance.contentResolver.openInputStream(zipUri)
             // A zip needs to have at least one subfolder named after a TitleId in order to be considered valid.
             var validZip = false
             val savesFolder = File(savesFolderRoot)
-            val cacheSaveDir = File("${StratoApplication.instance.cacheDir.path}/saves/")
-            cacheSaveDir.mkdir()
-
-            if (inputZip == null) {
-                Toast.makeText(context, R.string.error, Toast.LENGTH_LONG).show()
-                return
-            }
-
             val filterTitleId = FilenameFilter { _, dirName -> dirName.matches(Regex("^0100[\\dA-Fa-f]{12}$")) }
 
             CoroutineScope(Dispatchers.IO).launch {
+                var cacheSaveDir : File? = null
                 try {
-                    ZipUtils.unzip(inputZip, cacheSaveDir)
-                    cacheSaveDir.list(filterTitleId)?.forEach { savePath ->
-                        File(savesFolder, savePath).deleteRecursively()
-                        File(cacheSaveDir, savePath).copyRecursively(File(savesFolder, savePath), true)
+                    val cacheDir = Files.createTempDirectory(StratoApplication.instance.cacheDir.toPath(), "saves-").toFile()
+                    cacheSaveDir = cacheDir
+                    val inputZip = StratoApplication.instance.contentResolver.openInputStream(zipUri)
+                        ?: throw IOException("Cannot open save archive")
+                    inputZip.use { ZipUtils.unzip(it, cacheDir) }
+                    cacheDir.list(filterTitleId)?.forEach { savePath ->
+                        val source = File(cacheDir, savePath)
+                        if (!source.isDirectory) return@forEach
+                        DirectoryReplacement.replace(File(savesFolder, savePath)) { staging ->
+                            if (!source.copyRecursively(staging, true)) throw IOException("Cannot copy save")
+                        }
                         validZip = true
                     }
 
@@ -188,12 +188,12 @@ interface SaveManagementUtils {
                         onImportComplete()
                         Toast.makeText(context, R.string.save_file_imported_ok, Toast.LENGTH_LONG).show()
                     }
-                } catch (e : IOException) {
+                } catch (e : Exception) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context, R.string.error, Toast.LENGTH_LONG).show()
                     }
                 } finally {
-                    cacheSaveDir.deleteRecursively()
+                    cacheSaveDir?.deleteRecursively()
                 }
             }
         }
@@ -203,8 +203,7 @@ interface SaveManagementUtils {
          */
         fun deleteSaveFile(titleId : String?) : Boolean {
             if (titleId == null) return false
-            File("$savesFolderRoot/$titleId").deleteRecursively()
-            return true
+            return File("$savesFolderRoot/$titleId").deleteRecursively()
         }
     }
 }

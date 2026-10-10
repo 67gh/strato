@@ -14,7 +14,10 @@ import org.stratoemu.strato.loader.AppEntry
 import org.stratoemu.strato.utils.fromFile
 import org.stratoemu.strato.utils.toFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
@@ -32,7 +35,7 @@ class MainViewModel @Inject constructor(@ApplicationContext context : Context, p
 
     private var state
         get() = _stateData.value
-        set(value) = _stateData.postValue(value)
+        set(value) { _stateData.value = value }
     private val _stateData = MutableLiveData<MainState>()
     val stateData : LiveData<MainState> = _stateData
 
@@ -46,37 +49,38 @@ class MainViewModel @Inject constructor(@ApplicationContext context : Context, p
             return
         state = MainState.Loading
 
-        val romsFile = File(getApplication<StratoApplication>().filesDir.canonicalPath + "/roms.bin")
-
-        viewModelScope.launch(Dispatchers.IO) {
-            if (loadFromFile && romsFile.exists()) {
-                try {
-                    state = MainState.Loaded(fromFile(romsFile))
-                    checkRomHash(searchLocations, systemLanguage)
-                    return@launch
-                } catch (e : Exception) {
-                    Log.w(TAG, "Ran into exception while loading: ${e.message}")
-                }
-            }
-
-            state = if (searchLocations.isEmpty()) {
-                MainState.Loaded(ArrayList())
-            } else {
-                try {
+        val previousRefresh = refreshJob
+        previousRefresh?.cancel()
+        val applicationContext = context.applicationContext
+        viewModelScope.launch {
+            try {
+                // Let a cancelled scan finish its blocking file work before replacing its cache.
+                previousRefresh?.join()
+                val romElements = withContext(Dispatchers.IO) {
+                    val romsFile = File(getApplication<StratoApplication>().filesDir, "roms.bin")
+                    if (loadFromFile && romsFile.exists()) {
+                        try {
+                            return@withContext fromFile<ArrayList<AppEntry>>(romsFile)
+                        } catch (e : Exception) {
+                            Log.w(TAG, "Ran into exception while loading: ${e.message}")
+                        }
+                    }
                     searchLocations.forEach { location ->
                         try {
-                            KeyReader.importFromLocation(context, location)
+                            KeyReader.importFromLocation(applicationContext, location)
                         } catch (e : Exception) {
                             Log.w(TAG, "Couldn't look for keys in '$location': ${e.message}")
                         }
                     }
-                    val romElements = romProvider.loadRoms(searchLocations, systemLanguage)
-                    romElements.toFile(romsFile)
-                    MainState.Loaded(romElements)
-                } catch (e : Exception) {
-                    Log.w(TAG, "Ran into exception while saving: ${e.message}")
-                    MainState.Error(e)
+                    romProvider.loadRoms(searchLocations, systemLanguage).also { it.toFile(romsFile) }
                 }
+                state = MainState.Loaded(romElements)
+                if (loadFromFile) checkRomHash(searchLocations, systemLanguage)
+            } catch (e : CancellationException) {
+                throw e
+            } catch (e : Exception) {
+                Log.w(TAG, "Ran into exception while loading games: ${e.message}")
+                state = MainState.Error(e)
             }
         }
     }
@@ -84,28 +88,32 @@ class MainViewModel @Inject constructor(@ApplicationContext context : Context, p
     /**
      * Tracks whether an auto refresh is already in progress
      */
-    private var isAutoRefreshingRoms = false
+    private var refreshJob : Job? = null
 
     /**
      * This checks if the roms have changed since the last time they were loaded and if so it reloads them
      */
     fun checkRomHash(searchLocations : List<Uri>, systemLanguage : Int) {
         // Skip if an auto refresh is already in progress or if the state hasn't already loaded
-        if (isAutoRefreshingRoms || state !is MainState.Loaded)
+        if (refreshJob?.isActive == true)
             return
-        isAutoRefreshingRoms = true
-
-        viewModelScope.launch(Dispatchers.IO) {
-            val currentHash = when (val currentState = state) {
-                is MainState.Loaded -> currentState.items.hashCode()
-                else -> 0
+        val currentState = state as? MainState.Loaded ?: return
+        refreshJob = viewModelScope.launch {
+            try {
+                val romElements = withContext(Dispatchers.IO) {
+                    romProvider.loadRoms(searchLocations, systemLanguage).also {
+                        if (it != currentState.items)
+                            it.toFile(File(getApplication<StratoApplication>().filesDir, "roms.bin"))
+                    }
+                }
+                if (romElements != currentState.items)
+                    state = MainState.Loaded(romElements)
+            } catch (e : CancellationException) {
+                throw e
+            } catch (e : Exception) {
+                // Keep the already displayed library when a background refresh fails.
+                Log.w(TAG, "Couldn't refresh games: ${e.message}")
             }
-            val romElements = romProvider.loadRoms(searchLocations, systemLanguage)
-            val newHash = romElements.hashCode()
-            if (newHash != currentHash)
-                state = MainState.Loaded(romElements)
-
-            isAutoRefreshingRoms = false
         }
     }
 }
