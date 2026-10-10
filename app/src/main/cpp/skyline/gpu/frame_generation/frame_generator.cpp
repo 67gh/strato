@@ -5,6 +5,7 @@
 #include <vfs/filesystem.h>
 #include <vfs/backing.h>
 #include "frame_generator.h"
+#include <gpu/fence_cycle.h>
 
 namespace skyline::gpu {
     namespace {
@@ -121,7 +122,6 @@ namespace skyline::gpu {
     void FrameGenerator::EnsureResources(texture::Dimensions extent) {
         if (extent == cachedExtent && motionFieldFine)
             return;
-        cachedExtent = extent;
 
         constexpr texture::Format MotionFormat{format::R16G16Float};
         constexpr texture::Format FrameFormat{format::R8G8B8A8Unorm};
@@ -130,22 +130,29 @@ namespace skyline::gpu {
         texture::Dimensions fineExtent{util::AlignUp(extent.width, BaseBlockSize) / BaseBlockSize, util::AlignUp(extent.height, BaseBlockSize) / BaseBlockSize, 1};
 
         auto motionUsage{vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled};
-        motionFieldCoarse = CreateStorageTexture(gpu, coarseExtent, MotionFormat, motionUsage);
-        motionFieldFine = CreateStorageTexture(gpu, fineExtent, MotionFormat, motionUsage);
+        auto newCoarse = CreateStorageTexture(gpu, coarseExtent, MotionFormat, motionUsage);
+        auto newFine = CreateStorageTexture(gpu, fineExtent, MotionFormat, motionUsage);
 
         auto frameUsage{vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc};
-        for (auto &frame : generatedFrames)
+        decltype(generatedFrames) newFrames;
+        for (auto &frame : newFrames)
             frame = CreateStorageTexture(gpu, extent, FrameFormat, frameUsage);
+        motionFieldCoarse = std::move(newCoarse);
+        motionFieldFine = std::move(newFine);
+        generatedFrames = std::move(newFrames);
+        cachedExtent = extent;
     }
 
-    void FrameGenerator::DispatchMotionEstimate(vk::raii::CommandBuffer &cmd, TextureView *prevFrame, TextureView *currFrame,
+    void FrameGenerator::DispatchMotionEstimate(vk::raii::CommandBuffer &cmd, const std::shared_ptr<FenceCycle> &cycle, TextureView *prevFrame, TextureView *currFrame,
                                                  Texture *motionOut, Texture *prevLevelMotion, texture::Dimensions levelExtent, int blockSize) {
-        auto set{gpu.descriptor.AllocateSet(*motionEstimateSetLayout)};
+        auto set{std::make_shared<DescriptorAllocator::ActiveDescriptorSet>(gpu.descriptor.AllocateSet(*motionEstimateSetLayout))};
+        cycle->AttachObject(set);
 
         auto motionOutView{motionOut->GetView(vk::ImageViewType::e2D, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1})};
         // When there's no coarser level yet (topmost pyramid level) we still need a bound image; reuse motionOut itself,
         // the shader is instructed via 'hasPrevLevel' not to actually read from it in that case.
         auto prevLevelView{(prevLevelMotion ? prevLevelMotion : motionOut)->GetView(vk::ImageViewType::e2D, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1})};
+        cycle->AttachObjects(motionOutView, prevLevelView);
 
         std::array<vk::DescriptorImageInfo, 4> imageInfos{{
             {.sampler = *linearSampler, .imageView = prevFrame->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
@@ -155,10 +162,10 @@ namespace skyline::gpu {
         }};
 
         std::array<vk::WriteDescriptorSet, 4> writes{{
-            {.dstSet = *set, .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[0]},
-            {.dstSet = *set, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[1]},
-            {.dstSet = *set, .dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[2]},
-            {.dstSet = *set, .dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &imageInfos[3]},
+            {.dstSet = **set, .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[0]},
+            {.dstSet = **set, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[1]},
+            {.dstSet = **set, .dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[2]},
+            {.dstSet = **set, .dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &imageInfos[3]},
         }};
         gpu.vkDevice.updateDescriptorSets(writes, nullptr);
 
@@ -167,12 +174,12 @@ namespace skyline::gpu {
             .frameExtentX = static_cast<i32>(levelExtent.width), .frameExtentY = static_cast<i32>(levelExtent.height),
             .motionOutExtentX = static_cast<i32>(motionOutExtent.width), .motionOutExtentY = static_cast<i32>(motionOutExtent.height),
             .blockSize = blockSize,
-            .searchRadius = SearchRadius,
+            .searchRadius = prevLevelMotion ? 4 : SearchRadius,
             .hasPrevLevel = prevLevelMotion ? 1 : 0,
         };
 
         cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *motionEstimatePipeline);
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *motionEstimatePipelineLayout, 0, *set, nullptr);
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *motionEstimatePipelineLayout, 0, **set, nullptr);
         cmd.pushConstants<MotionEstimatePushConstants>(*motionEstimatePipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, pc);
         // One workgroup per output block, the shader itself only uses invocation 0 to perform the search
         cmd.dispatch(motionOutExtent.width, motionOutExtent.height, 1);
@@ -188,11 +195,13 @@ namespace skyline::gpu {
         cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eComputeShader, {}, nullptr, nullptr, barrier);
     }
 
-    void FrameGenerator::DispatchInterpolate(vk::raii::CommandBuffer &cmd, TextureView *prevFrame, TextureView *currFrame,
+    void FrameGenerator::DispatchInterpolate(vk::raii::CommandBuffer &cmd, const std::shared_ptr<FenceCycle> &cycle, TextureView *prevFrame, TextureView *currFrame,
                                               Texture *motionField, Texture *output, texture::Dimensions extent, float t) {
-        auto set{gpu.descriptor.AllocateSet(*frameInterpolateSetLayout)};
+        auto set{std::make_shared<DescriptorAllocator::ActiveDescriptorSet>(gpu.descriptor.AllocateSet(*frameInterpolateSetLayout))};
+        cycle->AttachObject(set);
         auto outputView{output->GetView(vk::ImageViewType::e2D, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1})};
         auto motionView{motionField->GetView(vk::ImageViewType::e2D, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1})};
+        cycle->AttachObjects(outputView, motionView);
 
         std::array<vk::DescriptorImageInfo, 4> imageInfos{{
             {.sampler = *linearSampler, .imageView = prevFrame->GetView(), .imageLayout = vk::ImageLayout::eGeneral},
@@ -202,10 +211,10 @@ namespace skyline::gpu {
         }};
 
         std::array<vk::WriteDescriptorSet, 4> writes{{
-            {.dstSet = *set, .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[0]},
-            {.dstSet = *set, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[1]},
-            {.dstSet = *set, .dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[2]},
-            {.dstSet = *set, .dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &imageInfos[3]},
+            {.dstSet = **set, .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[0]},
+            {.dstSet = **set, .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[1]},
+            {.dstSet = **set, .dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfos[2]},
+            {.dstSet = **set, .dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageImage, .pImageInfo = &imageInfos[3]},
         }};
         gpu.vkDevice.updateDescriptorSets(writes, nullptr);
 
@@ -216,31 +225,45 @@ namespace skyline::gpu {
         };
 
         cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *frameInterpolatePipeline);
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *frameInterpolatePipelineLayout, 0, *set, nullptr);
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *frameInterpolatePipelineLayout, 0, **set, nullptr);
         cmd.pushConstants<InterpolatePushConstants>(*frameInterpolatePipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, pc);
         cmd.dispatch(util::DivideCeil(extent.width, 8U), util::DivideCeil(extent.height, 8U), 1);
     }
 
-    std::vector<std::shared_ptr<TextureView>> FrameGenerator::GenerateFrames(vk::raii::CommandBuffer &cmd, TextureView *prevFrame, TextureView *currFrame, Mode mode) {
+    std::vector<std::shared_ptr<TextureView>> FrameGenerator::GenerateFrames(vk::raii::CommandBuffer &cmd, const std::shared_ptr<FenceCycle> &cycle, TextureView *prevFrame, TextureView *currFrame, Mode mode) {
         u32 extraFrames{FrameMultiplier(mode) - 1};
         if (extraFrames == 0)
             return {};
 
         texture::Dimensions extent{currFrame->texture->dimensions};
         EnsureResources(extent);
+        // Finish previous copies before overwriting reusable outputs. Chaining a
+        // fence after submission alone would not order these GPU accesses.
+        for (const auto &frame : generatedFrames) {
+            frame->TransitionLayout(vk::ImageLayout::eGeneral);
+            if (frame->cycle)
+                frame->cycle->Wait();
+        }
+        for (const auto &field : {motionFieldCoarse, motionFieldFine}) {
+            if (field->cycle)
+                field->cycle->Wait();
+        }
+        cycle->AttachObjects(motionFieldCoarse, motionFieldFine);
+        for (const auto &frame : generatedFrames)
+            cycle->AttachObject(frame);
 
         // Two-level pyramid: coarse pass predicts a starting point for the fine pass, this keeps the
         // fine-level search radius (and thus cost) small while still tracking fast motion.
-        texture::Dimensions coarseFrameExtent{extent.width / 2, extent.height / 2, 1};
-        DispatchMotionEstimate(cmd, prevFrame, currFrame, motionFieldCoarse.get(), nullptr, coarseFrameExtent, BaseBlockSize);
-        DispatchMotionEstimate(cmd, prevFrame, currFrame, motionFieldFine.get(), motionFieldCoarse.get(), extent, BaseBlockSize);
+        texture::Dimensions coarseFrameExtent{util::DivideCeil(extent.width, 2U), util::DivideCeil(extent.height, 2U), 1};
+        DispatchMotionEstimate(cmd, cycle, prevFrame, currFrame, motionFieldCoarse.get(), nullptr, coarseFrameExtent, BaseBlockSize);
+        DispatchMotionEstimate(cmd, cycle, prevFrame, currFrame, motionFieldFine.get(), motionFieldCoarse.get(), extent, BaseBlockSize);
 
         std::vector<std::shared_ptr<TextureView>> result;
         result.reserve(extraFrames);
         for (u32 i{0}; i < extraFrames; i++) {
             float t{static_cast<float>(i + 1) / static_cast<float>(extraFrames + 1)};
             Texture *output{generatedFrames[i].get()};
-            DispatchInterpolate(cmd, prevFrame, currFrame, motionFieldFine.get(), output, extent, t);
+            DispatchInterpolate(cmd, cycle, prevFrame, currFrame, motionFieldFine.get(), output, extent, t);
             result.push_back(output->GetView(vk::ImageViewType::e2D, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}));
         }
 

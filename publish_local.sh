@@ -51,7 +51,7 @@ EOF
 echo "✅ Release locale créée dans : releases/${TAG}/"
 echo ""
 echo "Pour publier sur GitHub :"
-echo "  gh release create ${TAG} releases/${TAG}/*.apk \"
-echo "    --title "${TITLE}" \"
-echo "    --notes-file releases/${TAG}/RELEASE_NOTES.md \"
-echo "    --prerelease"
+printf '  gh release create %q %q \\\n' "$TAG" "releases/${TAG}/strato-${VERSION}.apk"
+printf '    --title %q \\\n' "$TITLE"
+printf '    --notes-file %q \\\n' "releases/${TAG}/RELEASE_NOTES.md"
+printf '    --prerelease\n'

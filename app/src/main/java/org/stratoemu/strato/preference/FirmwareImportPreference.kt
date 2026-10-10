@@ -18,11 +18,13 @@ import org.stratoemu.strato.fragments.IndeterminateProgressDialogFragment
 import org.stratoemu.strato.getPublicFilesDir
 import org.stratoemu.strato.settings.SettingsActivity
 import org.stratoemu.strato.utils.ZipUtils
+import org.stratoemu.strato.utils.DirectoryReplacement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -37,14 +39,13 @@ class FirmwareImportPreference @JvmOverloads constructor(context : Context, attr
         it?.let { uri ->
             val task : () -> Unit = {
                 val result = importFirmware(uri)
-                result.version?.let { version ->
-                    persistString(version)
-                    CoroutineScope(Dispatchers.Main).launch {
+                CoroutineScope(Dispatchers.Main).launch {
+                    result.version?.let { version ->
+                        persistString(version)
                         notifyChanged()
                     }
+                    Snackbar.make((context as SettingsActivity).binding.root, result.message, Snackbar.LENGTH_LONG).show()
                 }
-
-                Snackbar.make((context as SettingsActivity).binding.root, result.message, Snackbar.LENGTH_LONG).show()
             }
 
             IndeterminateProgressDialogFragment.newInstance(context as SettingsActivity, R.string.import_firmware_in_progress, task)
@@ -63,37 +64,47 @@ class FirmwareImportPreference @JvmOverloads constructor(context : Context, attr
      * The previous firmware is only replaced once the new one was found to be valid
      */
     fun importFirmware(uri : Uri) : ImportResult {
-        val inputZip = context.contentResolver.openInputStream(uri) ?: return ImportResult(R.string.error, null)
-        val cacheFirmwareDir = File("${context.cacheDir.path}/registered/")
-        val extractedDir = File("${context.cacheDir.path}/registered_extracted/")
-
+        var workDir : File? = null
         return try {
+            val work = Files.createTempDirectory(context.cacheDir.toPath(), "firmware-").toFile()
+            workDir = work
+            val cacheFirmwareDir = File(work, "registered")
+            val extractedDir = File(work, "extracted")
+            val stagedFonts = File(work, "fonts")
+            val inputZip = context.contentResolver.openInputStream(uri) ?: throw IOException("Cannot open firmware archive")
             // Unzip in cache dir to not delete previous firmware in case the zip given doesn't contain a valid one
-            extractedDir.deleteRecursively()
-            cacheFirmwareDir.deleteRecursively()
-            ZipUtils.unzip(inputZip, extractedDir)
+            inputZip.use { ZipUtils.unzip(it, extractedDir) }
 
             // A full firmware has its archives at the root of the zip but a zip made by hand (a lite firmware) often has them in a folder, only the NCAs matter
             cacheFirmwareDir.mkdirs()
             extractedDir.walkTopDown().filter { it.isFile && it.name.endsWith(".nca", ignoreCase = true) }.forEach {
-                it.copyTo(File(cacheFirmwareDir, it.name), overwrite = true)
+                it.copyTo(File(cacheFirmwareDir, it.name), overwrite = false)
             }
 
             val firmware = isFirmwareValid(cacheFirmwareDir)
             if (!firmware.valid) {
                 ImportResult(R.string.import_firmware_invalid_contents, null)
             } else {
-                firmwarePath.deleteRecursively()
-                cacheFirmwareDir.copyRecursively(firmwarePath, true)
-                extractFonts(firmwarePath.path, keysPath, fontsPath)
+                stagedFonts.mkdirs()
+                extractFonts(cacheFirmwareDir.path, keysPath, stagedFonts.path + "/")
+                if (stagedFonts.listFiles()?.isNotEmpty() == true) {
+                    DirectoryReplacement.replace(File(fontsPath)) { staging ->
+                        val previousFonts = File(fontsPath)
+                        if (previousFonts.exists() && !previousFonts.copyRecursively(staging, true))
+                            throw IOException("Cannot retain existing fonts")
+                        if (!stagedFonts.copyRecursively(staging, true)) throw IOException("Cannot copy fonts")
+                    }
+                }
+                DirectoryReplacement.replace(firmwarePath) { staging ->
+                    if (!cacheFirmwareDir.copyRecursively(staging, true)) throw IOException("Cannot copy firmware")
+                }
                 writeLiteFirmware()
                 ImportResult(R.string.import_firmware_success, firmware.version)
             }
-        } catch (e : IOException) {
+        } catch (e : Exception) {
             ImportResult(R.string.error, null)
         } finally {
-            cacheFirmwareDir.deleteRecursively()
-            extractedDir.deleteRecursively()
+            workDir?.deleteRecursively()
         }
     }
 

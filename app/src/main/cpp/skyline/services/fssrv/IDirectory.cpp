@@ -28,9 +28,9 @@ namespace skyline::service::fssrv {
         auto outputEntries{request.outputBuf.at(0).cast<DirectoryEntry, std::dynamic_extent, true>()};
         size_t i{};
 
-        if (!entries.empty())
+        if (remainingReadCount < entries.size())
             for (; i < std::min(entries.size() - remainingReadCount, outputEntries.size()); i++) {
-                auto &entry{entries.at(i)};
+                auto &entry{entries.at(remainingReadCount + i)};
 
                 outputEntries[i] = {
                     .type = entry.type,
@@ -48,7 +48,7 @@ namespace skyline::service::fssrv {
 
     Result IDirectory::GetEntryCount(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
         auto entries{backing->Read()};
-        response.Push<u64>(entries.size() - remainingReadCount);
+        response.Push<u64>(entries.size() > remainingReadCount ? entries.size() - remainingReadCount : 0);
         return {};
     }
 }

@@ -68,7 +68,11 @@ namespace skyline::gpu {
          * @brief Signals this fence regardless of if the underlying fence has been signalled or not
          */
         void Cancel() {
-            signalled.test_and_set(std::memory_order_release);
+            {
+                std::scoped_lock lock{mutex};
+                signalled.test_and_set(std::memory_order_release);
+            }
+            submitCondition.notify_all();
             DestroyDependencies();
         }
 
@@ -123,7 +127,7 @@ namespace skyline::gpu {
             }
             lock.lock();
 
-            submitCondition.wait(lock, [this] { return submitted; });
+            submitCondition.wait(lock, [this] { return submitted || signalled.test(std::memory_order_acquire); });
         }
 
         /**
@@ -148,7 +152,7 @@ namespace skyline::gpu {
 
             std::unique_lock lock{mutex};
 
-            submitCondition.wait(lock, [&] { return submitted; });
+            submitCondition.wait(lock, [&] { return submitted || signalled.test(std::memory_order_acquire); });
 
             if (signalled.test(std::memory_order_relaxed)) {
                 if (shouldDestroy)
