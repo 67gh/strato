@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="delete_game_shader_cache">Supprimer le cache shaders</string>
+    <string name="delete_game_shader_cache_confirm">Supprimer le cache shaders de %1$s ? Il sera reconstruit au prochain lancement, ce qui peut causer des saccades temporaires. Vos sauvegardes seront conservées.</string>
+    <string name="game_shader_cache_deleted">Cache shaders supprimé.</string>
+    <string name="game_shader_cache_empty">Aucun cache shaders trouvé pour ce jeu.</string>
+    <string name="game_shader_cache_failed">Impossible de supprimer tout le cache shaders. Réessayez.</string>
+    <string name="game_shader_cache_active">Fermez le jeu en cours avant de supprimer son cache shaders.</string>
+</resources>

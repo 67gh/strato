@@ -216,8 +216,12 @@ namespace skyline::kernel {
         std::unique_lock lock(core->mutex);
         if (thread->scheduleCondition.wait_for(lock, timeout, [&]() {
             if (!thread->affinityMask.test(thread->coreId)) [[unlikely]] {
+                // InsertThread takes migration before core; never wait for migration while holding core.
+                lock.unlock();
                 std::scoped_lock migrationLock{thread->coreMigrationMutex};
-                MigrateToCore(thread, core, &cores.at(thread->idealCore), lock);
+                lock.lock();
+                if (!thread->affinityMask.test(thread->coreId))
+                    MigrateToCore(thread, core, &cores.at(thread->idealCore), lock);
             }
             return !core->queue.empty() && core->queue.front() == thread;
         })) {
@@ -238,7 +242,7 @@ namespace skyline::kernel {
 
         std::unique_lock lock(core.mutex);
 
-        if (core.queue.front() == thread) {
+        if (!core.queue.empty() && core.queue.front() == thread) {
             // If this thread is at the front of the thread queue then we need to rotate the thread
             // In the case where this thread was forcefully yielded, we don't need to do this as it's done by the thread which yielded to this thread
             // Splice the linked element from the beginning of the queue to where its priority is present
@@ -295,10 +299,12 @@ namespace skyline::kernel {
         auto *core{&cores.at(thread->coreId)};
         std::unique_lock coreLock(core->mutex);
 
-        auto currentIt{std::find(core->queue.begin(), core->queue.end(), thread)}, nextIt{std::next(currentIt)};
+        auto currentIt{std::find(core->queue.begin(), core->queue.end(), thread)};
         if (currentIt == core->queue.end()) {
             return;
-        } else if (currentIt == core->queue.begin()) {
+        }
+        auto nextIt{std::next(currentIt)};
+        if (currentIt == core->queue.begin()) {
             // Alternatively, if it's currently running then we'd just want to yield if there's a higher priority thread to run instead
             if (nextIt != core->queue.end() && (*nextIt)->priority < thread->priority) {
                 YieldThread(thread);
@@ -326,7 +332,7 @@ namespace skyline::kernel {
     void Scheduler::UpdateCore(const std::shared_ptr<type::KThread> &thread) {
         auto *core{&cores.at(thread->coreId)};
         std::scoped_lock coreLock{core->mutex};
-        if (core->queue.front() == thread)
+        if (!core->queue.empty() && core->queue.front() == thread)
             thread->SendSignal(YieldSignal);
         else
             thread->scheduleCondition.notify();
@@ -359,7 +365,7 @@ namespace skyline::kernel {
             auto &core{cores.at(thread->coreId)};
             std::unique_lock coreLock(core.mutex);
             auto nextThread{core.queue.size() > 1 ? *std::next(core.queue.begin()) : nullptr};
-            nextThread = nextThread->priority == thread->priority ? nextThread : nullptr; // If the next thread doesn't have the same priority then it won't be scheduled next
+            nextThread = nextThread && nextThread->priority == thread->priority ? nextThread : nullptr; // If the next thread doesn't have the same priority then it won't be scheduled next
             auto parkedThread{parkedQueue.front()};
 
             // We need to be conservative about waking up a parked thread, it should only be done if its priority is higher than the current thread

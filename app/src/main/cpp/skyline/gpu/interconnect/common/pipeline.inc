@@ -87,13 +87,18 @@ namespace skyline::gpu::interconnect {
         if constexpr (requires { desc.has_secondary; }) {
             if (desc.has_secondary) {
                 ConstantBuffer &secondaryCbuf{constantBuffers[desc.secondary_cbuf_index]};
+                if (!secondaryCbuf.view)
+                    return {.raw = 0};
                 size_t secondaryCbufOffset{desc.secondary_cbuf_offset + elemOffset};
                 u32 secondaryVal{secondaryCbuf.Read<u32>(ctx.executor, secondaryCbufOffset)};
                 return {.raw = (primaryVal << desc.shift_left) | (secondaryVal << desc.secondary_shift_left)};
             }
         }
 
-        return {.raw = primaryVal};
+        if constexpr (requires { desc.shift_left; })
+            return {.raw = primaryVal << desc.shift_left};
+        else
+            return {.raw = primaryVal};
     }
 
     static std::pair<vk::DescriptorImageInfo, TextureView *> GetTextureBinding(InterconnectContext &ctx, const auto &desc,

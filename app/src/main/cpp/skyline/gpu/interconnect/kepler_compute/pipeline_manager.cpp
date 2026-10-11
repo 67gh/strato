@@ -187,9 +187,13 @@ namespace skyline::gpu::interconnect::kepler_compute {
                                                                   storageBufferViews[storageBufferIdx],
                                                                   vk::PipelineStageFlagBits::eComputeShader,
                                                                   srcStageMask, dstStageMask)};
-                             storageBufferIdx += arrayIdx ? 0 : 1;
+                             storageBufferIdx += (arrayIdx + 1 == desc.count) ? 1 : 0;
                              return binding;
                          });
+
+        // Preserve the layout binding indices even while texel-buffer writes remain unsupported.
+        bindingIdx += shaderStage.info.texture_buffer_descriptors.size();
+        bindingIdx += shaderStage.info.image_buffer_descriptors.size();
 
         writeImageDescs(vk::DescriptorType::eCombinedImageSampler, shaderStage.info.texture_descriptors,
                         [&](const Shader::TextureDescriptor &desc, size_t arrayIdx) {

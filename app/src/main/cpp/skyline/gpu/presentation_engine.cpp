@@ -168,13 +168,10 @@ namespace skyline::gpu {
         if ((result = window->perform(window, NATIVE_WINDOW_GET_NEXT_FRAME_ID, &frameId)))
             throw exception("Retrieving the next frame's ID failed with {}", result);
 
+        // Intermediate timestamps precede the current real frame.
+        GenerateAndPresentIntermediateFrames(lock, frame.textureView, timestamp);
         PresentSwapchainImage(lock, *frame.textureView, timestamp);
         skyline::diagnostics::presentedFrames.fetch_add(1, std::memory_order_relaxed);
-
-        // Frame generation runs after the real frame has been submitted for presentation: it interpolates
-        // between the previous real frame and this one, then presents the results, effectively multiplying
-        // the perceived framerate without affecting emulation/input timing (which only ever sees real frames)
-        GenerateAndPresentIntermediateFrames(lock, frame.textureView, timestamp);
         lastRealFrame = frame.textureView;
         lastRealFrameTimestamp = timestamp;
 
@@ -250,14 +247,24 @@ namespace skyline::gpu {
         if (mode == FrameGenerator::Mode::Stable || !lastRealFrame || lastRealFrame->texture == currentFrame->texture)
             return; // Frame generation disabled, or there's no previous frame yet to interpolate from
 
+        if (lastRealFrame->texture->dimensions != currentFrame->texture->dimensions)
+            return; // Do not interpolate across a resolution change.
+
+        for (auto *source : {lastRealFrame->texture.get(), currentFrame->texture.get()}) {
+            source->TransitionLayout(vk::ImageLayout::eGeneral);
+            if (source->cycle)
+                source->cycle->Wait();
+        }
+
         if (!frameGenerator)
             frameGenerator.emplace(gpu, state.os->assetFileSystem);
 
         u32 extraFrames{FrameGenerator::FrameMultiplier(mode) - 1};
         std::vector<std::shared_ptr<TextureView>> generated;
 
-        auto cycle{gpu.scheduler.Submit([&](vk::raii::CommandBuffer &cmd) {
-            generated = frameGenerator->GenerateFrames(cmd, lastRealFrame.get(), currentFrame.get(), mode);
+        auto cycle{gpu.scheduler.Submit([&](vk::raii::CommandBuffer &cmd, const std::shared_ptr<FenceCycle> &recordCycle) {
+            recordCycle->AttachObjects(lastRealFrame, currentFrame);
+            generated = frameGenerator->GenerateFrames(cmd, recordCycle, lastRealFrame.get(), currentFrame.get(), mode);
         })};
         for (auto &view : generated) {
             // Chain onto any previous cycle this texture was used in (e.g. the last time it was read by

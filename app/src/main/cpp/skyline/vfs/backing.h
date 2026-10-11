@@ -74,10 +74,11 @@ namespace skyline::vfs {
             if ((size - offset) < output.size())
                 throw exception("Trying to read past the end of a backing: 0x{:X}/0x{:X} (Offset: 0x{:X})", output.size(), size, offset);
 
-            if (ReadUnchecked(output, offset) != output.size())
-                LOGW("Failed to read the requested size from backing");
+            const auto bytesRead{ReadUnchecked(output, offset)};
+            if (bytesRead != output.size())
+                throw exception("Failed to read the requested size from backing: {}/{}", bytesRead, output.size());
 
-            return size;
+            return bytesRead;
         };
 
         /**
@@ -95,7 +96,7 @@ namespace skyline::vfs {
          */
         template<typename T>
         T Read(size_t offset = 0) {
-            T object;
+            T object{};
             Read(span(reinterpret_cast<u8 *>(&object), sizeof(T)), offset);
             return object;
         }

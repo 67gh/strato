@@ -25,7 +25,13 @@ namespace skyline::service::fssrv {
             return result::InvalidSize;
         }
 
-        response.Push<u64>(backing->ReadUnchecked(request.outputBuf.at(0), static_cast<size_t>(offset)));
+        if (size == 0) {
+            response.Push<u64>(0);
+            return {};
+        }
+        if (request.outputBuf.at(0).size() < static_cast<size_t>(size))
+            return result::InvalidSize;
+        response.Push<u64>(backing->ReadUnchecked(request.outputBuf.at(0).first(static_cast<size_t>(size)), static_cast<size_t>(offset)));
         return {};
     }
 
@@ -45,12 +51,15 @@ namespace skyline::service::fssrv {
             return result::InvalidSize;
         }
 
+        if (size == 0)
+            return {};
+
         if (request.inputBuf.at(0).size() < size) {
             LOGW("The input buffer is not large enough to fit the requested size");
             return result::InvalidSize;
         }
 
-        if (backing->Write(request.inputBuf.at(0), static_cast<size_t>(offset)) != size) {
+        if (backing->Write(request.inputBuf.at(0).first(static_cast<size_t>(size)), static_cast<size_t>(offset)) != size) {
             LOGW("Failed to write all data to the backing");
             return result::UnexpectedFailure;
         }
