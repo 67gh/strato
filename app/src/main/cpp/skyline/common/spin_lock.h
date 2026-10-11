@@ -201,7 +201,7 @@ namespace skyline {
 
                 // The predicate has been satisfied, we're done here
                 fallbackWaiter = false;
-                fallbackMutex.unlock();
+                fallbackLock.unlock();
 
                 lock.lock();
             }

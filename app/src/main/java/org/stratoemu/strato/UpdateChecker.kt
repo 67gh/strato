@@ -5,6 +5,7 @@ package org.stratoemu.strato
 
 import android.util.Log
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -35,9 +36,8 @@ data class UpdateInfo(
  * version. Comparing the release's `published_at` timestamp against [currentBuildTimeMs]
  * is therefore the reliable way to answer "is there a build newer than the APK installed here?".
  *
- * This never throws: any network failure, malformed response, or parsing error results in
- * `null` being returned so that a failed check is silently ignored rather than shown to
- * the user or crashing the app, matching the "no popup unless there's an update" requirement.
+ * Failures are returned separately from a successful check with no update. Callers can
+ * keep automatic checks silent while reporting failures of a manual check.
  */
 object UpdateChecker {
     private const val TAG = "UpdateChecker"
@@ -49,9 +49,9 @@ object UpdateChecker {
      * @param currentBuildTimeMs Epoch milliseconds of the commit used to build the currently
      *                            running APK
      * @param currentBuildCommitFull Full git commit hash embedded in the APK
-     * @return Information about the newer release if one exists, otherwise `null`
+     * @return Success containing a newer release or null, or a failed check
      */
-    fun checkForUpdate(owner : String, repo : String, currentBuildTimeMs : Long, currentBuildCommitFull : String) : UpdateInfo? {
+    fun checkForUpdate(owner : String, repo : String, currentBuildTimeMs : Long, currentBuildCommitFull : String) : Result<UpdateInfo?> {
         return try {
             val url = URL("https://api.github.com/repos/$owner/$repo/releases?per_page=20")
             val connection = url.openConnection() as HttpURLConnection
@@ -61,8 +61,7 @@ object UpdateChecker {
 
             try {
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                    Log.w(TAG, "GitHub API returned HTTP ${connection.responseCode}, skipping update check")
-                    return null
+                    throw IOException("GitHub API returned HTTP ${connection.responseCode}")
                 }
 
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
@@ -84,13 +83,17 @@ object UpdateChecker {
                     }
                 }
 
-                val release = newestRelease ?: return null
+                val release = newestRelease ?: run {
+                    if (releases.length() != 0)
+                        throw IOException("No usable published release in response")
+                    return Result.success(null)
+                }
                 if (newestReleaseTimeMs <= currentBuildTimeMs)
-                    return null // Already up to date (or somehow newer, e.g. a local dev build)
+                    return Result.success(null) // Already up to date (or a newer local build)
 
                 val tagName = release.optString("tag_name", "")
                 if (tagName.isEmpty())
-                    return null
+                    throw IOException("Release has no tag name")
 
                 // The release workflow tags the exact commit as vYYYY.MM.DD-<12-char-sha>.
                 // The APK stores the full commit hash. Comparing the tag's commit prefix
@@ -98,7 +101,7 @@ object UpdateChecker {
                 // even if the release is published after the APK was built.
                 val releaseCommit = tagName.substringAfterLast('-', "")
                 if (releaseCommit.isNotEmpty() && currentBuildCommitFull.startsWith(releaseCommit))
-                    return null
+                    return Result.success(null)
 
                 val releaseUrl = release.optString(
                     "html_url",
@@ -114,23 +117,20 @@ object UpdateChecker {
                         val name = asset.optString("name", "")
                         val url = asset.optString("browser_download_url", null)
                         when {
-                            name.endsWith(".zip", ignoreCase = true) && zipDownloadUrl == null -> zipDownloadUrl = url
+                            name.equals("strato-update.zip", ignoreCase = true) && zipDownloadUrl == null -> zipDownloadUrl = url
                             name.endsWith(".apk", ignoreCase = true) && apkDownloadUrl == null -> apkDownloadUrl = url
                         }
                     }
                 }
 
                 val downloadUrl = zipDownloadUrl ?: apkDownloadUrl
-                UpdateInfo(tagName, releaseUrl, downloadUrl, zipDownloadUrl != null)
+                Result.success(UpdateInfo(tagName, releaseUrl, downloadUrl, zipDownloadUrl != null))
             } finally {
                 connection.disconnect()
             }
         } catch (e : Exception) {
-            // Deliberately broad: no network, DNS failure, malformed JSON, GitHub API rate
-            // limiting, etc. should all just mean "couldn't check right now", never a crash
-            // or a wrongly-shown popup.
-            Log.w(TAG, "Update check failed, ignoring: ${e.message}")
-            null
+            Log.w(TAG, "Update check failed: ${e.message}")
+            Result.failure(e)
         }
     }
 

@@ -67,7 +67,7 @@ namespace skyline::gpu {
         vk::DescriptorSet descriptorSet{};
 
         auto result{(*gpu.vkDevice).allocateDescriptorSets(&allocateInfo, &descriptorSet, *gpu.vkDevice.getDispatcher())};
-        if (pool->freeSetCount > 0)
+        if (result == vk::Result::eSuccess && pool->freeSetCount > 0)
             pool->freeSetCount--;
 
         return vk::createResultValue(result, descriptorSet, __builtin_FUNCTION(), {
