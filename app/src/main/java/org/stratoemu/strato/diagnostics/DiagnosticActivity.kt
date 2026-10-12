@@ -2,6 +2,7 @@
 
 package org.stratoemu.strato.diagnostics
 
+import androidx.preference.PreferenceManager
 import android.content.ClipData
 import android.content.Intent
 import android.os.Bundle
@@ -49,6 +50,23 @@ class DiagnosticActivity : AppCompatActivity() {
                     render()
                 }
                 .show()
+        }
+        binding.diagnosticOptions.setOnClickListener {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val labels = arrayOf(getString(R.string.diagnostic_validation_off), getString(R.string.diagnostic_validation_core), getString(R.string.diagnostic_validation_sync), getString(R.string.diagnostic_validation_gpu))
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.diagnostic_options_title)
+                .setSingleChoiceItems(labels, prefs.getInt("diagnostic_validation_mode", 0).coerceIn(0, 3)) { _, selected ->
+                    prefs.edit().putInt("diagnostic_validation_mode", selected).apply()
+                }
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton(R.string.diagnostic_shader_options) { _, _ ->
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle(R.string.diagnostic_shader_options)
+                        .setMultiChoiceItems(arrayOf(getString(R.string.diagnostic_save_shaders)), booleanArrayOf(prefs.getBoolean("diagnostic_capture_shaders", true))) { _, _, checked ->
+                            prefs.edit().putBoolean("diagnostic_capture_shaders", checked).apply()
+                        }.setPositiveButton(android.R.string.ok, null).show()
+                }.show()
         }
         binding.refreshSessions.setOnClickListener { refresh() }
         binding.exportDiagnostic.setOnClickListener { export() }

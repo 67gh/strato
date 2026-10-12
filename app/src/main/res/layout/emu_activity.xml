@@ -32,6 +32,13 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
+        <Button
+            android:id="@+id/diagnostic_capture"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_gravity="top|center_horizontal"
+            android:text="@string/diagnostic_capture_title" />
+
         <TextView
             android:id="@+id/perf_stats"
             android:layout_width="wrap_content"

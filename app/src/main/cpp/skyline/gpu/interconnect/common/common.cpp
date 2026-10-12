@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2022 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <gpu/buffer_manager.h>
 #include <soc/gm20b/channel.h>
 #include <soc/gm20b/gmmu.h>
@@ -8,6 +9,7 @@
 
 namespace skyline::gpu::interconnect {
     void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn) {
+        skyline::diagnostics::Event("buffer_mapping_request", ctx.channelCtx.asCtx->gmmu.diagnosticSpaceId, address, size);
         if (!size) {
             view = {};
             return;
@@ -17,6 +19,7 @@ namespace skyline::gpu::interconnect {
             u64 blockOffset{};
             std::tie(blockMapping, blockOffset) = ctx.channelCtx.asCtx->gmmu.LookupBlock(address);
             if (!blockMapping.valid()) {
+                skyline::diagnostics::Event("buffer_unmapped", ctx.channelCtx.asCtx->gmmu.diagnosticSpaceId, address, size);
                 view = {};
                 blockMappingEndAddr = 0;
                 return;
@@ -42,6 +45,8 @@ namespace skyline::gpu::interconnect {
 
         // Constant/index buffer callers may supply an estimated upper bound.
         // Exact-size resources (texel buffers) reject a shorter view themselves.
+        if (fullMapping.size() < size) skyline::diagnostics::Event("buffer_partial_mapping", ctx.channelCtx.asCtx->gmmu.diagnosticSpaceId, address, fullMapping.size());
+        skyline::diagnostics::Event("buffer_host_range", ctx.channelCtx.asCtx->gmmu.diagnosticSpaceId, reinterpret_cast<uintptr_t>(fullMapping.data()), std::min(fullMapping.size(), size));
         auto viewMapping{fullMapping.first(std::min(fullMapping.size(), size))};
 
         // First attempt to skip lookup by trying to reuse the previous view's underlying buffer

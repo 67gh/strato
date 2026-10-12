@@ -2,6 +2,7 @@
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 #pragma once
+#include "diagnostic_recorder.h"
 
 #include <boost/container/small_vector.hpp>
 #include <concepts>
@@ -162,6 +163,7 @@ namespace skyline {
         }
 
       public:
+        const diagnostics::Id diagnosticSpaceId{diagnostics::NewId()};
         FlatMemoryManager();
 
         ~FlatMemoryManager();
@@ -292,6 +294,7 @@ namespace skyline {
             if (!size)
                 return;
             this->MapLocked(virt, phys, size, extraInfo);
+            diagnostics::Mapping(diagnosticSpaceId, virt, size, reinterpret_cast<uintptr_t>(phys), extraInfo.sparseMapped, false);
             hasUnalignedMappings |= ((virt | size) & ((1ULL << VaGranularityBits) - 1)) != 0;
             RefreshBlockSegments(virt, size);
         }
@@ -302,6 +305,7 @@ namespace skyline {
             if (!size)
                 return;
             this->UnmapLocked(virt, size);
+            diagnostics::Mapping(diagnosticSpaceId, virt, size, 0, false, true);
             hasUnalignedMappings |= ((virt | size) & ((1ULL << VaGranularityBits) - 1)) != 0;
             RefreshBlockSegments(virt, size);
         }

@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.hpp>
 #include "command_scheduler.h"
 #include "diagnostics.h"
+#include "diagnostic_device_fault.h"
 #include "common/exception.h"
 
 namespace skyline::gpu {
@@ -80,6 +81,8 @@ namespace skyline::gpu {
     }
 
     void CommandScheduler::SubmitCommandBuffer(const vk::raii::CommandBuffer &commandBuffer, std::shared_ptr<FenceCycle> cycle, span<vk::Semaphore> waitSemaphores, span<vk::Semaphore> signalSemaphores) {
+        skyline::diagnostics::Scope scope(cycle->diagnosticId);
+        skyline::diagnostics::Event("submit_begin", cycle->diagnosticId, waitSemaphores.size(), signalSemaphores.size());
         boost::container::small_vector<vk::Semaphore, 3> fullWaitSemaphores{waitSemaphores.begin(), waitSemaphores.end()};
         boost::container::small_vector<vk::PipelineStageFlags, 3> fullWaitStages{waitSemaphores.size(), vk::PipelineStageFlagBits::eAllCommands};
 
@@ -92,6 +95,10 @@ namespace skyline::gpu {
         boost::container::small_vector<vk::Semaphore, 2> fullSignalSemaphores{signalSemaphores.begin(), signalSemaphores.end()};
         fullSignalSemaphores.push_back(cycle->semaphore);
 
+        for (auto semaphore : fullWaitSemaphores)
+            skyline::diagnostics::Event("submit_wait_semaphore", cycle->diagnosticId, reinterpret_cast<uintptr_t>(static_cast<VkSemaphore>(semaphore)));
+        for (auto semaphore : fullSignalSemaphores)
+            skyline::diagnostics::Event("submit_signal_semaphore", cycle->diagnosticId, reinterpret_cast<uintptr_t>(static_cast<VkSemaphore>(semaphore)));
         {
             try {
                 std::scoped_lock lock{gpu.queueMutex};
@@ -105,6 +112,7 @@ namespace skyline::gpu {
                     .pSignalSemaphores = fullSignalSemaphores.data(),
                 }, cycle->fence);
             } catch (const vk::DeviceLostError &e) {
+                diagnostics::CaptureDeviceFault(static_cast<VkDevice>(*gpu.vkDevice));
                 diagnostics::DumpFaultReport("the device was lost while submitting commands");
                 // Wait 5 seconds to give traces etc. time to settle
                 std::this_thread::sleep_for(std::chrono::seconds(5));

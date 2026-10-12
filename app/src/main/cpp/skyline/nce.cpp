@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_crash.h>
 #include <fstream>
 #include <cxxabi.h>
 #include <linux/elf.h>
@@ -159,6 +160,7 @@ namespace skyline::nce {
             return;
 
         if (signal != SIGINT) {
+            diagnostics::RecordRawCrash(signal, mctx.fault_address, mctx.pc, mctx.regs[30], mctx.sp, mctx.regs[29], true);
             signal::StackFrame topFrame{.lr = reinterpret_cast<void *>(ctx->uc_mcontext.pc), .next = reinterpret_cast<signal::StackFrame *>(ctx->uc_mcontext.regs[29])};
             std::string trace{state.loader->GetStackTrace(&topFrame)};
 

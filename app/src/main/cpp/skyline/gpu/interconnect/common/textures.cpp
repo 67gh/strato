@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2022 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <soc/gm20b/channel.h>
 #include <soc/gm20b/gmmu.h>
 #include <gpu/texture_manager.h>
@@ -361,7 +362,7 @@ namespace skyline::gpu::interconnect {
         return texture.get();
     }
 
-    TexelBufferBinding Textures::GetTexelBuffer(InterconnectContext &ctx, u32 index, bool storage, Shader::ImageFormat shaderFormat) {
+    TexelBufferBinding Textures::GetTexelBuffer(InterconnectContext &ctx, u32 index, bool storage, Shader::ImageFormat shaderFormat) try {
         auto headers{texturePool.UpdateGet(ctx).textureHeaders};
         if (index >= headers.size())
             throw exception("Texel buffer TIC index {} exceeds pool size {}", index, headers.size());
@@ -432,8 +433,13 @@ namespace skyline::gpu::interconnect {
         mapped.Update(ctx, tic.Iova(), bytes, false);
         if (!mapped.view || mapped.view.size != bytes)
             throw exception("Unmapped or split texel buffer at TIC {} (address=0x{:X}, bytes={})", index, tic.Iova(), bytes);
+        skyline::diagnostics::Event("texel_descriptor", index, tic.Iova(), bytes, storage ? "storage" : "sampled");
+        skyline::diagnostics::SaveArtifact("tic", index, &tic, sizeof(tic), "bin");
         ctx.executor.AttachBuffer(mapped.view);
         return {mapped.view, format->vkFormat, std::max<vk::DeviceSize>(1, limits.minTexelBufferOffsetAlignment)};
+    } catch (const std::exception &error) {
+        skyline::diagnostics::Unsupported("texel_descriptor", index, error.what());
+        throw;
     }
 
     Shader::TextureType Textures::GetTextureType(InterconnectContext &ctx, u32 index) {

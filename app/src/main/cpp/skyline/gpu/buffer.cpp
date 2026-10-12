@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <adrenotools/driver.h>
 #include <gpu.h>
 #include <kernel/memory.h>
@@ -90,6 +91,7 @@ namespace skyline::gpu {
                 return false;
 
             if (!buffer->AllCpuBackingWritesBlocked() && buffer->dirtyState != DirtyState::GpuDirty) {
+                skyline::diagnostics::Event("buffer_cpu_write_trap", buffer->id);
                 buffer->dirtyState = DirtyState::CpuDirty;
                 return true;
             }
@@ -379,6 +381,7 @@ namespace skyline::gpu {
         else
             backing = gpu.memory.AllocateBuffer(mirror.size());
 
+        skyline::diagnostics::Event("buffer_create", id, reinterpret_cast<uintptr_t>(guest.data()), guest.size(), direct ? "direct" : "staged");
         megaBufferTable.resize(guest.size() / (1 << megaBufferTableShift));
     }
 
@@ -387,6 +390,7 @@ namespace skyline::gpu {
           backing{gpu.memory.AllocateBuffer(size)},
           delegate{delegateAllocator.EmplaceUntracked<BufferDelegate>(this)},
           id{id} {
+        skyline::diagnostics::Event("buffer_create", id, 0, size, "host_only");
         dirtyState = DirtyState::Clean; // Since this is a host-only buffer it's always going to be clean
     }
 
@@ -397,12 +401,14 @@ namespace skyline::gpu {
         if (mirror.valid())
             munmap(mirror.data(), mirror.size());
         WaitOnFence();
+        skyline::diagnostics::Event("buffer_destroy", id);
     }
 
     void Buffer::MarkGpuDirty(UsageTracker &usageTracker) {
         if (!guest)
             return;
 
+        skyline::diagnostics::Event("buffer_gpu_write_scheduled", id, reinterpret_cast<uintptr_t>(guest->data()), guest->size());
         usageTracker.dirtyIntervals.Insert(*guest);
         MarkGpuDirtyImpl();
     }
@@ -507,6 +513,7 @@ namespace skyline::gpu {
     }
 
     bool Buffer::Write(span<u8> data, vk::DeviceSize offset, UsageTracker &usageTracker, const std::function<void()> &gpuCopyCallback) {
+        skyline::diagnostics::Event("buffer_write_attempt", id, offset, data.size());
         AdvanceSequence(); // We are modifying GPU backing contents so advance to the next sequence
         everHadInlineUpdate = true;
 

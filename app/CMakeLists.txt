@@ -256,6 +256,8 @@ add_library(skyline SHARED
         ${source_DIR}/loader_jni.cpp
         ${source_DIR}/skyline/common.cpp
         ${source_DIR}/skyline/common/exception.cpp
+        ${source_DIR}/skyline/common/diagnostic_recorder.cpp
+        ${source_DIR}/skyline/common/diagnostic_crash.cpp
         ${source_DIR}/skyline/common/signal.cpp
         ${source_DIR}/skyline/common/spin_lock.cpp
         ${source_DIR}/skyline/common/uuid.cpp
@@ -519,6 +521,9 @@ add_library(skyline SHARED
 target_include_directories(skyline PRIVATE ${source_DIR}/skyline)
 # target_precompile_headers(skyline PRIVATE ${source_DIR}/skyline/common.h) # PCH will currently break Intellisense
 target_compile_options(skyline PRIVATE -Wall -Wno-unknown-attributes -Wno-c++20-extensions -Wno-c++17-extensions -Wno-c99-designator -Wno-reorder -Wno-missing-braces -Wno-unused-variable -Wno-unused-private-field -Wno-dangling-else -Wconversion -fsigned-bitfields)
+
+target_link_options(skyline PRIVATE "-Wl,--build-id=sha1")
+target_compile_options(skyline PRIVATE -g)
 
 target_link_libraries(skyline PRIVATE shader_recompiler audio_core)
 if (STRATO_JIT_ENABLED)

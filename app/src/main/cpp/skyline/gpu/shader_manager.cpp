@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <fstream>
 #include <range/v3/algorithm.hpp>
 #include <boost/functional/hash.hpp>
@@ -52,9 +53,11 @@ namespace skyline::gpu {
     }
 
     span<u8> ShaderManager::ProcessShaderBinary(bool spv, u64 hash, span<u8> binary) {
+        skyline::diagnostics::SaveArtifact(spv ? "spirv" : "guest", hash, binary.data(), binary.size(), spv ? "spv" : "bin");
         auto &replacementMap{spv ? hostShaderReplacements : guestShaderReplacements};
         auto it{replacementMap.find(hash)};
         if (it != replacementMap.end()) {
+            skyline::diagnostics::SaveArtifact(spv ? "replacement-spirv" : "replacement-guest", hash, it->second.data(), it->second.size(), spv ? "spv" : "bin");
             LOGI("Replacing shader with hash: 0x{:X}", hash);
             return it->second;
         }
@@ -428,6 +431,13 @@ namespace skyline::gpu {
         if (program.info.loads.Legacy() || program.info.stores.Legacy())
             Shader::Maxwell::ConvertLegacyToGeneric(program, runtimeInfo);
 
+        if (skyline::diagnostics::ShaderCaptureEnabled()) {
+            try {
+                auto ir = Shader::IR::DumpProgram(program);
+                skyline::diagnostics::SaveArtifact("ir", hash, ir.data(), ir.size(), "txt");
+            } catch (...) { skyline::diagnostics::Event("shader_ir_capture_failed", hash); }
+        }
+        skyline::diagnostics::Event("shader_compile_begin", hash);
         auto spirvEmitted{Shader::Backend::SPIRV::EmitSPIRV(profile, runtimeInfo, program, bindings)};
         auto spirv{ProcessShaderBinary(true, hash, span<u32>{spirvEmitted}.cast<u8>()).cast<u32>()};
 

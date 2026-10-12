@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <common/diagnostic_recorder.h>
+#include <common/diagnostic_session.h>
 #include <fstream>
 #include <sstream>
 #include <chrono>
@@ -382,7 +384,9 @@ namespace skyline::nce {
             const long ticksPerSecond{sysconf(_SC_CLK_TCK)};
             const long pageSize{sysconf(_SC_PAGESIZE)};
             std::unordered_map<int, Sample> previous;
-            u64 index{}, hotPeriods{};
+            u64 index{}, hotPeriods{}, stalePeriods{}, lastCapture{};
+            auto previousProgress = diagnostics::GetProgress();
+            auto lastHang = std::chrono::steady_clock::now() - std::chrono::seconds(30);
 
             std::unique_lock lock{mutex};
             while (!stop) {
@@ -457,14 +461,53 @@ namespace skyline::nce {
                 }
 
                 index++;
-                LOGINF("Watchdog #{}: RSS {} MiB, threads: {} running, {} sleeping, {} disk-wait, {} other{}", index, rssPages * pageSize / (1024 * 1024), running, sleeping, disk, other, details);
+                if (index % 5 == 0) LOGINF("Watchdog #{}: RSS {} MiB, threads: {} running, {} sleeping, {} disk-wait, {} other{}", index, rssPages * pageSize / (1024 * 1024), running, sleeping, disk, other, details);
 
-                bool full{!hotThreads.empty() ? (hotPeriods++ % 6) == 0 : (index == 6 || (index > 6 && index % 12 == 0))};
+                const auto progress = diagnostics::GetProgress();
+                const bool advanced = progress.frames != previousProgress.frames || progress.completed != previousProgress.completed;
+                stalePeriods = advanced || diagnostics::IsPaused() ? 0 : stalePeriods + 1;
+                const auto request = diagnostics::CaptureRequest();
+                const bool manual = request != lastCapture;
+                const auto now = std::chrono::steady_clock::now();
+                const bool stalled = stalePeriods >= 5 && now - lastHang >= std::chrono::seconds(30);
+                if (manual || stalled) {
+                    lastHang = now;
+                    try {
+                        const char *suspect = progress.submitted > progress.completed ? "gpu_or_fence_wait" :
+                            ((progress.draws != previousProgress.draws || progress.dispatches != previousProgress.dispatches) ? "recording_or_submission" : "guest_wait_loading_or_idle");
+                        std::ostringstream report;
+                        report << "{\"schema_version\":1,\"request\":" << request
+                            << ",\"trigger\":\"" << (manual ? "manual" : "no_completion_or_present_10s")
+                            << "\",\"suspect\":\"" << suspect << "\",\"proven_cause\":false,\"paused\":" << (diagnostics::IsPaused() ? "true" : "false")
+                            << ",\"guest_threads\":\"" << diagnostics::JsonEscape(DumpThreadTable(*state, hostInfo))
+                            << "\",\"scheduler\":\"" << diagnostics::JsonEscape(DumpSchedulerQueues(*state))
+                            << "\",\"waiters\":\"" << diagnostics::JsonEscape(DumpSyncWaiters(*state)) << "\",\"samples\":[";
+                        size_t sampled{};
+                        for (const auto &[tid, name] : stackThreads) {
+                            if (sampled == 32) break;
+                            if (sampled++) report << ',';
+                            bool answered = samplerEnabled && SampleThread(tid);
+                            report << "{\"tid\":" << tid << ",\"name\":\"" << diagnostics::JsonEscape(name)
+                                   << "\",\"answered\":" << (answered ? "true" : "false");
+                            if (answered) report << ",\"guest\":" << (capture.guest ? "true" : "false") << ",\"pc\":" << capture.pc
+                                << ",\"lr\":" << capture.lr << ",\"sp\":" << capture.sp << ",\"fp\":" << capture.fp
+                                << ",\"stack\":\"" << diagnostics::JsonEscape(Symbolize(*state, CollectFrames())) << '"';
+                            report << '}';
+                        }
+                        report << "],\"sample_limit\":32,\"thread_candidates\":" << stackThreads.size()
+                               << ",\"consistency\":\"live_advisory_trylocks_may_skip\"}";
+                        if (diagnostics::WriteJson("hang_snapshot.json", report.str()) && diagnostics::FlushRecorder(manual ? "manual" : "stall"))
+                            lastCapture = request;
+                    } catch (...) { diagnostics::Event("watchdog_snapshot_failed"); }
+                }
+                previousProgress = progress;
+
+                bool full{index % 5 == 0 && (!hotThreads.empty() ? (hotPeriods++ % 6) == 0 : (index == 30 || (index > 30 && index % 60 == 0)))};
                 if (full) {
                     LOGINF("Watchdog #{}: FULL REPORT ({} spinning guest threads)\n guest threads:{}\n scheduler queues:{}\n address arbiter / condition variable waiters:{}", index, hotThreads.size(), DumpThreadTable(*state, hostInfo), DumpSchedulerQueues(*state), DumpSyncWaiters(*state));
                 }
 
-                if (!hotThreads.empty())
+                if (!hotThreads.empty() && index % 5 == 0)
                     SampleHotThreads(*state, index, hotThreads, full);
 
                 if (full && samplerEnabled) {
@@ -478,7 +521,7 @@ namespace skyline::nce {
         }
 
       public:
-        static void Start(const DeviceState &state, std::chrono::seconds period = std::chrono::seconds{10}) {
+        static void Start(const DeviceState &state, std::chrono::seconds period = std::chrono::seconds{2}) {
             std::scoped_lock lock{mutex};
             if (thread.joinable())
                 return;
@@ -493,6 +536,7 @@ namespace skyline::nce {
 
             stop = false;
             thread = std::thread{&HangWatchdog::Run, &state, period};
+            diagnostics::Feature("watchdog", samplerEnabled ? "active; progress and manual snapshots; bounded PC/LR signal samples" : "active; PC/LR sampling unavailable; scheduler/waiter snapshots only");
         }
 
         /**

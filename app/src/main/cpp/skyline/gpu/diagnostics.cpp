@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#include <common/diagnostic_recorder.h>
 #include <chrono>
 #include <cerrno>
 #include <deque>
@@ -33,6 +34,8 @@ namespace skyline::gpu::diagnostics {
     }
 
     void Record(std::string_view category, std::string_view message) noexcept {
+        skyline::diagnostics::Event(category, 0, 0, 0, message);
+        skyline::diagnostics::ObserveLog(category, message);
         try {
             std::scoped_lock lock{mutex};
             auto elapsedMs{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count()};
@@ -45,6 +48,8 @@ namespace skyline::gpu::diagnostics {
     }
 
     void DumpFaultReport(std::string_view reason) noexcept {
+        skyline::diagnostics::Event("gpu_fault", 0, 0, 0, reason);
+        skyline::diagnostics::RequestCapture();
         try {
             std::scoped_lock lock{mutex};
             if (reported || path.empty())

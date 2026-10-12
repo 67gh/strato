@@ -659,6 +659,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
     Pipeline::Pipeline(GPU &gpu, PipelineStateAccessor &accessor, const PackedPipelineState &packedState)
         : sourcePackedState{packedState} {
+        for (auto hash : packedState.shaderHashes) skyline::diagnostics::Event("pipeline_shader", reinterpret_cast<uintptr_t>(this), hash);
         auto shaderStages{MakePipelineShaders(gpu, accessor, sourcePackedState)};
         descriptorInfo = MakePipelineDescriptorInfo(shaderStages, gpu.traits.quirks.needsIndividualTextureBindingWrites);
         compiledPipeline = MakeCompiledPipeline(gpu, sourcePackedState, shaderStages, descriptorInfo.descriptorSetLayoutBindings);
@@ -988,6 +989,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 lastKnownGoodOffset = stream.tellg();
                 auto accessor{FilePipelineStateAccessor{bundle}};
                 auto *pipeline{map.emplace(bundle.GetKey<PackedPipelineState>(), std::make_unique<Pipeline>(gpu, accessor, bundle.GetKey<PackedPipelineState>())).first.value().get()};
+                skyline::diagnostics::Event("pipeline_from_cache", reinterpret_cast<uintptr_t>(pipeline));
                 #ifdef PIPELINE_STATS
                 auto sharedIt{sharedPipelines.find(pipeline->sourcePackedState.shaderHashes)};
                 if (sharedIt == sharedPipelines.end())

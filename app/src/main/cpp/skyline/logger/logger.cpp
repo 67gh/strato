@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright © 2023 Strato Team and Contributors (https://github.com/strato-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -223,6 +224,7 @@ namespace skyline {
     }
 
     void AsyncLogger::LogAsync(LogLevel level, std::string &&str, const char *function) {
+        diagnostics::ObserveLog(function ? function : "log", str);
         impl.Push(LogMessage{
             level,
             function,
@@ -233,6 +235,7 @@ namespace skyline {
     }
 
     void AsyncLogger::LogSync(LogLevel level, std::string &&str, const char *function) {
+        diagnostics::ObserveLog(function ? function : "log", str);
         auto message = LogMessage{
             level,
             function,

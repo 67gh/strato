@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include "skyline/common/diagnostic_crash.h"
+#include "skyline/common/diagnostic_recorder.h"
 #include <csignal>
 #include <pthread.h>
 #include <android/asset_manager_jni.h>
@@ -59,6 +61,8 @@ static std::string GetTimeZoneName() {
 }
 
 static void RecordNativeFailure(std::string_view type, std::string_view message) noexcept {
+    skyline::diagnostics::Event("native_failure", 0, 0, 0, message);
+    skyline::diagnostics::FlushRecorder(type);
     try {
         skyline::diagnostics::WriteJson("native_failure.json", fmt::format(R"({{"type":"{}","message":"{}"}})",
             skyline::diagnostics::JsonEscape(type), skyline::diagnostics::JsonEscape(message)));
@@ -93,6 +97,8 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApp
 
     skyline::JniString publicAppFilesPath(env, publicAppFilesPathJstring);
     skyline::diagnostics::Configure(skyline::JniString(env, diagnosticPathJstring));
+    skyline::diagnostics::InitializeRecorder();
+    skyline::diagnostics::InitializeCrashCapture();
 
     skyline::diagnostics::WriteJson("native.json",
 #ifdef STRATO_JIT_FALLBACK
@@ -132,6 +138,7 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApp
         AudioWeak = os->state.audio;
         InputWeak = os->state.input;
         SettingsWeak = settings;
+        skyline::diagnostics::SnapshotModules();
         jvmManager->InitializeControllers();
 
         LOGDNF("Launching ROM {}", skyline::JniString(env, romUriJstring));
@@ -156,8 +163,16 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApp
     LOGINF("Emulation has ended in {}ms", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 
     skyline::nce::JitFallback::Flush();
+    skyline::diagnostics::ShutdownRecorder();
+    skyline::diagnostics::CloseCrashCapture();
     skyline::AsyncLogger::Finalize(true);
     close(romFd);
+}
+
+extern "C" JNIEXPORT jlong Java_org_stratoemu_strato_EmulationActivity_requestDiagnosticCapture(JNIEnv *, jobject, jboolean gpuCapture) {
+    if (!skyline::diagnostics::RecorderEnabled()) return 0;
+    if (gpuCapture) skyline::diagnostics::RequestFrameCapture();
+    return static_cast<jlong>(skyline::diagnostics::RequestCapture());
 }
 
 extern "C" JNIEXPORT jlong Java_org_stratoemu_strato_EmulationActivity_getDiagnosticPresentedFrames(JNIEnv *, jobject) {
@@ -179,6 +194,7 @@ extern "C" JNIEXPORT jboolean Java_org_stratoemu_strato_EmulationActivity_setSur
     auto gpu{GpuWeak.lock()};
     if (!gpu)
         return false;
+    skyline::diagnostics::SetPaused(surface == nullptr);
     gpu->presentation.UpdateSurface(surface);
     return true;
 }

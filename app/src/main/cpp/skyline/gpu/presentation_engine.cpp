@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <android/native_window_jni.h>
 #include <android/choreographer.h>
 #include <common/settings.h>
@@ -172,6 +173,7 @@ namespace skyline::gpu {
         GenerateAndPresentIntermediateFrames(lock, frame.textureView, timestamp);
         PresentSwapchainImage(lock, *frame.textureView, timestamp);
         skyline::diagnostics::presentedFrames.fetch_add(1, std::memory_order_relaxed);
+        skyline::diagnostics::Presented();
         lastRealFrame = frame.textureView;
         lastRealFrameTimestamp = timestamp;
 

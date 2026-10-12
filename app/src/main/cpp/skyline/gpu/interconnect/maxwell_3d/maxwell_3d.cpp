@@ -143,6 +143,8 @@ namespace skyline::gpu::interconnect::maxwell3d {
                             indexed, topology, estimateIndexBufferSize, firstIndex, count,
                             srcStageMask, dstStageMask);
          Pipeline *pipeline{activeState.GetPipeline()};
+         skyline::diagnostics::correlation.pipeline = reinterpret_cast<uintptr_t>(pipeline);
+         skyline::diagnostics::Event("graphics_pipeline", reinterpret_cast<uintptr_t>(pipeline));
          activeDescriptorSetSampledImages.resize(pipeline->GetTotalSampledImageCount());
 
 
@@ -300,6 +302,9 @@ namespace skyline::gpu::interconnect::maxwell3d {
     }
 
     void Maxwell3D::Draw(engine::DrawTopology topology, bool transformFeedbackEnable, bool indexed, u32 count, u32 first, u32 instanceCount, u32 vertexOffset, u32 firstInstance) {
+        skyline::diagnostics::Scope diagnosticScope(ctx.executor.cycle->diagnosticId);
+        skyline::diagnostics::CountDraw();
+        skyline::diagnostics::Event("draw_attempt", indexed, count, instanceCount);
         TRACE_EVENT("gpu", "Draw", "indexed", indexed, "count", count, "instanceCount", instanceCount);
 
         StateUpdateBuilder builder{*ctx.executor.allocator};
@@ -361,6 +366,9 @@ namespace skyline::gpu::interconnect::maxwell3d {
     }
 
     void Maxwell3D::DrawIndirect(engine::DrawTopology topology, bool transformFeedbackEnable, bool indexed, span<u8> indirectBuffer, u32 count, u32 stride) {
+        skyline::diagnostics::Scope diagnosticScope(ctx.executor.cycle->diagnosticId);
+        skyline::diagnostics::CountDraw();
+        skyline::diagnostics::Event("draw_indirect_attempt", indexed, count, stride);
         if (!count)
             return;
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_crash.h>
 #include <unistd.h>
 #include <dlfcn.h>
 #include <unwind.h>
@@ -83,6 +84,7 @@ namespace skyline::signal {
     }
 
     void ExceptionalSignalHandler(int signal, siginfo *info, ucontext *context) {
+        if (signal != SIGINT) diagnostics::RecordRawCrash(signal, reinterpret_cast<uintptr_t>(info->si_addr), context->uc_mcontext.pc, context->uc_mcontext.regs[30], context->uc_mcontext.sp, context->uc_mcontext.regs[29], false);
         SignalException signalException;
         signalException.signal = signal;
         signalException.pc = reinterpret_cast<void *>(context->uc_mcontext.pc);

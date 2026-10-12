@@ -216,6 +216,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
      */
     private external fun updatePerformanceStatistics()
     private external fun getDiagnosticPresentedFrames() : Long
+    private external fun requestDiagnosticCapture(gpuCapture : Boolean) : Long
 
     /**
      * @see [InputHandler.initializeControllers]
@@ -354,6 +355,14 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
         inputHandler = InputHandler(inputManager, emulationSettings)
         setContentView(binding.root)
         diagnosticHandler.post(diagnosticStatistics)
+        binding.diagnosticCapture.setOnClickListener {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.diagnostic_capture_title)
+                .setItems(arrayOf(getString(R.string.diagnostic_capture_now), getString(R.string.diagnostic_capture_gpu))) { _, choice ->
+                    val request = requestDiagnosticCapture(choice == 1)
+                    Toast.makeText(this, if (request > 0) getString(R.string.diagnostic_capture_requested, request) else getString(R.string.diagnostic_capture_unavailable), Toast.LENGTH_LONG).show()
+                }.setNegativeButton(android.R.string.cancel, null).show()
+        }
 
         builtinVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -540,6 +549,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
             binding.onScreenControllerView.isGone = true
             binding.onScreenControllerToggle.isGone = true
             binding.onScreenPauseToggle.isGone = true
+            binding.diagnosticCapture.isGone = true
         } else {
             try {
                 unregisterReceiver(pictureInPictureReceiver)
@@ -555,6 +565,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
             binding.onScreenControllerToggle.apply {
                 isGone = binding.onScreenControllerView.isGone
             }
+            binding.diagnosticCapture.isGone = false
             binding.onScreenPauseToggle.apply {
                 isGone = !emulationSettings.showPauseButton
             }

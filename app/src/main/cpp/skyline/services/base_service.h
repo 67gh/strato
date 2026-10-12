@@ -3,6 +3,8 @@
 // Modified 2024: Strato Revival Project — added graceful stub fallback
 
 #pragma once
+#include <common/diagnostic_recorder.h>
+
 
 #include <kernel/ipc.h>
 #include <cxxabi.h>
@@ -107,6 +109,7 @@ namespace skyline::service {
          *        causing frame pacing stutter despite a stable average FPS.
          */
         static bool ShouldLogStubCall(std::string_view serviceName, u32 cmdId) {
+            diagnostics::Unsupported(serviceName, cmdId, "service command stub");
             static std::mutex mtx;
             static std::unordered_set<std::string> logged;
             std::string key{serviceName};

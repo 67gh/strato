@@ -143,6 +143,10 @@ class DiagnosticSession private constructor(
     }
 
     private fun initialize(titleId : String?, nativeSettings : NativeSettings) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val validation = preferences.getInt("diagnostic_validation_mode", 0).coerceIn(0, 3)
+        val shaders = if (preferences.getBoolean("diagnostic_capture_shaders", true)) 1 else 0
+        writeDiagnosticBytes(File(directory, "diagnostic_options.cfg"), "$validation $shaders\n".toByteArray(Charsets.UTF_8))
         // These snapshots are persisted before JNI starts, even if no native initialization succeeds.
         writeDiagnosticJson(File(directory, "session.json"), sessionInfo)
         writeDiagnosticJson(File(directory, "device.json"), deviceSnapshot())

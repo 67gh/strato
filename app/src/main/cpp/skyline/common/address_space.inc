@@ -90,6 +90,7 @@ namespace skyline {
     }
 
     MM_MEMBER()::~FlatMemoryManager() {
+        diagnostics::DestroyAddressSpace(diagnosticSpaceId);
         munmap(sparseMap, SparseMapSize);
     }
 

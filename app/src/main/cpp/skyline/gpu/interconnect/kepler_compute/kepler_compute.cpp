@@ -29,8 +29,13 @@ namespace skyline::gpu::interconnect::kepler_compute {
     }
 
     void KeplerCompute::Dispatch(const QMD &qmd) {
-        if (ctx.gpu.traits.quirks.brokenComputeShaders)
+        skyline::diagnostics::Scope diagnosticScope(ctx.executor.cycle->diagnosticId);
+        skyline::diagnostics::CountDraw(true);
+        skyline::diagnostics::Event("dispatch_attempt", qmd.ctaRasterWidth, qmd.ctaRasterHeight, qmd.ctaRasterDepth);
+        if (ctx.gpu.traits.quirks.brokenComputeShaders) {
+            skyline::diagnostics::Unsupported("compute", 0, "disabled by brokenComputeShaders driver quirk");
             return;
+        }
 
         TRACE_EVENT("gpu", "KeplerCompute::Dispatch");
 
@@ -42,7 +47,10 @@ namespace skyline::gpu::interconnect::kepler_compute {
 
         // A shader that reads storage images or texel buffers that were never bound hangs the GPU (VK_ERROR_DEVICE_LOST on Adreno), so the dispatch is dropped
         // The effect it would have had is missing from the frame, which is better than the whole emulation dying
+        skyline::diagnostics::correlation.pipeline = reinterpret_cast<uintptr_t>(pipeline);
+        skyline::diagnostics::Event("compute_pipeline", reinterpret_cast<uintptr_t>(pipeline));
         if (pipeline->HasUnsupportedDescriptors()) {
+            skyline::diagnostics::Unsupported("compute", reinterpret_cast<uintptr_t>(pipeline), "unwritten descriptors; dispatch skipped");
             if (pipeline->ShouldReportSkip()) {
                 LOGW("Skipping compute dispatches of pipeline {}: its shader uses storage images or texel buffers which aren't supported", fmt::ptr(pipeline));
                 diagnostics::Record("compute", fmt::format("skipping dispatches of pipeline {} (storage images/texel buffers are unsupported)", fmt::ptr(pipeline)));

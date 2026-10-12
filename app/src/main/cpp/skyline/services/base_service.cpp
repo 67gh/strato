@@ -11,8 +11,11 @@ namespace skyline::service {
         ServiceFunctionDescriptor function;
         u32 functionId{request.isTipc ? static_cast<u32>(request.header->type) : request.payload->value};
 
+        diagnostics::Scope diagnosticScope(0);
+        diagnostics::Event("ipc_request", functionId, 0, 0, GetName());
         function = GetServiceFunction(functionId, request.isTipc);
         if (function.clazz == nullptr) {
+            diagnostics::Unsupported(GetName(), functionId, "missing service function");
             LOGW("[STUB] No valid function found in service '{}' for {} cmdId=0x{:X} ({})",
                  GetName(), request.isTipc ? "TIPC" : "HIPC", functionId, functionId);
             return Result{0xF601};
