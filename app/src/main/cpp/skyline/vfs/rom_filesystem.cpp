@@ -87,7 +87,7 @@ namespace skyline::vfs {
             RomFileSystem::RomFsFileEntry romFsFileEntry;
             u32 offset{ownEntry.fileOffset};
 
-            do {
+            while (offset != constant::RomFsEmptyEntry) {
                 romFsFileEntry = backing->Read<RomFileSystem::RomFsFileEntry>(header.fileMetaTableOffset + offset);
 
                 if (romFsFileEntry.nameSize) {
@@ -98,14 +98,14 @@ namespace skyline::vfs {
                 }
 
                 offset = romFsFileEntry.siblingOffset;
-            } while (offset != constant::RomFsEmptyEntry);
+            }
         }
 
         if (listMode.directory) {
             RomFileSystem::RomFsDirectoryEntry romFsDirectoryEntry;
             u32 offset{ownEntry.childOffset};
 
-            do {
+            while (offset != constant::RomFsEmptyEntry) {
                 romFsDirectoryEntry = backing->Read<RomFileSystem::RomFsDirectoryEntry>(header.dirMetaTableOffset + offset);
 
                 if (romFsDirectoryEntry.nameSize) {
@@ -116,7 +116,7 @@ namespace skyline::vfs {
                 }
 
                 offset = romFsDirectoryEntry.siblingOffset;
-            } while (offset != constant::RomFsEmptyEntry);
+            }
         }
 
         return contents;

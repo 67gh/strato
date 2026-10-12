@@ -156,6 +156,15 @@ class AnalyzeNceFallbackTests(unittest.TestCase):
         report = analyze()
         self.assertFalse(report["counts_exact"])
 
+    def test_invalid_record_type_does_not_discard_following_events(self):
+        for kind in ([], {}, None, 42, True):
+            with self.subTest(kind=kind):
+                report = analyze(session(), {"type": kind}, failure(), end(1))
+                self.assertEqual(report["observed_occurrences_at_least"], 1)
+                self.assertEqual(report["warning_count"], 1)
+                self.assertEqual(report["sessions"][0]["invalid_records"], 1)
+                self.assertFalse(report["counts_exact"])
+
 
 if __name__ == "__main__":
     unittest.main()

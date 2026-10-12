@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <memory>
+#include <stdexcept>
 #include <common/trace.h>
 #include <common/spin_lock.h>
 #include <common/span.h>
@@ -14,9 +16,11 @@ namespace skyline {
     template<typename Type>
     class CircularQueue {
       private:
-        std::vector<u8> vector; //!< The internal vector holding the circular queue's data, we use a byte vector due to the default item construction/destruction semantics not being appropriate for a circular buffer
-        std::atomic<Type *> start{reinterpret_cast<Type *>(vector.begin().base())}; //!< The start/oldest element of the queue
-        std::atomic<Type *> end{reinterpret_cast<Type *>(vector.begin().base())}; //!< The end/newest element of the queue
+        std::allocator<Type> allocator;
+        const size_t capacity;
+        Type *storage; //!< Aligned uninitialized storage; only queued items are alive
+        std::atomic<Type *> start; //!< Sentinel before the oldest item
+        std::atomic<Type *> end; //!< Newest item
         SpinLock consumptionMutex;
         std::condition_variable_any consumeCondition;
         SpinLock productionMutex;
@@ -26,25 +30,25 @@ namespace skyline {
         /**
          * @note The internal allocation is an item larger as we require a sentinel value
          */
-        CircularQueue(size_t size) : vector((size + 1) * sizeof(Type)) {}
+        CircularQueue(size_t size)
+            : capacity{size && size < std::allocator_traits<std::allocator<Type>>::max_size(allocator)
+                ? size + 1 : throw std::invalid_argument("Invalid circular queue capacity")},
+              storage{allocator.allocate(capacity)}, start{storage}, end{storage} {}
 
         CircularQueue(const CircularQueue &) = delete;
 
         CircularQueue &operator=(const CircularQueue &) = delete;
 
-        CircularQueue(CircularQueue &&other) : vector(std::move(other.vector)), consumptionMutex(std::move(other.consumptionMutex)), consumeCondition(std::move(other.consumeCondition)), productionMutex(std::move(other.productionMutex)), produceCondition(std::move(other.produceCondition)) {
-            start = other.start;
-            end = other.end;
-            other.start = other.end = nullptr;
-        }
+        CircularQueue(CircularQueue &&) = delete;
 
         ~CircularQueue() {
             while (start != end) {
                 auto next{start + 1};
-                next = (next == reinterpret_cast<Type *>(vector.end().base())) ? reinterpret_cast<Type *>(vector.begin().base()) : next;
+                next = (next == storage + capacity) ? storage : next;
                 std::destroy_at(next);
                 start = next;
             }
+            allocator.deallocate(storage, capacity);
         }
 
         /**
@@ -75,8 +79,9 @@ namespace skyline {
                 std::scoped_lock comsumptionLock{consumptionMutex};
                 while (start != end) {
                     auto next{start + 1};
-                    next = (next == reinterpret_cast<Type *>(vector.end().base())) ? reinterpret_cast<Type *>(vector.begin().base()) : next;
+                    next = (next == storage + capacity) ? storage : next;
                     function(*next);
+                    std::destroy_at(next);
                     start = next;
                 }
 
@@ -92,8 +97,9 @@ namespace skyline {
 
             std::scoped_lock comsumptionLock{consumptionMutex};
             auto next{start + 1};
-            next = (next == reinterpret_cast<Type *>(vector.end().base())) ? reinterpret_cast<Type *>(vector.begin().base()) : next;
+            next = (next == storage + capacity) ? storage : next;
             Type item{std::move(*next)};
+            std::destroy_at(next);
             start = next;
 
             consumeCondition.notify_one();
@@ -116,13 +122,13 @@ namespace skyline {
 
                 std::scoped_lock lock{productionMutex};
                 auto next{end + 1};
-                next = (next == reinterpret_cast<Type *>(vector.end().base())) ? reinterpret_cast<Type *>(vector.begin().base()) : next;
+                next = (next == storage + capacity) ? storage : next;
                 if (next == start) {
                     waitNext = next;
                     waitEnd = end;
                     continue;
                 }
-                *next = item;
+                std::construct_at(next, item);
                 end = next;
                 produceCondition.notify_one();
                 break;
@@ -144,13 +150,13 @@ namespace skyline {
 
                 std::scoped_lock lock{productionMutex};
                 auto next{end + 1};
-                next = (next == reinterpret_cast<Type *>(vector.end().base())) ? reinterpret_cast<Type *>(vector.begin().base()) : next;
+                next = (next == storage + capacity) ? storage : next;
                 if (next == start) {
                     waitNext = next;
                     waitEnd = end;
                     continue;
                 }
-                *next = std::move(item);
+                std::construct_at(next, std::move(item));
                 end = next;
                 produceCondition.notify_one();
                 break;
@@ -173,7 +179,7 @@ namespace skyline {
 
                 std::scoped_lock lock{productionMutex};
                 auto next{end + 1};
-                next = (next == reinterpret_cast<Type *>(vector.end().base())) ? reinterpret_cast<Type *>(vector.begin().base()) : next;
+                next = (next == storage + capacity) ? storage : next;
                 if (next == start) {
                     waitNext = next;
                     waitEnd = end;

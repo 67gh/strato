@@ -105,7 +105,7 @@ class SettingsHomeFragment : Fragment() {
         lifecycleScope.launch {
             val currentBuildTimeMs = org.stratoemu.strato.BuildConfig.BUILD_TIMESTAMP * 1000L
 
-            val updateInfo = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 UpdateChecker.checkForUpdate(
                     "67gh",
                     "strato",
@@ -116,6 +116,11 @@ class SettingsHomeFragment : Fragment() {
 
             if (!isAdded) return@launch
 
+            if (result.isFailure) {
+                showUpdateCheckResult(getString(R.string.error))
+                return@launch
+            }
+            val updateInfo = result.getOrNull()
             if (updateInfo == null) {
                 showUpdateCheckResult(getString(R.string.update_up_to_date))
                 return@launch

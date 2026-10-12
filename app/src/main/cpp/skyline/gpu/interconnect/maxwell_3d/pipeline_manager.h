@@ -232,17 +232,21 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
         Pipeline(GPU &gpu, PipelineStateAccessor &accessor, const PackedPipelineState &packedState);
 
-        /**
-         * @return A description of the descriptors that are declared in the layout but never written (storage images and texel buffers aren't supported), empty if there are none
-         */
+        // Texel buffers and storage images must be rebound on each draw so
+        // backing changes and read/write hazards cannot bypass synchronization.
+        bool NeedsFullDescriptorSync() const {
+            if (descriptorInfo.totalTexelBufferDescCount)
+                return true;
+            for (const auto &stage : descriptorInfo.stages)
+                if (stage.storageImageDescTotalCount)
+                    return true;
+            return false;
+        }
+
+        // Every declared descriptor category now has a writer. Runtime format
+        // and mapping validation can still reject a particular resource.
         std::string DescribeUnwrittenDescriptors() const {
-            std::string description;
-            for (size_t i{}; i < descriptorInfo.stages.size(); i++) {
-                const auto &stage{descriptorInfo.stages[i]};
-                if (stage.storageImageDescTotalCount || stage.storageTexelBufferDescTotalCount || stage.uniformTexelBufferDescTotalCount)
-                    description += fmt::format(" stage{}[storage images:{} storage texel buffers:{} texel buffers:{}]", i, stage.storageImageDescTotalCount, stage.storageTexelBufferDescTotalCount, stage.uniformTexelBufferDescTotalCount);
-            }
-            return description;
+            return {};
         }
 
         /**

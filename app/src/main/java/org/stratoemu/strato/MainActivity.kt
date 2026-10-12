@@ -9,7 +9,6 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
-import android.provider.DocumentsContract
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
@@ -21,7 +20,6 @@ import androidx.core.content.res.use
 import androidx.core.view.WindowCompat
 import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
-import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
@@ -38,7 +36,7 @@ import org.stratoemu.strato.data.AppItemTag
 import org.stratoemu.strato.databinding.MainActivityBinding
 import org.stratoemu.strato.loader.AppEntry
 import org.stratoemu.strato.loader.LoaderResult
-import org.stratoemu.strato.provider.DocumentsProvider
+import org.stratoemu.strato.diagnostics.DiagnosticActivity
 import org.stratoemu.strato.settings.AppSettings
 import org.stratoemu.strato.settings.EmulationSettings
 import org.stratoemu.strato.settings.SettingsActivity
@@ -120,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setContentView(binding.root)
+        onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsHelper.applyToActivity(binding.root, binding.appList)
 
@@ -154,21 +153,13 @@ class MainActivity : AppCompatActivity() {
 
         binding.searchBar.apply {
             binding.logIcon.setOnClickListener {
-                val file = DocumentFile.fromSingleUri(this@MainActivity, DocumentsContract.buildDocumentUri(DocumentsProvider.AUTHORITY, "${DocumentsProvider.ROOT_ID}/logs/emulation.log"))!!
-                if (file.exists() && file.length() != 0L) {
-                    val intent = Intent(Intent.ACTION_SEND)
-                        .setDataAndType(file.uri, "text/plain")
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        .putExtra(Intent.EXTRA_STREAM, file.uri)
-                    startActivity(Intent.createChooser(intent, getString(R.string.log_share_prompt)))
-                } else {
-                    Snackbar.make(this@MainActivity.findViewById(android.R.id.content), getString(R.string.logs_not_found), Snackbar.LENGTH_SHORT).show()
-                }
+                startActivity(Intent(this@MainActivity, DiagnosticActivity::class.java))
             }
             binding.settingsIcon.setOnClickListener { settingsCallback.launch(Intent(context, SettingsActivity::class.java)) }
             binding.refreshIcon.setOnClickListener { loadRoms(false) }
             addTextChangedListener(afterTextChanged = { editable ->
                 editable?.let { text -> adapter.filter.filter(text.toString()) }
+                onBackPressedCallback.isEnabled = hasFocus() || !editable.isNullOrEmpty()
             })
         }
 
@@ -308,12 +299,18 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val currentBuildTimeMs = BuildConfig.BUILD_TIMESTAMP * 1000L
 
-            val updateInfo = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 UpdateChecker.checkForUpdate(UPDATE_REPO_OWNER, UPDATE_REPO_NAME, currentBuildTimeMs, BuildConfig.BUILD_COMMIT_FULL)
             }
 
             if (isFinishing || isDestroyed) return@launch
 
+            if (result.isFailure) {
+                if (showUpToDateMessage)
+                    Snackbar.make(findViewById(android.R.id.content), getString(R.string.error), Snackbar.LENGTH_SHORT).show()
+                return@launch
+            }
+            val updateInfo = result.getOrNull()
             if (updateInfo == null) {
                 if (showUpToDateMessage)
                     Snackbar.make(findViewById(android.R.id.content), getString(R.string.update_up_to_date), Snackbar.LENGTH_SHORT).show()
@@ -361,13 +358,6 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
 
-        binding.searchBar.addTextChangedListener { text ->
-            if (!onBackPressedCallback.isEnabled && !text.isNullOrEmpty()) {
-                onBackPressedCallback.isEnabled = true
-            }
-        }
-
-        onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
         onBackPressedCallback.isEnabled = binding.searchBar.hasFocus() || binding.searchBar.text.isNotEmpty()
     }
 

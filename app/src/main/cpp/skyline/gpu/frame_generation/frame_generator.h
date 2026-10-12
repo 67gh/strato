@@ -18,7 +18,7 @@ namespace skyline::gpu {
      * @brief Implements host-side motion-compensated frame generation, interpolating N-1 extra
      * frames between every pair of frames the game presents in order to smooth out perceived motion
      * @note This is a purely host-side visual effect; it does not affect emulation timing, input
-     * latency or the rate at which the guest actually renders frames
+     * or the guest render rate. Waiting for generation can increase presentation/input latency
      */
     class FrameGenerator {
       public:
@@ -83,13 +83,13 @@ namespace skyline::gpu {
         /**
          * @brief Dispatches the motion estimation pass for a given pyramid level
          */
-        void DispatchMotionEstimate(vk::raii::CommandBuffer &cmd, TextureView *prevFrame, TextureView *currFrame,
+        void DispatchMotionEstimate(vk::raii::CommandBuffer &cmd, const std::shared_ptr<FenceCycle> &cycle, TextureView *prevFrame, TextureView *currFrame,
                                      Texture *motionOut, Texture *prevLevelMotion, texture::Dimensions levelExtent, int blockSize);
 
         /**
          * @brief Dispatches the interpolation pass, writing one generated frame at interpolation factor 't'
          */
-        void DispatchInterpolate(vk::raii::CommandBuffer &cmd, TextureView *prevFrame, TextureView *currFrame,
+        void DispatchInterpolate(vk::raii::CommandBuffer &cmd, const std::shared_ptr<FenceCycle> &cycle, TextureView *prevFrame, TextureView *currFrame,
                                   Texture *motionField, Texture *output, texture::Dimensions extent, float t);
 
       public:
@@ -107,6 +107,6 @@ namespace skyline::gpu {
          * as the underlying textures are reused in a ring buffer; the caller is responsible for attaching
          * them to whatever FenceCycle guards the submission that 'cmd' is part of
          */
-        std::vector<std::shared_ptr<TextureView>> GenerateFrames(vk::raii::CommandBuffer &cmd, TextureView *prevFrame, TextureView *currFrame, Mode mode);
+        std::vector<std::shared_ptr<TextureView>> GenerateFrames(vk::raii::CommandBuffer &cmd, const std::shared_ptr<FenceCycle> &cycle, TextureView *prevFrame, TextureView *currFrame, Mode mode);
     };
 }

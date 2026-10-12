@@ -10,6 +10,8 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 class TaskViewModel : ViewModel() {
@@ -38,12 +40,24 @@ class TaskViewModel : ViewModel() {
         if (_isRunning.value == true) {
             return
         }
+        if (!::task.isInitialized) {
+            _result.value = IllegalStateException("Task was lost when the process restarted")
+            _isComplete.value = true
+            return
+        }
         _isRunning.value = true
 
-        viewModelScope.launch(Dispatchers.IO) {
-            val res = task()
-            _result.postValue(res)
-            _isComplete.postValue(true)
+        viewModelScope.launch {
+            try {
+                _result.value = withContext(Dispatchers.IO) { task() }
+            } catch (e : CancellationException) {
+                throw e
+            } catch (e : Exception) {
+                _result.value = e
+            } finally {
+                _isRunning.value = false
+                _isComplete.value = true
+            }
         }
     }
 }

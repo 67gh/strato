@@ -21,253 +21,71 @@ namespace skyline {
 
     MAP_MEMBER(void)::MapLocked(VaType virt, PaType phys, VaType size, ExtraBlockInfo extraInfo) {
         TRACE_EVENT("containers", "FlatAddressSpaceMap::Map");
+        if (virt < UnmappedVa || virt > vaLimit || size > vaLimit - virt)
+            throw exception("Trying to map outside VA limits: address 0x{:X}, size 0x{:X}", virt, size);
+        if (!size)
+            return;
 
-        VaType virtEnd{virt + size};
-
-        if (virtEnd > vaLimit)
-            throw exception("Trying to map a block past the VA limit: virtEnd: 0x{:X}, vaLimit: 0x{:X}", virtEnd, vaLimit);
-
-        auto blockEndSuccessor{std::lower_bound(blocks.begin(), blocks.end(), virtEnd)};
-        if (blockEndSuccessor == blocks.begin())
-            throw exception("Trying to map a block before the VA start: virtEnd: 0x{:X}", virtEnd);
-
-        auto blockEndPredecessor{std::prev(blockEndSuccessor)};
-
-        if (blockEndSuccessor != blocks.end()) {
-            // We have blocks in front of us, if one is directly in front then we don't have to add a tail
-            if (blockEndSuccessor->virt != virtEnd) {
-                PaType tailPhys{[&]() -> PaType {
-                    if (!PaContigSplit || blockEndPredecessor->Unmapped())
-                        return blockEndPredecessor->phys; // Always propagate unmapped regions rather than calculating offset
-                    else
-                        return blockEndPredecessor->phys + virtEnd - blockEndPredecessor->virt;
-                }()};
-
-                if (blockEndPredecessor->virt >= virt) {
-                    // If this block's start would be overlapped by the map then reuse it as a tail block
-                    blockEndPredecessor->virt = virtEnd;
-                    blockEndPredecessor->phys = tailPhys;
-                    blockEndPredecessor->extraInfo = blockEndPredecessor->extraInfo;
-
-                    // No longer predecessor anymore
-                    blockEndSuccessor = blockEndPredecessor--;
-                } else {
-                    // Else insert a new one and we're done
-                    blocks.insert(blockEndSuccessor, {Block(virt, phys, extraInfo), Block(virtEnd, tailPhys, blockEndPredecessor->extraInfo)});
-                    if (unmapCallback)
-                        unmapCallback(virt, size);
-
-                    return;
-                }
-            }
-        } else {
-            // blockEndPredecessor will always be unmapped as blocks has to be terminated by an unmapped chunk
-            if (blockEndPredecessor != blocks.begin() && blockEndPredecessor->virt >= virt) {
-                // Move the unmapped block start backwards
-                blockEndPredecessor->virt = virtEnd;
-
-                // No longer predecessor anymore
-                blockEndSuccessor = blockEndPredecessor--;
-            } else {
-                // Else insert a new one and we're done
-                blocks.insert(blockEndSuccessor, {Block(virt, phys, extraInfo), Block(virtEnd, UnmappedPa, {})});
-                if (unmapCallback)
-                    unmapCallback(virt, size);
-
-                return;
-            }
+        const VaType virtEnd{virt + size};
+        auto endSuccessor{std::upper_bound(blocks.begin(), blocks.end(), virtEnd, [](auto address, const auto &block) {
+            return address < block.virt;
+        })};
+        const auto &oldTail{*std::prev(endSuccessor)};
+        PaType tailPhys{oldTail.phys};
+        if constexpr (PaContigSplit) {
+            if (oldTail.phys != UnmappedPa)
+                tailPhys += virtEnd - oldTail.virt;
         }
+        Block tail{virtEnd, tailPhys, oldTail.extraInfo};
+        auto start{std::lower_bound(blocks.begin(), blocks.end(), virt)};
+        auto position{blocks.erase(start, endSuccessor)};
+        blocks.insert(position, {Block{virt, phys, extraInfo}, tail});
 
-        auto blockStartSuccessor{blockEndSuccessor};
-
-        // Walk the block vector to find the start successor as this is more efficient than another binary search in most scenarios
-        while (std::prev(blockStartSuccessor)->virt >= virt)
-            blockStartSuccessor--;
-
-        // Check that the start successor is either the end block or something in between
-        if (blockStartSuccessor->virt > virtEnd) {
-            throw exception("Unsorted block in AS map: virt: 0x{:X}", blockStartSuccessor->virt);
-        } else if (blockStartSuccessor->virt == virtEnd) {
-            // We need to create a new block as there are none spare that we would overwrite
-            blocks.insert(blockStartSuccessor, Block(virt, phys, extraInfo));
-        } else {
-            // Erase overwritten blocks
-            if (auto eraseStart{std::next(blockStartSuccessor)}; eraseStart != blockEndSuccessor)
-                blocks.erase(eraseStart, blockEndSuccessor);
-
-            // Reuse a block that would otherwise be overwritten as a start block
-            blockStartSuccessor->virt = virt;
-            blockStartSuccessor->phys = phys;
-            blockStartSuccessor->extraInfo = extraInfo;
-        }
-
+        // Keep one boundary for each hole, including the terminal hole. This
+        // also handles replacements at the very first address without prev(begin).
+        blocks.erase(std::unique(blocks.begin(), blocks.end(), [](auto &left, auto &right) {
+            return left.Unmapped() && right.Unmapped();
+        }), blocks.end());
         if (unmapCallback)
             unmapCallback(virt, size);
     }
 
     MAP_MEMBER(void)::UnmapLocked(VaType virt, VaType size) {
-        TRACE_EVENT("containers", "FlatAddressSpaceMap::Unmap");
-
-        VaType virtEnd{virt + size};
-
-        if (virtEnd > vaLimit)
-            throw exception("Trying to map a block past the VA limit: virtEnd: 0x{:X}, vaLimit: 0x{:X}", virtEnd, vaLimit);
-
-        auto blockEndSuccessor{std::lower_bound(blocks.begin(), blocks.end(), virtEnd)};
-        if (blockEndSuccessor == blocks.begin())
-            throw exception("Trying to unmap a block before the VA start: virtEnd: 0x{:X}", virtEnd);
-
-        auto blockEndPredecessor{std::prev(blockEndSuccessor)};
-
-        auto walkBackToPredecessor{[&](auto iter) {
-            while (iter->virt >= virt)
-                iter--;
-
-            return iter;
-        }};
-
-        auto eraseBlocksWithEndUnmapped{[&](auto unmappedEnd) {
-            auto blockStartPredecessor{walkBackToPredecessor(unmappedEnd)};
-            auto blockStartSuccessor{std::next(blockStartPredecessor)};
-
-            auto eraseEnd{[&]() {
-                if (blockStartPredecessor->Unmapped()) {
-                    // If the start predecessor is unmapped then we can erase everything in our region and be done
-                    return std::next(unmappedEnd);
-                } else {
-                    // Else reuse the end predecessor as the start of our unmapped region then erase all up to it
-                    unmappedEnd->virt = virt;
-                    return unmappedEnd;
-                }
-            }()};
-
-            // We can't have two unmapped regions after each other
-            if (eraseEnd != blocks.end() && (eraseEnd == blockStartSuccessor || (blockStartPredecessor->Unmapped() && eraseEnd->Unmapped())))
-                throw exception("Multiple contiguous unmapped regions are unsupported!");
-
-            blocks.erase(blockStartSuccessor, eraseEnd);
-        }};
-
-        // We can avoid any splitting logic if these are the case
-        if (blockEndPredecessor->Unmapped()) {
-            if (blockEndPredecessor->virt > virt)
-                eraseBlocksWithEndUnmapped(blockEndPredecessor);
-
-            if (unmapCallback)
-                unmapCallback(virt, size);
-
-            return; // The region is unmapped, bail out early
-        } else if (blockEndSuccessor->virt == virtEnd && blockEndSuccessor->Unmapped()) {
-            eraseBlocksWithEndUnmapped(blockEndSuccessor);
-
-            if (unmapCallback)
-                unmapCallback(virt, size);
-
-            return; // The region is unmapped here and doesn't need splitting, bail out early
-        } else if (blockEndSuccessor == blocks.end()) {
-            // This should never happen as the end should always follow an unmapped block
-            throw exception("Unexpected Memory Manager state!");
-        } else if (blockEndSuccessor->virt != virtEnd) {
-            // If one block is directly in front then we don't have to add a tail
-
-            // The previous block is mapped so we will need to add a tail with an offset
-            PaType tailPhys{[&]() {
-                if constexpr (PaContigSplit)
-                    return blockEndPredecessor->phys + virtEnd - blockEndPredecessor->virt;
-                else
-                    return blockEndPredecessor->phys;
-            }()};
-
-            if (blockEndPredecessor->virt >= virt) {
-                // If this block's start would be overlapped by the unmap then reuse it as a tail block
-                blockEndPredecessor->virt = virtEnd;
-                blockEndPredecessor->phys = tailPhys;
-
-                // No longer predecessor anymore
-                blockEndSuccessor = blockEndPredecessor--;
-            } else {
-                blocks.insert(blockEndSuccessor, {Block(virt, UnmappedPa, {}), Block(virtEnd, tailPhys, blockEndPredecessor->extraInfo)});
-                if (unmapCallback)
-                    unmapCallback(virt, size);
-
-                return; // The previous block is mapped and ends before
-            }
-        }
-
-        // Walk the block vector to find the start predecessor as this is more efficient than another binary search in most scenarios
-        auto blockStartPredecessor{walkBackToPredecessor(blockEndSuccessor)};
-        auto blockStartSuccessor{std::next(blockStartPredecessor)};
-
-        if (blockStartSuccessor->virt > virtEnd) {
-            throw exception("Unsorted block in AS map: virt: 0x{:X}", blockStartSuccessor->virt);
-        } else if (blockStartSuccessor->virt == virtEnd) {
-            // There are no blocks between the start and the end that would let us skip inserting a new one for head
-
-            // The previous block is may be unmapped, if so we don't need to insert any unmaps after it
-            if (blockStartPredecessor->Mapped())
-                blocks.insert(blockStartSuccessor, Block(virt, UnmappedPa, {}));
-        } else if (blockStartPredecessor->Unmapped()) {
-            // If the previous block is unmapped
-            blocks.erase(blockStartSuccessor, blockEndPredecessor);
-        } else {
-            // Erase overwritten blocks, skipping the first one as we have written the unmapped start block there
-            if (auto eraseStart{std::next(blockStartSuccessor)}; eraseStart != blockEndSuccessor)
-                blocks.erase(eraseStart, blockEndSuccessor);
-
-            // Add in the unmapped block header
-            blockStartSuccessor->virt = virt;
-            blockStartSuccessor->phys = UnmappedPa;
-        }
-
-        if (unmapCallback)
-            unmapCallback(virt, size);
+        MapLocked(virt, UnmappedPa, size, {});
     }
-
 
     MM_MEMBER(TranslatedAddressRange)::TranslateRangeImpl(VaType virt, VaType size, std::function<void(span<u8>)> cpuAccessCallback) {
         TRACE_EVENT("containers", "FlatMemoryManager::TranslateRange");
-
         TranslatedAddressRange ranges;
-
-        auto successor{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt, [] (auto virt, const auto &block) {
-            return virt < block.virt;
+        auto successor{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt, [](auto address, const auto &block) {
+            return address < block.virt;
         })};
-
-        auto predecessor{std::prev(successor)};
-
-        u8 *blockPhys{predecessor->phys + (virt - predecessor->virt)};
-        VaType blockSize{std::min(successor->virt - virt, size)};
-
+        auto block{std::prev(successor)};
         while (size) {
-            if (predecessor->phys) {
-                span cpuBlock{blockPhys, blockSize};
-                if (cpuAccessCallback)
-                    cpuAccessCallback(cpuBlock);
-
-                // Batch contiguous ranges into one
-                if (!ranges.empty() && ranges.back().data() + ranges.back().size() == cpuBlock.data())
-                    ranges.back() = {ranges.back().data(), ranges.back().size() + cpuBlock.size()};
-                else
-                    ranges.push_back(cpuBlock);
-            } else {
-                ranges.push_back(span<u8>{static_cast<u8*>(nullptr), blockSize});
-            }
-
-            size -= blockSize;
-
-            if (size) {
-                predecessor = successor++;
-                blockPhys = predecessor->phys;
-                blockSize = std::min(successor->virt - predecessor->virt, size);
-            }
+            const VaType end{successor == this->blocks.end() ? this->vaLimit : successor->virt};
+            const VaType amount{std::min(end - virt, size)};
+            // Sparse placeholders are not host pointers that callers may access.
+            u8 *phys{block->phys && !block->extraInfo.sparseMapped ? block->phys + (virt - block->virt) : nullptr};
+            span<u8> range{phys, amount};
+            if (phys && cpuAccessCallback)
+                cpuAccessCallback(range);
+            if (!ranges.empty() && ((phys && ranges.back().valid() && ranges.back().data() + ranges.back().size() == phys) ||
+                                    (!phys && !ranges.back().valid())))
+                ranges.back() = {ranges.back().data(), ranges.back().size() + amount};
+            else
+                ranges.push_back(range);
+            size -= amount;
+            virt += amount;
+            if (size)
+                block = successor++;
         }
-
         return ranges;
     }
 
     MM_MEMBER()::FlatMemoryManager() {
+        this->vaLimit = AddressSpaceSize; // Exclusive end, including the final GPU page
         sparseMap = static_cast<u8 *>(mmap(0, SparseMapSize, PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
-        if (!sparseMap)
+        if (sparseMap == MAP_FAILED)
             throw exception("Failed to mmap sparse map!");
     }
 

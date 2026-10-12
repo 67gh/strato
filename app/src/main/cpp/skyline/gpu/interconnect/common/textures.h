@@ -52,6 +52,8 @@ namespace skyline::gpu::interconnect {
 
         TextureView *GetTexture(InterconnectContext &ctx, u32 index, Shader::TextureType shaderType);
 
+        TexelBufferBinding GetTexelBuffer(InterconnectContext &ctx, u32 index, bool storage, Shader::ImageFormat shaderFormat);
+
         Shader::TextureType GetTextureType(InterconnectContext &ctx, u32 index);
     };
 }

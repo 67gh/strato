@@ -108,10 +108,46 @@ namespace skyline {
 
         static constexpr size_t AddressSpaceSize{1ULL << AddressSpaceBits};
         SegmentTable<SegmentTableEntry, AddressSpaceSize, VaGranularityBits, VaL2GranularityBits> blockSegmentTable; //!< A page table of all buffer mappings for O(1) lookups on full matches
+        bool hasUnalignedMappings{}; //!< Sub-page boundaries require exact lookups in the block vector
+
+        void ValidateRange(VaType virt, VaType size) const {
+            if (virt < UnmappedVa || virt > this->vaLimit || size > this->vaLimit - virt)
+                throw exception("GPU VA range outside address space: address 0x{:X}, size 0x{:X}", virt, size);
+        }
+
+        // Refresh both sides of a split as well as the changed range. Retaining
+        // an old extent would let a fast lookup cross a later remap or hole.
+        void RefreshBlockSegments(VaType virt, VaType size) {
+            if (hasUnalignedMappings)
+                return;
+
+            blockSegmentTable.Set(virt, virt + size, {});
+            auto block{std::lower_bound(this->blocks.begin(), this->blocks.end(), virt)};
+            if (block != this->blocks.begin())
+                --block;
+            for (; block != this->blocks.end() && block->virt <= virt + size; ++block) {
+                if (!block->phys)
+                    continue;
+                auto end{std::next(block)->virt}; // Mapped blocks always have an unmapped tail
+                blockSegmentTable.Set(block->virt, end, {block->virt, block->phys, end - block->virt, block->extraInfo});
+            }
+        }
 
         TranslatedAddressRange TranslateRangeImpl(VaType virt, VaType size, std::function<void(span<u8>)> cpuAccessCallback = {});
 
         std::pair<span<u8>, size_t> LookupBlockLocked(VaType virt, std::function<void(span<u8>)> cpuAccessCallback = {}) {
+            ValidateRange(virt, 1);
+            if (hasUnalignedMappings) {
+                auto successor{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt, [](auto address, const auto &block) {
+                    return address < block.virt;
+                })};
+                const auto &block{*std::prev(successor)};
+                auto end{successor == this->blocks.end() ? this->vaLimit : successor->virt};
+                span<u8> mapping{block.extraInfo.sparseMapped ? nullptr : block.phys, end - block.virt};
+                if (mapping.valid() && cpuAccessCallback)
+                    cpuAccessCallback(mapping);
+                return {mapping, virt - block.virt};
+            }
             const auto &blockEntry{this->blockSegmentTable[virt]};
             VaType segmentOffset{virt - blockEntry.virt};
 
@@ -151,12 +187,15 @@ namespace skyline {
          */
         TranslatedAddressRange TranslateRange(VaType virt, VaType size, std::function<void(span<u8>)> cpuAccessCallback = {}) {
             std::shared_lock lock{this->blockMutex};
+            ValidateRange(virt, size);
+            if (!size)
+                return {};
 
             // Fast path for when the range is mapped in a single block
             auto [blockSpan, rangeOffset]{LookupBlockLocked(virt, cpuAccessCallback)};
-            if (blockSpan.size() - rangeOffset >= size) {
+            if (rangeOffset <= blockSpan.size() && size <= blockSpan.size() - rangeOffset) {
                 TranslatedAddressRange ranges;
-                ranges.push_back(blockSpan.subspan(blockSpan.valid() ? rangeOffset : 0, size));
+                ranges.push_back({blockSpan.valid() ? blockSpan.data() + rangeOffset : nullptr, size});
                 return ranges;
             }
 
@@ -238,7 +277,7 @@ namespace skyline {
 
         template<typename T>
         void Write(VaType virt, span<T> source, std::function<void(span<u8>)> cpuAccessCallback = {}) {
-            Write(virt, reinterpret_cast<u8 *>(source.data()), source.size_bytes());
+            Write(virt, reinterpret_cast<u8 *>(source.data()), source.size_bytes(), cpuAccessCallback);
         }
 
         void Write(VaType virt, util::TrivialObject auto source, std::function<void(span<u8>)> cpuAccessCallback = {}) {
@@ -249,14 +288,22 @@ namespace skyline {
 
         void Map(VaType virt, u8 *phys, VaType size, MemoryManagerBlockInfo extraInfo = {}) {
             std::scoped_lock lock(this->blockMutex);
-            blockSegmentTable.Set(virt, virt + size, {virt, phys, size, extraInfo});
+            ValidateRange(virt, size);
+            if (!size)
+                return;
             this->MapLocked(virt, phys, size, extraInfo);
+            hasUnalignedMappings |= ((virt | size) & ((1ULL << VaGranularityBits) - 1)) != 0;
+            RefreshBlockSegments(virt, size);
         }
 
         void Unmap(VaType virt, VaType size) {
             std::scoped_lock lock(this->blockMutex);
-            blockSegmentTable.Set(virt, virt + size, {});
+            ValidateRange(virt, size);
+            if (!size)
+                return;
             this->UnmapLocked(virt, size);
+            hasUnalignedMappings |= ((virt | size) & ((1ULL << VaGranularityBits) - 1)) != 0;
+            RefreshBlockSegments(virt, size);
         }
     };
 

@@ -21,12 +21,16 @@ class RomProvider @Inject constructor(@ApplicationContext private val context : 
     @SuppressLint("DefaultLocale")
     private fun addEntries(fileFormats : Map<String, RomFormat>, directory : DocumentFile, entries : ArrayList<AppEntry>, systemLanguage : Int) {
         directory.listFiles().forEach { file ->
-            if (file.isDirectory) {
-                addEntries(fileFormats, file, entries, systemLanguage)
-            } else {
-                fileFormats[file.name?.substringAfterLast(".")?.lowercase()]?.let { romFormat->
-                    entries.add(RomFile(context, romFormat, file.uri, systemLanguage).appEntry)
+            try {
+                if (file.isDirectory) {
+                    addEntries(fileFormats, file, entries, systemLanguage)
+                } else {
+                    fileFormats[file.name?.substringAfterLast(".")?.lowercase()]?.let { romFormat ->
+                        entries.add(RomFile(context, romFormat, file.uri, systemLanguage).appEntry)
+                    }
                 }
+            } catch (e : Exception) {
+                Log.w("RomProvider", "Skipping unreadable game entry '${file.uri}': ${e.message}")
             }
         }
     }

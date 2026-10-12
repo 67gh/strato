@@ -8,7 +8,11 @@
 
 namespace skyline::gpu::interconnect {
     void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn) {
-        // Ignore size for the mapping end check here as we don't support buffers split across multiple mappings so only the first one would be used anyway. It's also impossible for the mapping to have been remapped with a larger one since the original lookup because the we force the mapping to be reset after semaphores
+        if (!size) {
+            view = {};
+            return;
+        }
+        // Semaphore handling purges this cache after guest mapping changes.
         if (address < blockMappingStartAddr || address >= blockMappingEndAddr) {
             u64 blockOffset{};
             std::tie(blockMapping, blockOffset) = ctx.channelCtx.asCtx->gmmu.LookupBlock(address);
@@ -25,10 +29,19 @@ namespace skyline::gpu::interconnect {
         // Mapping from the start of the buffer view to the end of the block
         auto fullMapping{blockMapping.subspan(address - blockMappingStartAddr)};
 
-        if (splitMappingWarn && fullMapping.size() < size)
-            LOGW("Split buffer mappings are not supported");
+        if (fullMapping.size() < size) {
+            // TranslateRange merges adjacent host ranges. A guest resource may
+            // cross mapping boundaries while still having contiguous backing.
+            auto &gmmu{ctx.channelCtx.asCtx->gmmu};
+            auto ranges{gmmu.TranslateRange(address, std::min(size, gmmu.vaLimit - address))};
+            if (!ranges.empty() && ranges.front().valid())
+                fullMapping = ranges.front();
+            if (splitMappingWarn && fullMapping.size() < size)
+                LOGW("Buffer at 0x{:X}: contiguous mapped prefix 0x{:X} of requested 0x{:X} bytes", address, fullMapping.size(), size);
+        }
 
-        // Mapping covering just the requested input view (or less in the case of split mappings)
+        // Constant/index buffer callers may supply an estimated upper bound.
+        // Exact-size resources (texel buffers) reject a shorter view themselves.
         auto viewMapping{fullMapping.first(std::min(fullMapping.size(), size))};
 
         // First attempt to skip lookup by trying to reuse the previous view's underlying buffer
