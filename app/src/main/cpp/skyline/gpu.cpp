@@ -70,7 +70,7 @@ namespace skyline::gpu {
         });
     }
 
-    static VkBool32 DebugCallback(vk::DebugReportFlagsEXT flags, vk::DebugReportObjectTypeEXT objectType, u64 object, size_t location, i32 messageCode, const char *layerPrefix, const char *messageCStr, GPU *gpu) {
+    static VkBool32 DebugCallback(vk::DebugReportFlagsEXT flags, vk::DebugReportObjectTypeEXT objectType, u64 object, size_t location, i32 messageCode, const char *layerPrefix, const char *messageCStr, GPU *gpu) try {
         constexpr std::array<AsyncLogger::LogLevel, 5> severityLookup{
             AsyncLogger::LogLevel::Info,    // VK_DEBUG_REPORT_INFORMATION_BIT_EXT
             AsyncLogger::LogLevel::Warning, // VK_DEBUG_REPORT_WARNING_BIT_EXT
@@ -208,8 +208,11 @@ namespace skyline::gpu {
 
         auto logLevel{severityLookup.at(static_cast<size_t>(std::countr_zero(static_cast<u32>(flags))))};
         if (AsyncLogger::CheckLogLevel(logLevel))
-            AsyncLogger::LogAsync(logLevel, fmt::format("Vk{}:{}[0x{:X}]:I{}:L{}: {}", layerPrefix, vk::to_string(vk::DebugReportObjectTypeEXT(objectType)), object, messageCode, location, message));
+            AsyncLogger::LogAsync(logLevel, fmt::format("Vk{}:{}[0x{:X}]:I{}:L{}: {}", layerPrefix ? layerPrefix : "?", vk::to_string(vk::DebugReportObjectTypeEXT(objectType)), object, messageCode, location, message));
 
+        return VK_FALSE;
+    } catch (...) {
+        // Diagnostic failures must not unwind through the Vulkan driver's C ABI.
         return VK_FALSE;
     }
 
@@ -434,12 +437,12 @@ namespace skyline::gpu {
           debugTracingBuffer(memory.AllocateBuffer(DebugTracingBufferSize)) {}
 
     void GPU::Initialise() {
-        std::string titleId{state.loader->nacp->GetSaveDataOwnerId()};
+        std::string titleId{state.loader->nacp ? state.loader->nacp->GetSaveDataOwnerId() : "homebrew"};
         graphicsPipelineAssembler.emplace(*this, state.os->publicAppFilesPath + "vk_graphics_pipeline_cache/" + titleId);
         shader.emplace(state, *this,
                        state.os->publicAppFilesPath + "shader_replacements/" + titleId,
                        state.os->publicAppFilesPath + "shader_dumps/" + titleId);
-        if (!*state.settings->disableShaderCache)
+        if (state.loader->nacp && !*state.settings->disableShaderCache)
             graphicsPipelineCacheManager.emplace(state,
                                                  state.os->publicAppFilesPath + "graphics_pipeline_cache/" + titleId);
         graphicsPipelineManager.emplace(*this, *state.jvm);

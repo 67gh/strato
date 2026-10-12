@@ -25,13 +25,19 @@ namespace skyline::vfs {
         while (bytesRead < output.size()) {
             auto ret{pread64(fd, output.data() + bytesRead, output.size() - bytesRead, static_cast<off64_t>(offset + bytesRead))};
             if (ret < 0) {
+                if (errno == EINTR)
+                    continue;
                 if (errno == EFAULT) {
                     // If EFAULT is returned then we're reading into a trapped region so create a temporary buffer and read into that instead
                     // This is required since pread doesn't trigger signal handlers itself
                     std::vector<u8> buffer(output.size() - bytesRead);
-                    ret = pread64(fd, buffer.data(), buffer.size(), static_cast<off64_t>(offset + bytesRead));
+                    do {
+                        ret = pread64(fd, buffer.data(), buffer.size(), static_cast<off64_t>(offset + bytesRead));
+                    } while (ret < 0 && errno == EINTR);
+                    if (ret == 0)
+                        return bytesRead;
                     if (ret >= 0) {
-                        output.subspan(bytesRead).copy_from(buffer);
+                        output.subspan(bytesRead).copy_from(buffer, static_cast<size_t>(ret));
                         bytesRead += static_cast<size_t>(ret);
                         continue;
                     }
@@ -48,11 +54,19 @@ namespace skyline::vfs {
     }
 
     size_t OsBacking::WriteImpl(span<u8> input, size_t offset) {
-        auto ret{pwrite64(fd, input.data(), input.size(), static_cast<off64_t>(offset))};
-        if (ret < 0)
-            throw exception("Failed to write to fd: {}", strerror(errno));
-
-        return static_cast<size_t>(ret);
+        size_t bytesWritten{};
+        while (bytesWritten < input.size()) {
+            auto ret{pwrite64(fd, input.data() + bytesWritten, input.size() - bytesWritten, static_cast<off64_t>(offset + bytesWritten))};
+            if (ret < 0) {
+                if (errno == EINTR)
+                    continue;
+                throw exception("Failed to write to fd: {}", strerror(errno));
+            }
+            if (ret == 0)
+                throw exception("Failed to make progress writing to fd");
+            bytesWritten += static_cast<size_t>(ret);
+        }
+        return bytesWritten;
     }
 
     void OsBacking::ResizeImpl(size_t pSize) {

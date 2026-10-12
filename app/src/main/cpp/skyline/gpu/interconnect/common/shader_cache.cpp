@@ -85,7 +85,7 @@ namespace skyline::gpu::interconnect {
                 auto instruction{*it};
                 if (instruction == BraSelf1 || instruction == BraSelf2) [[unlikely]]
                     // It is far more likely that the instruction doesn't match so this is an unlikely case
-                    return span{shaderInstructions.begin(), it}.cast<u8>();
+                    return span{shaderInstructions.begin(), it + 1}.cast<u8>();
             }
 
             return span<u8>{};
@@ -97,19 +97,22 @@ namespace skyline::gpu::interconnect {
                 binary.binary = shaderSubmapping;
             } else {
                 // If the shader is split across multiple mappings then read into an internal vector to store the binary
-                size_t storageOffset{splitBinaryStorage.size()};
-                splitBinaryStorage.resize(storageOffset + FallbackSize);
-                auto shaderStorage{span{splitBinaryStorage}.subspan(storageOffset, FallbackSize)};
-                auto mappings{ctx.channelCtx.asCtx->gmmu.TranslateRange(programBase + programOffset, storageOffset + FallbackSize)};
-                u8 *shaderStoragePtr{shaderStorage.data()};
+                std::vector<u8> storage(FallbackSize);
+                auto shaderStorage{span{storage}};
+                auto mappings{ctx.channelCtx.asCtx->gmmu.TranslateRange(programBase + programOffset, FallbackSize)};
+                size_t copied{};
                 for (auto mapping : mappings) {
-                    if (!mapping.valid())
-                        break;
+                    if (!mapping.valid() || mapping.size() > FallbackSize - copied)
+                        throw exception("Invalid split shader mapping");
 
-                    std::memcpy(shaderStoragePtr, mapping.data(), mapping.size());
-                    shaderStoragePtr += mapping.size();
+                    std::memcpy(shaderStorage.data() + copied, mapping.data(), mapping.size());
+                    copied += mapping.size();
                 }
+                if (copied != FallbackSize)
+                    throw exception("Incomplete split shader mapping");
 
+                // Moving the vector preserves its allocation and all published spans.
+                splitBinaryStorage.push_back(std::move(storage));
                 binary.binary = shaderStorage;
             }
         }

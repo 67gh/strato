@@ -54,13 +54,15 @@ namespace skyline::gpu::interconnect::kepler_compute {
         auto *descUpdateInfo{pipeline->SyncDescriptors(ctx, constantBuffers.boundConstantBuffers, samplers, textures, srcStageMask, dstStageMask)};
         builder.SetPipeline(*pipeline->compiledPipeline.pipeline, vk::PipelineBindPoint::eCompute);
 
-        if (ctx.gpu.traits.supportsPushDescriptors) {
-            builder.SetDescriptorSetWithPush(descUpdateInfo);
-        } else {
-            auto set{std::make_shared<DescriptorAllocator::ActiveDescriptorSet>(ctx.gpu.descriptor.AllocateSet(descUpdateInfo->descriptorSetLayout))};
+        if (descUpdateInfo) {
+            if (ctx.gpu.traits.supportsPushDescriptors) {
+                builder.SetDescriptorSetWithPush(descUpdateInfo);
+            } else {
+                auto set{std::make_shared<DescriptorAllocator::ActiveDescriptorSet>(ctx.gpu.descriptor.AllocateSet(descUpdateInfo->descriptorSetLayout))};
 
-            builder.SetDescriptorSetWithUpdate(descUpdateInfo, set.get(), nullptr);
-            ctx.executor.AttachDependency(set);
+                builder.SetDescriptorSetWithUpdate(descUpdateInfo, set.get(), nullptr);
+                ctx.executor.AttachDependency(set);
+            }
         }
 
         auto stateUpdater{builder.Build()};

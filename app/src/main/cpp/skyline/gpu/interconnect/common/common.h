@@ -88,11 +88,26 @@ namespace skyline::gpu::interconnect {
 
     class StateUpdateBuilder;
 
+    struct TexelBufferBinding {
+        BufferView view;
+        vk::Format format;
+        vk::DeviceSize alignment;
+    };
+
+    // The executor owns the RAII views until its fence completes. The linear
+    // command allocator holds only these spans and a non-owning pointer.
+    struct TexelBufferDescriptors {
+        span<TexelBufferBinding> bindings;
+        span<vk::BufferView> views;
+        std::vector<vk::raii::BufferView> *lifetime{};
+    };
+
     struct DescriptorUpdateInfo {
         span<vk::CopyDescriptorSet> copies; //!< These will be performed before writes
         span<vk::WriteDescriptorSet> writes;
         span<vk::DescriptorBufferInfo> bufferDescs;
         span<DynamicBufferBinding> bufferDescDynamicBindings;
+        TexelBufferDescriptors texelBuffers;
         vk::PipelineLayout pipelineLayout;
         vk::DescriptorSetLayout descriptorSetLayout;
         vk::PipelineBindPoint bindPoint;

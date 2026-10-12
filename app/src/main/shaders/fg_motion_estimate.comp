@@ -3,7 +3,7 @@
 // Copyright © 2026 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 // Block-matching motion estimation used by the frame generation pass.
-// Produces a per-block motion vector field (in pixels, previous -> current)
+// Produces a per-block motion vector field (in pixels, current -> previous)
 // which is later upsampled and used to motion-compensate interpolated frames.
 //
 // This runs one workgroup per output block (BLOCK_SIZE x BLOCK_SIZE px) and
@@ -47,8 +47,9 @@ float BlockSad(ivec2 blockOrigin, ivec2 offset) {
             ivec2 currPos = clamp(blockOrigin + ivec2(x, y), ivec2(0), pc.frameExtent - 1);
             ivec2 prevPos = clamp(currPos + offset, ivec2(0), pc.frameExtent - 1);
 
-            float lumaCurr = Luma(texelFetch(uCurrFrame, currPos, 0).rgb);
-            float lumaPrev = Luma(texelFetch(uPrevFrame, prevPos, 0).rgb);
+            // Normalized coordinates also cover the full source images at the coarse level.
+            float lumaCurr = Luma(textureLod(uCurrFrame, (vec2(currPos) + 0.5) / vec2(pc.frameExtent), 0.0).rgb);
+            float lumaPrev = Luma(textureLod(uPrevFrame, (vec2(prevPos) + 0.5) / vec2(pc.frameExtent), 0.0).rgb);
             sad += abs(lumaCurr - lumaPrev);
         }
     }
@@ -85,7 +86,9 @@ void main() {
 
     // Parallel reduction to find the minimum-cost candidate across all 64 invocations
     for (uint activeCount = 32u; activeCount > 0u; activeCount >>= 1u) {
-        if (idx < activeCount && sCost[idx + activeCount] < sCost[idx]) {
+        if (idx < activeCount && (sCost[idx + activeCount] < sCost[idx] ||
+            (sCost[idx + activeCount] == sCost[idx] &&
+             dot(vec2(sOffset[idx + activeCount]), vec2(sOffset[idx + activeCount])) < dot(vec2(sOffset[idx]), vec2(sOffset[idx]))))) {
             sCost[idx] = sCost[idx + activeCount];
             sOffset[idx] = sOffset[idx + activeCount];
         }

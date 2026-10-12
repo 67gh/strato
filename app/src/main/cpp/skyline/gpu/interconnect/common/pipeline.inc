@@ -87,13 +87,55 @@ namespace skyline::gpu::interconnect {
         if constexpr (requires { desc.has_secondary; }) {
             if (desc.has_secondary) {
                 ConstantBuffer &secondaryCbuf{constantBuffers[desc.secondary_cbuf_index]};
+                if (!secondaryCbuf.view)
+                    return {.raw = 0};
                 size_t secondaryCbufOffset{desc.secondary_cbuf_offset + elemOffset};
                 u32 secondaryVal{secondaryCbuf.Read<u32>(ctx.executor, secondaryCbufOffset)};
                 return {.raw = (primaryVal << desc.shift_left) | (secondaryVal << desc.secondary_shift_left)};
             }
         }
 
-        return {.raw = primaryVal};
+        if constexpr (requires { desc.shift_left; })
+            return {.raw = primaryVal << desc.shift_left};
+        else
+            return {.raw = primaryVal};
+    }
+
+    static TexelBufferDescriptors AllocateTexelBufferDescriptors(InterconnectContext &ctx, size_t count) {
+        if (!count)
+            return {};
+        auto lifetime{std::make_shared<std::vector<vk::raii::BufferView>>()};
+        lifetime->reserve(count);
+        ctx.executor.AttachDependency(lifetime);
+        return {
+            ctx.executor.allocator->AllocateUntracked<TexelBufferBinding>(count),
+            ctx.executor.allocator->AllocateUntracked<vk::BufferView>(count),
+            lifetime.get(),
+        };
+    }
+
+    static TexelBufferBinding GetTexelBufferBinding(InterconnectContext &ctx, const auto &desc,
+                                                   Textures &textures, BindlessHandle handle,
+                                                   vk::PipelineStageFlagBits dstStage,
+                                                   vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
+        constexpr bool storage{requires { desc.is_written; }};
+        Shader::ImageFormat format{Shader::ImageFormat::Typeless};
+        if constexpr (storage)
+            format = desc.format;
+        auto binding{textures.GetTexelBuffer(ctx, handle.textureIndex, storage, format)};
+        auto *buffer{binding.view.GetBuffer()};
+        buffer->PopulateReadBarrier(dstStage, srcStageMask, dstStageMask);
+        if constexpr (storage) {
+            if (desc.is_written) {
+                if (buffer->SequencedCpuBackingWritesBlocked()) {
+                    srcStageMask |= vk::PipelineStageFlagBits::eAllCommands;
+                    dstStageMask |= dstStage;
+                }
+                buffer->MarkGpuDirty(ctx.executor.usageTracker);
+            }
+        }
+        buffer->BlockSequencedCpuBackingWrites();
+        return binding;
     }
 
     static std::pair<vk::DescriptorImageInfo, TextureView *> GetTextureBinding(InterconnectContext &ctx, const auto &desc,
