@@ -382,8 +382,14 @@ namespace skyline::gpu::interconnect {
                 case Shader::ImageFormat::R32_UINT: format = format::R32Uint; break;
                 case Shader::ImageFormat::R32G32B32A32_UINT: format = format::R32G32B32A32Uint; break;
                 case Shader::ImageFormat::Typeless:
-                    if (tic.formatWord.componentR != TextureImageControl::ImageComponent::Uint)
-                        throw exception("Typeless storage texel buffer {} requires an unsigned format in this shader backend", index);
+                    if (tic.formatWord.componentR != TextureImageControl::ImageComponent::Uint) {
+                        // Preserve the rejected descriptor too: successful bindings are
+                        // captured below, but this failure used to lose the required format.
+                        skyline::diagnostics::SaveArtifact("tic_rejected", index, &tic, sizeof(tic), "bin");
+                        throw exception("Typeless storage texel buffer {} requires numeric-type specialization: TIC formatWord=0x{:08X}, VkFormat={}, texelBytes={}, shaderFormat={}",
+                                        index, tic.formatWord.Raw(), static_cast<u32>(format->vkFormat),
+                                        format->bpb, static_cast<u32>(shaderFormat));
+                    }
                     if (!ctx.gpu.traits.supportsImageReadWithoutFormat || !ctx.gpu.traits.supportsShaderStorageImageWriteWithoutFormat)
                         throw exception("Storage texel buffer {} needs formatless image access features", index);
                     break;

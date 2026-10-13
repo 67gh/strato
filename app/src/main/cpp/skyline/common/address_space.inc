@@ -83,6 +83,10 @@ namespace skyline {
     }
 
     MM_MEMBER()::FlatMemoryManager() {
+        // Both vaLimit and the terminal block must represent the exclusive end.
+        // In particular, a 32-bit address space needs wider internal addresses.
+        static_assert(AddressSpaceBits < sizeof(VaType) * 8,
+                      "FlatMemoryManager needs a VA type wide enough for its exclusive end");
         this->vaLimit = AddressSpaceSize; // Exclusive end, including the final GPU page
         sparseMap = static_cast<u8 *>(mmap(0, SparseMapSize, PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
         if (sparseMap == MAP_FAILED)
