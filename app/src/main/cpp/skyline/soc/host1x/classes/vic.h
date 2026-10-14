@@ -4,6 +4,7 @@
 #pragma once
 
 #include <common.h>
+#include <soc/host1x/video_capture.h>
 
 namespace skyline::soc::host1x {
     /**
@@ -11,10 +12,13 @@ namespace skyline::soc::host1x {
      */
     class VicClass {
       private:
+        const DeviceState &state;
+        VideoCapture capture{VideoCapture::Engine::Vic};
+        bool reportedUnsupported{};
         std::function<void()> opDoneCallback;
 
       public:
-        VicClass(std::function<void()> opDoneCallback);
+        VicClass(std::function<void()> opDoneCallback, const DeviceState &state);
 
         void CallMethod(u32 method, u32 argument);
     };

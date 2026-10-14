@@ -345,16 +345,15 @@ namespace skyline::gpu {
     void Buffer::MarkGpuDirtyImplStaged() {
         std::scoped_lock lock{stateMutex}; // stateMutex is locked to prevent state changes at any point during this function
 
-        if (dirtyState == DirtyState::GpuDirty)
-            return;
+        if (dirtyState != DirtyState::GpuDirty) {
+            gpu.state.process->trap.TrapRegions(*trapHandle, false);
+            if (dirtyState == DirtyState::CpuDirty)
+                SynchronizeHost(true);
+            dirtyState = DirtyState::GpuDirty;
+        }
 
-        gpu.state.process->trap.TrapRegions(*trapHandle, false); // This has to occur prior to any synchronization as it'll skip trapping
-
-        if (dirtyState == DirtyState::CpuDirty)
-            SynchronizeHost(true); // Will transition the Buffer to Clean
-
-        dirtyState = DirtyState::GpuDirty;
-
+        // unlock() releases the previous execution's protection even if GPU data
+        // remains newer than the guest mirror. Renew it for EVERY GPU write.
         BlockAllCpuBackingWrites();
         AdvanceSequence(); // The GPU will modify buffer contents so advance to the next sequence
     }

@@ -362,7 +362,7 @@ namespace skyline::gpu::interconnect {
         return texture.get();
     }
 
-    TexelBufferBinding Textures::GetTexelBuffer(InterconnectContext &ctx, u32 index, bool storage, Shader::ImageFormat shaderFormat) try {
+    TexelBufferBinding Textures::GetTexelBuffer(InterconnectContext &ctx, u32 index, bool storage, Shader::ImageFormat shaderFormat, Shader::ImageNumericType numericType) try {
         auto headers{texturePool.UpdateGet(ctx).textureHeaders};
         if (index >= headers.size())
             throw exception("Texel buffer TIC index {} exceeds pool size {}", index, headers.size());
@@ -382,13 +382,9 @@ namespace skyline::gpu::interconnect {
                 case Shader::ImageFormat::R32_UINT: format = format::R32Uint; break;
                 case Shader::ImageFormat::R32G32B32A32_UINT: format = format::R32G32B32A32Uint; break;
                 case Shader::ImageFormat::Typeless:
-                    if (tic.formatWord.componentR != TextureImageControl::ImageComponent::Uint) {
-                        // Preserve the rejected descriptor too: successful bindings are
-                        // captured below, but this failure used to lose the required format.
+                    if (GetTexelBufferNumericType(ctx, index) != numericType) {
                         skyline::diagnostics::SaveArtifact("tic_rejected", index, &tic, sizeof(tic), "bin");
-                        throw exception("Typeless storage texel buffer {} requires numeric-type specialization: TIC formatWord=0x{:08X}, VkFormat={}, texelBytes={}, shaderFormat={}",
-                                        index, tic.formatWord.Raw(), static_cast<u32>(format->vkFormat),
-                                        format->bpb, static_cast<u32>(shaderFormat));
+                        throw exception("Storage texel buffer {} shader/TIC numeric type mismatch (formatWord=0x{:08X})", index, tic.formatWord.Raw());
                     }
                     if (!ctx.gpu.traits.supportsImageReadWithoutFormat || !ctx.gpu.traits.supportsShaderStorageImageWriteWithoutFormat)
                         throw exception("Storage texel buffer {} needs formatless image access features", index);
@@ -446,6 +442,18 @@ namespace skyline::gpu::interconnect {
     } catch (const std::exception &error) {
         skyline::diagnostics::Unsupported("texel_descriptor", index, error.what());
         throw;
+    }
+
+    Shader::ImageNumericType Textures::GetTexelBufferNumericType(InterconnectContext &ctx, u32 index) {
+        auto headers{texturePool.UpdateGet(ctx).textureHeaders};
+        if (index >= headers.size())
+            throw exception("Texel buffer TIC index {} exceeds pool size {}", index, headers.size());
+        using Component = TextureImageControl::ImageComponent;
+        switch (headers[index].formatWord.componentR) {
+            case Component::Uint: return Shader::ImageNumericType::UnsignedInt;
+            case Component::Sint: return Shader::ImageNumericType::SignedInt;
+            default: return Shader::ImageNumericType::Float; // Normalized and floating formats.
+        }
     }
 
     Shader::TextureType Textures::GetTextureType(InterconnectContext &ctx, u32 index) {

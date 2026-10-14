@@ -23,6 +23,12 @@ namespace skyline::gpu::interconnect::kepler_compute {
                 return textures.GetTextureType(ctx, BindlessHandle{ .raw = index }.textureIndex);
             })};
 
+        for (auto &desc : program.info.image_buffer_descriptors) {
+            if (desc.format == Shader::ImageFormat::Typeless) {
+                auto handle{ReadBindlessHandle(ctx, constantBuffers, desc, 0)};
+                desc.numeric_type = textures.GetTexelBufferNumericType(ctx, handle.textureIndex);
+            }
+        }
         Shader::Backend::Bindings bindings{};
 
         return {ctx.gpu.shader->CompileShader({}, program, bindings, packedState.shaderHash), program.info};
@@ -107,6 +113,19 @@ namespace skyline::gpu::interconnect::kepler_compute {
           compiledPipeline{MakeCompiledPipeline(ctx, packedState, shaderStage, descriptorInfo.descriptorSetLayoutBindings)},
           sourcePackedState{packedState} {
         storageBufferViews.resize(shaderStage.info.storage_buffers_descriptors.size());
+    }
+
+    bool Pipeline::MatchesTexelTypes(InterconnectContext &ctx, Textures &textures, ConstantBufferSet &constantBuffers) const {
+        for (const auto &desc : shaderStage.info.image_buffer_descriptors) {
+            if (desc.format != Shader::ImageFormat::Typeless)
+                continue;
+            for (u32 i{}; i < desc.count; ++i) {
+                auto handle{ReadBindlessHandle(ctx, constantBuffers, desc, i)};
+                if (desc.numeric_type != textures.GetTexelBufferNumericType(ctx, handle.textureIndex))
+                    return false;
+            }
+        }
+        return true;
     }
 
     void Pipeline::SyncCachedStorageBufferViews(ContextTag executionTag) {
