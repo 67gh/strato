@@ -18,6 +18,11 @@ int main(int argc,char**argv){
  std::filesystem::copy_file(std::filesystem::path(argv[1])/"flight_recorder.jsonl",std::filesystem::path(argv[1])/"initial_events.jsonl");
  const unsigned words[]={0x07230203,0x10000,0,1,0};SaveArtifact("spirv",23,words,sizeof(words),"spv");SaveArtifact("spirv",23,words,sizeof(words),"spv");
  for(int i=0;i<9000;i++)Event("overwrite");
+ Event("gpu_before_ipc_flood");
+ for(int i=0;i<12000;i++)Event("ipc_request",4,0,0,"audio::IAudioRenderer");
+ Event("gpu_after_ipc_flood");
+ assert(FlushRecorder("ipc_flood"));
+ std::filesystem::copy_file(std::filesystem::path(argv[1])/"flight_recorder.jsonl",std::filesystem::path(argv[1])/"ipc_flood_events.jsonl");
  std::vector<std::thread> threads;for(int t=0;t<4;t++)threads.emplace_back([]{for(int i=0;i<12000;i++)Event("stress");});for(auto&t:threads)t.join();
  assert(FlushRecorder("stress"));InitializeCrashCapture();RecordRawCrash(11,5,7,11,13,17,false);RecordRawCrash(11,99,99,99,99,99,true);CloseCrashCapture();
  ShutdownRecorder();assert(!RecorderEnabled());

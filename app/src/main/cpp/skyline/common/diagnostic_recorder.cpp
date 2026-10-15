@@ -18,20 +18,21 @@
 
 namespace skyline::diagnostics {
 namespace {
-    constexpr std::size_t Capacity = 8192, MaxMappings = 65536, MaxUnsupported = 512;
+    constexpr std::size_t Capacity = 8192, IpcCapacity = 2048, MaxMappings = 65536, MaxUnsupported = 512;
     constexpr std::size_t ArtifactBudget = 32 * 1024 * 1024, ArtifactLimit = 4 * 1024 * 1024;
     struct Entry {
         Id sequence{}, ns{}, tid{}, frame{}, operation{}, submission{}, pipeline{}, resource{}, address{}, size{};
         char kind[32]{}, text[192]{};
     };
     std::array<Entry, Capacity> ring{};
+    std::array<Entry, IpcCapacity> ipcRing{}; // IPC traffic cannot evict rendering evidence.
     std::atomic_flag ringLock = ATOMIC_FLAG_INIT;
     std::atomic<Id> dropped{}, total{}, captures{}, artifactDrops{}, mappingDrops{}, registryDrops{};
     std::atomic<Id> draws{}, dispatches{}, submitted{}, completed{}, frames{};
     std::atomic<bool> enabled{}, paused{}, frameCapture{};
     int validationMode{};
     bool shaderCapture{true};
-    std::size_t head{}, count{}, artifactBytes{}, artifactCount{};
+    std::size_t head{}, count{}, ipcHead{}, ipcCount{}, artifactBytes{}, artifactCount{};
     std::mutex stateMutex, artifactMutex, flushMutex;
     struct Pump {
         std::thread worker;
@@ -81,11 +82,15 @@ bool ShaderCaptureEnabled() noexcept { return RecorderEnabled() && shaderCapture
 void Event(std::string_view kind, Id resource, Id address, Id size, std::string_view text) noexcept {
     if (!RecorderEnabled()) return;
     if (ringLock.test_and_set(std::memory_order_acquire)) { ++dropped;return; }
-    auto &e = ring[head];e = {};
+    const bool ipc = kind == "ipc_request";
+    auto &targetHead = ipc ? ipcHead : head;
+    auto &targetCount = ipc ? ipcCount : count;
+    const auto capacity = ipc ? IpcCapacity : Capacity;
+    auto &e = ipc ? ipcRing[targetHead] : ring[targetHead];e = {};
     e.sequence = ++total;e.ns = Now();e.tid = syscall(SYS_gettid);e.frame = frames.load();
     e.operation = correlation.operation;e.submission = correlation.submission;e.pipeline = correlation.pipeline;
     e.resource = resource;e.address = address;e.size = size;Copy(e.kind,kind);Copy(e.text,text);
-    head = (head + 1) % Capacity;count = std::min(count + 1, Capacity);
+    targetHead = (targetHead + 1) % capacity;targetCount = std::min(targetCount + 1, capacity);
     ringLock.clear(std::memory_order_release);
 }
 void CountDraw(bool compute) noexcept { if (compute) ++dispatches;else ++draws; }
@@ -173,11 +178,16 @@ bool FlushRecorder(std::string_view reason) noexcept {
     if(!RecorderEnabled()) return false;
     try {
         std::unique_lock flushLock(flushMutex,std::try_to_lock);if(!flushLock)return false;
-        std::vector<Entry> entries(Capacity);
+        std::vector<Entry> entries(Capacity + IpcCapacity);
         if(ringLock.test_and_set(std::memory_order_acquire)) return false;
-        auto n=count;for(std::size_t i=0;i<n;i++)entries[i]=ring[(head+Capacity-n+i)%Capacity];
+        const auto mainCount=count;
+        const auto capturedIpcCount=ipcCount;
+        const auto n=mainCount+capturedIpcCount;
+        for(std::size_t i=0;i<mainCount;i++)entries[i]=ring[(head+Capacity-mainCount+i)%Capacity];
+        for(std::size_t i=0;i<capturedIpcCount;i++)entries[mainCount+i]=ipcRing[(ipcHead+IpcCapacity-capturedIpcCount+i)%IpcCapacity];
         const auto snapshotTotal=total.load();
         ringLock.clear(std::memory_order_release);entries.resize(n);
+        std::sort(entries.begin(),entries.end(),[](const Entry &a,const Entry &b){return a.sequence<b.sequence;});
         std::ostringstream events;
         for(auto &e:entries) events<<"{\"seq\":"<<e.sequence<<",\"ns\":"<<e.ns<<",\"tid\":"<<e.tid<<",\"frame\":"<<e.frame<<",\"operation\":"<<e.operation<<",\"submission\":"<<e.submission<<",\"pipeline\":"<<e.pipeline<<",\"kind\":"<<Quote(e.kind)<<",\"resource\":"<<e.resource<<",\"address\":"<<e.address<<",\"size\":"<<e.size<<",\"text\":"<<Quote(e.text)<<"}\n";
         bool ok=WriteJson("flight_recorder.jsonl",events.str());
@@ -194,14 +204,14 @@ bool FlushRecorder(std::string_view reason) noexcept {
         unsupported<<"],\"dropped_updates\":"<<registryDrops.load()<<'}';feature<<'}';
         ok=WriteJson("gpu_mappings.json",map.str())&&ok;ok=WriteJson("unsupported.json",unsupported.str())&&ok;ok=WriteJson("diagnostic_features.json",feature.str())&&ok;
         auto p=GetProgress();std::ostringstream status;
-        status<<"{\"schema_version\":1,\"reason\":"<<Quote(reason)<<",\"capture_request\":"<<CaptureRequest()<<",\"ns\":"<<Now()<<",\"draws\":"<<p.draws<<",\"dispatches\":"<<p.dispatches<<",\"submissions\":"<<p.submitted<<",\"completions\":"<<p.completed<<",\"presents\":"<<p.frames<<",\"paused\":"<<(IsPaused()?"true":"false")<<",\"ring_capacity\":"<<Capacity<<",\"total_events\":"<<total.load()<<",\"dropped_events\":"<<dropped.load()<<",\"overwritten_events\":"<<(snapshotTotal>n?snapshotTotal-n:0)<<",\"artifact_drops\":"<<artifactDrops.load()<<",\"frame_capture_pending\":"<<(frameCapture.load()?"true":"false")<<",\"files_written\":"<<(ok?"true":"false")<<'}';
+        status<<"{\"schema_version\":1,\"reason\":"<<Quote(reason)<<",\"capture_request\":"<<CaptureRequest()<<",\"ns\":"<<Now()<<",\"draws\":"<<p.draws<<",\"dispatches\":"<<p.dispatches<<",\"submissions\":"<<p.submitted<<",\"completions\":"<<p.completed<<",\"presents\":"<<p.frames<<",\"paused\":"<<(IsPaused()?"true":"false")<<",\"ring_capacity\":"<<(Capacity+IpcCapacity)<<",\"render_ring_capacity\":"<<Capacity<<",\"ipc_ring_capacity\":"<<IpcCapacity<<",\"retained_ipc_events\":"<<capturedIpcCount<<",\"total_events\":"<<total.load()<<",\"dropped_events\":"<<dropped.load()<<",\"overwritten_events\":"<<(snapshotTotal>n?snapshotTotal-n:0)<<",\"artifact_drops\":"<<artifactDrops.load()<<",\"frame_capture_pending\":"<<(frameCapture.load()?"true":"false")<<",\"files_written\":"<<(ok?"true":"false")<<'}';
         return WriteJson("recorder_status.json",status.str())&&ok;
     } catch (...) { return false; }
 }
 void InitializeRecorder() noexcept {
     // Called before emulation workers start; the session directory is immutable afterwards.
     pump.Stop();
-    enabled=false;head=count=artifactBytes=artifactCount=0;total=dropped=captures=artifactDrops=mappingDrops=registryDrops=0;
+    enabled=false;head=count=ipcHead=ipcCount=artifactBytes=artifactCount=0;total=dropped=captures=artifactDrops=mappingDrops=registryDrops=0;
     draws=dispatches=submitted=completed=frames=0;paused=false;frameCapture=false;validationMode=0;shaderCapture=true;
     try {
         regions.clear();missing.clear();features.clear();
@@ -209,7 +219,7 @@ void InitializeRecorder() noexcept {
         int requestedMode{};
         if(options>>requestedMode>>captureShaders){validationMode=std::clamp(requestedMode,0,3);shaderCapture=captureShaders!=0;}
         enabled=!OutputPath("flight_recorder.jsonl",{}).empty();
-        Feature("recorder","active; bounded 8192 events; nonblocking producers; dropped counts explicit");
+        Feature("recorder","active; separate bounded rings: 8192 general and 2048 IPC events; nonblocking producers; dropped counts explicit");
         Feature("mapping","incremental mapped-region registry; holes are absent ranges; dropped updates invalidate completeness");
         Feature("unsupported","active; explicit IPC/compute/texel hooks plus observed logs; bounded 512 distinct entries");
         Feature("watchdog","not_started; guest sampler starts after game loading; recorder background export remains independent");

@@ -69,6 +69,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 boost::container::small_vector<StorageBufferDesc, 8> storageBufferDescs;
 
                 struct UniformTexelBufferDesc {
+                    Shader::ImageNumericType numeric_type;
                     u32 cbuf_offset;
                     u32 secondary_cbuf_offset;
                     bool has_secondary;
@@ -80,7 +81,8 @@ namespace skyline::gpu::interconnect::maxwell3d {
                     u8 size_shift;
 
                     UniformTexelBufferDesc(const Shader::TextureBufferDescriptor &desc)
-                        : cbuf_offset{desc.cbuf_offset},
+                        : numeric_type{desc.numeric_type},
+                          cbuf_offset{desc.cbuf_offset},
                           secondary_cbuf_offset{desc.secondary_cbuf_offset},
                           has_secondary{desc.has_secondary},
                           cbuf_index{static_cast<u8>(desc.cbuf_index)},

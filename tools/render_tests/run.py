@@ -82,7 +82,7 @@ struct ConstantBufferSet{std::vector<u32>handles;};
 struct Handle{u32 textureIndex;};
 Handle ReadBindlessHandle(InterconnectContext&,ConstantBufferSet&c,const Desc&d,u32 i){return {c.handles.at(d.cbuf_offset+i)};}
 using PackedPipelineState=int;using ShaderBinary=int;
-struct Pipeline{struct {struct {std::vector<Desc>image_buffer_descriptors;}info;}shaderStage;
+struct Pipeline{struct {struct {std::vector<Desc>image_buffer_descriptors;std::vector<Desc>texture_buffer_descriptors;}info;}shaderStage;
  static inline int made=0;int id=++made;
  Pipeline(InterconnectContext&,Textures&t,ConstantBufferSet&c,int,const ShaderBinary&){
   shaderStage.info.image_buffer_descriptors.push_back({.numeric_type=t.types.at(c.handles.at(0))});
@@ -106,6 +106,11 @@ int main(){
  c.handles={0,1};f->shaderStage.info.image_buffer_descriptors[0].count=2;
  assert(!f->MatchesTexelTypes(ctx,t,c));t.types[1]=Type::Float;assert(f->MatchesTexelTypes(ctx,t,c));
  f->shaderStage.info.image_buffer_descriptors[0].format=Shader::ImageFormat::Typed;c.handles.clear();assert(f->MatchesTexelTypes(ctx,t,c));
+ // Sampled integer buffers also invalidate variants when the TIC changes.
+ f->shaderStage.info.texture_buffer_descriptors.push_back({.numeric_type=Type::Float,.count=2});
+ c.handles={0,1};assert(f->MatchesTexelTypes(ctx,t,c));
+ t.types[1]=Type::SignedInt;assert(!f->MatchesTexelTypes(ctx,t,c));
+ t.types[1]=Type::Float;assert(f->MatchesTexelTypes(ctx,t,c));
  std::cout<<"PASS: numeric variants, TIC mutation, variant reuse, lifetime, all descriptor elements\n";
 }
 """

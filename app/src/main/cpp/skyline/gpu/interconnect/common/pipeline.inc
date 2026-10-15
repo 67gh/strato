@@ -122,9 +122,7 @@ namespace skyline::gpu::interconnect {
         Shader::ImageFormat format{Shader::ImageFormat::Typeless};
         if constexpr (storage)
             format = desc.format;
-        auto numericType{Shader::ImageNumericType::UnsignedInt};
-        if constexpr (storage)
-            numericType = desc.numeric_type;
+        const auto numericType{desc.numeric_type};
         auto binding{textures.GetTexelBuffer(ctx, handle.textureIndex, storage, format, numericType)};
         auto *buffer{binding.view.GetBuffer()};
         buffer->PopulateReadBarrier(dstStage, srcStageMask, dstStageMask);

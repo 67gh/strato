@@ -23,6 +23,10 @@ namespace skyline::gpu::interconnect::kepler_compute {
                 return textures.GetTextureType(ctx, BindlessHandle{ .raw = index }.textureIndex);
             })};
 
+        for (auto &desc : program.info.texture_buffer_descriptors) {
+            auto handle{ReadBindlessHandle(ctx, constantBuffers, desc, 0)};
+            desc.numeric_type = textures.GetTexelBufferNumericType(ctx, handle.textureIndex);
+        }
         for (auto &desc : program.info.image_buffer_descriptors) {
             if (desc.format == Shader::ImageFormat::Typeless) {
                 auto handle{ReadBindlessHandle(ctx, constantBuffers, desc, 0)};
@@ -116,6 +120,13 @@ namespace skyline::gpu::interconnect::kepler_compute {
     }
 
     bool Pipeline::MatchesTexelTypes(InterconnectContext &ctx, Textures &textures, ConstantBufferSet &constantBuffers) const {
+        for (const auto &desc : shaderStage.info.texture_buffer_descriptors) {
+            for (u32 i{}; i < desc.count; ++i) {
+                auto handle{ReadBindlessHandle(ctx, constantBuffers, desc, i)};
+                if (desc.numeric_type != textures.GetTexelBufferNumericType(ctx, handle.textureIndex))
+                    return false;
+            }
+        }
         for (const auto &desc : shaderStage.info.image_buffer_descriptors) {
             if (desc.format != Shader::ImageFormat::Typeless)
                 continue;

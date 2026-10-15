@@ -15,6 +15,12 @@ run('recorder_runtime',[out/'host_test',session])
 for file in session.glob('*.json'):json.loads(file.read_text())
 events=[json.loads(x) for x in (session/'initial_events.jsonl').read_text().splitlines()]
 e=next(e for e in events if e['kind']=='test');assert (e['submission'],e['pipeline'],e['resource'],e['text'])==(7,11,13,'quote" newline\n')
+flood=[json.loads(x) for x in (session/'ipc_flood_events.jsonl').read_text().splitlines()]
+assert sum(e['kind']=='ipc_request' for e in flood)==2048
+assert sum(e['kind']=='gpu_before_ipc_flood' for e in flood)==1
+assert sum(e['kind']=='gpu_after_ipc_flood' for e in flood)==1
+assert len(flood)<=10240 and all(a['seq']<b['seq'] for a,b in zip(flood,flood[1:]))
+results.append('IPC flood preserves GPU evidence, bounded rings, global sequence ordering: PASS')
 status=json.loads((session/'recorder_status.json').read_text());assert status['draws']==status['dispatches']==status['submissions']==status['completions']==status['presents']==1
 assert status['total_events']>8192 and status['overwritten_events']>0
 mapping=json.loads((session/'gpu_mappings.json').read_text());assert mapping['dropped_updates']==1

@@ -69,6 +69,19 @@ def main():
         apply()
         assert snapshot(source) == expected
         print("PASS: already-applied patch is idempotent")
+        upgrades = sorted((ROOT / "app/patches/shader-compiler/upgrades").glob("*.patch"))
+        assert len(upgrades)==4
+        for upgrade in upgrades:
+            run("git", "apply", "--reverse", upgrade, cwd=source)
+        assert snapshot(source)!=expected
+        # This is the exact prior release, not a clean upstream submodule.
+        migrated = apply()
+        assert snapshot(source)==expected
+        assert migrated.stdout.count("Applied shader compiler patch:")==4
+        apply()
+        assert snapshot(source)==expected
+        print("PASS: previous release migrates without submodule reset; migration is idempotent")
+
 
         run("git", "restore", "--", FILES[0], FILES[3], cwd=source)
         apply()

@@ -81,18 +81,20 @@ binding=extract((src/'common/pipeline.inc').read_text(),'static TexelBufferBindi
 shader_info=(project/'app/libraries/shader-compiler/shader_info.h').read_text()
 descriptors='namespace Shader {\n'+extract(shader_info,'struct ImageBufferDescriptor')+';\n}\n'
 descriptors+=extract((src/'maxwell_3d/pipeline_manager.h').read_text(),'struct StorageTexelBufferDesc')+';\n'
+descriptors+='namespace Shader {\n'+extract(shader_info,'struct TextureBufferDescriptor')+';\n}\n'
+descriptors+=extract((src/'maxwell_3d/pipeline_manager.h').read_text(),'struct UniformTexelBufferDesc')+';\n'
 main='''
 template<class Fn>void rejects(Fn fn){bool rejected=false;try{fn();}catch(const std::runtime_error&){rejected=true;}assert(rejected);}
 int main(){Textures textures;InterconnectContext ctx;TextureImageControl tic{};
 tic.textureType=TextureImageControl::TextureType::e1DBuffer;tic.headerType=TextureImageControl::HeaderType::Buffer1D;tic.addressHigh=0x1234;tic.addressLow=0x56789000;tic.widthMinusOne=7;
 auto&f=tic.formatWord;f.format=TextureImageControl::ImageFormat::R32;f.componentR=TextureImageControl::ImageComponent::Float;
 f.swizzleX=TextureImageControl::ImageSwizzle::R;f.swizzleY=TextureImageControl::ImageSwizzle::Zero;f.swizzleZ=TextureImageControl::ImageSwizzle::Zero;f.swizzleW=TextureImageControl::ImageSwizzle::OneFloat;
-textures.texturePool.textureHeaders={tic};auto get=[&](bool storage=false,Shader::ImageFormat sf=Shader::ImageFormat::Typeless,Shader::ImageNumericType nt=Shader::ImageNumericType::UnsignedInt){return textures.GetTexelBuffer(ctx,0,storage,sf,nt);};
+textures.texturePool.textureHeaders={tic};auto get=[&](bool storage=false,Shader::ImageFormat sf=Shader::ImageFormat::Typeless,Shader::ImageNumericType nt=Shader::ImageNumericType::Float){return textures.GetTexelBuffer(ctx,0,storage,sf,nt);};
 auto b=get();assert(mappedAddress==0x123456789000ULL && mappedSize==32 && b.format==vk::Format::eR32Sfloat && b.alignment==16 && ctx.executor.attached==1);
 auto&h=textures.texturePool.textureHeaders[0];h.tileConfig.widthMinusOne_16_31=1;get();assert(mappedSize==(65536+8)*4);h.tileConfig.widthMinusOne_16_31=0;
 h.widthMinusOne=65535;h.tileConfig.widthMinusOne_16_31=65535;rejects([&]{get();});h=tic;
 assert(get(true,Shader::ImageFormat::R32_UINT).format==vk::Format::eR32Uint);
-rejects([&]{get(true,Shader::ImageFormat::R16_UINT);});rejects([&]{get(true,Shader::ImageFormat::R8_SINT);});rejects([&]{get(true);});
+rejects([&]{get(true,Shader::ImageFormat::R16_UINT);});rejects([&]{get(true,Shader::ImageFormat::R8_SINT);});rejects([&]{get(true,Shader::ImageFormat::Typeless,Shader::ImageNumericType::UnsignedInt);});
 using Type=Shader::ImageNumericType;using SF=Shader::ImageFormat;
 assert(get(true,SF::Typeless,Type::Float).format==vk::Format::eR32Sfloat);
 h.formatWord.componentR=TextureImageControl::ImageComponent::Sint;
@@ -103,15 +105,15 @@ assert(textures.GetTexelBufferNumericType(ctx,0)==Type::Float);
 h=tic;
 ctx.gpu.traits.supportsImageReadWithoutFormat=false;rejects([&]{get(true,SF::Typeless,Type::Float);});ctx.gpu.traits.supportsImageReadWithoutFormat=true;
 ctx.gpu.traits.supportsShaderStorageImageWriteWithoutFormat=false;rejects([&]{get(true,SF::Typeless,Type::Float);});ctx.gpu.traits.supportsShaderStorageImageWriteWithoutFormat=true;
-h.formatWord.componentR=TextureImageControl::ImageComponent::Uint;assert(get(true).format==vk::Format::eR32Uint);rejects([&]{get();});h=tic;
+h.formatWord.componentR=TextureImageControl::ImageComponent::Uint;assert(get(true,SF::Typeless,Type::UnsignedInt).format==vk::Format::eR32Uint);rejects([&]{get();});h=tic;
 split=true;rejects([&]{get();});split=false;
 ctx.gpu.vkPhysicalDevice.features={};rejects([&]{get();});ctx.gpu.vkPhysicalDevice.features=vk::FormatFeatureFlagBits::eUniformTexelBuffer|vk::FormatFeatureFlagBits::eStorageTexelBuffer;
 h.formatWord.swizzleX=TextureImageControl::ImageSwizzle::G;rejects([&]{get();});h=tic;
 h.textureType=TextureImageControl::TextureType::e2D;rejects([&]{get();});h=tic;
 rejects([&]{textures.GetTexelBuffer(ctx,1,false,Shader::ImageFormat::Typeless);});
-struct Sample{};
+Shader::TextureBufferDescriptor sampled{};sampled.count=1;
 vk::PipelineStageFlags source{},dest{};
-GetTexelBufferBinding(ctx,Sample{},textures,{.raw=0},vk::PipelineStageFlagBits::eFragmentShader,source,dest);assert(buffer.reads==1 && buffer.blocked && !buffer.dirty);
+GetTexelBufferBinding(ctx,sampled,textures,{.raw=0},vk::PipelineStageFlagBits::eFragmentShader,source,dest);assert(buffer.reads==1 && buffer.blocked && !buffer.dirty);
 const std::array types{Type::UnsignedInt,Type::SignedInt,Type::Float};
 const std::array components{TextureImageControl::ImageComponent::Uint,TextureImageControl::ImageComponent::Sint,TextureImageControl::ImageComponent::Float};
 const std::array formats{vk::Format::eR32Uint,vk::Format::eR32Sint,vk::Format::eR32Sfloat};
@@ -121,6 +123,20 @@ for (std::size_t i=0;i<types.size();++i) {
     original.cbuf_index=3;original.cbuf_offset=64;original.count=1;original.size_shift=2;
     original.is_read=true;
     h=tic;h.formatWord.componentR=components[i];
+    h.formatWord.swizzleW=types[i]==Type::Float ? TextureImageControl::ImageSwizzle::OneFloat : TextureImageControl::ImageSwizzle::OneInt;
+    sampled.numeric_type=types[i];
+    UniformTexelBufferDesc graphicsSampled{sampled};
+    assert(graphicsSampled.numeric_type==sampled.numeric_type);
+    auto differentSampled=sampled;differentSampled.numeric_type=types[(i+1)%types.size()];
+    assert(graphicsSampled!=UniformTexelBufferDesc{differentSampled});
+    auto checkSampled=[&](const auto& desc,vk::PipelineStageFlagBits stage) {
+        buffer=Buffer{};
+        auto result=GetTexelBufferBinding(ctx,desc,textures,{.raw=0},stage,source,dest);
+        assert(result.format==formats[i] && buffer.reads==1 && buffer.blocked && !buffer.dirty);
+    };
+    checkSampled(sampled,vk::PipelineStageFlagBits::eComputeShader);
+    checkSampled(graphicsSampled,vk::PipelineStageFlagBits::eFragmentShader);
+    rejects([&]{GetTexelBufferBinding(ctx,differentSampled,textures,{.raw=0},vk::PipelineStageFlagBits::eComputeShader,source,dest);});
     for (bool writable : {false,true}) {
         original.is_written=writable;
         StorageTexelBufferDesc graphics{original};

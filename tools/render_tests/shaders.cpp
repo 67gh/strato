@@ -70,8 +70,71 @@ void test(ImageNumericType numeric, ImageFormat format, bool atomic, const char*
     assert(bitcasts==(vector.value==ctx.U32[4].value?0:2));
     std::ofstream output(path,std::ios::binary);output.write(reinterpret_cast<const char*>(words.data()),words.size()*4);
 }
+
+void sampled_test(const char* path) {
+    Profile profile{};profile.supported_spirv=0x00010300;
+    RuntimeInfo runtime{};Backend::Bindings bindings{};IR::Program program{};
+    program.stage=Stage::Compute;program.workgroup_size={1,1,1};
+    for (auto type : {ImageNumericType::Float,ImageNumericType::UnsignedInt,ImageNumericType::SignedInt})
+        program.info.texture_buffer_descriptors.push_back({.count=1,.numeric_type=type});
+    EmitContext ctx(profile,runtime,program,bindings);
+    const std::array scalars{ctx.F32[1],ctx.U32[1],ctx.S32[1]};
+    const std::array vectors{ctx.F32[4],ctx.U32[4],ctx.S32[4]};
+    auto fn=ctx.OpFunction(ctx.TypeVoid(),spv::FunctionControlMask::MaskNone,ctx.TypeFunction(ctx.TypeVoid()));
+    ctx.AddLabel();
+    std::array<Id,3> fetched;
+    for(u32 i=0;i<3;++i) {
+        IR::TextureInstInfo info{};info.type.Assign(TextureType::Buffer);info.descriptor_index.Assign(i);
+        IR::Inst fetch(IR::Opcode::ImageFetch,0);fetch.SetFlags(info);
+        fetched[i]=EmitImageFetch(ctx,&fetch,IR::Value{},ctx.Const(0U),Id{},Id{},Id{});
+        IR::Inst query(IR::Opcode::ImageQueryDimensions,0);query.SetFlags(info);
+        (void)EmitImageQueryDimensions(ctx,&query,IR::Value{},ctx.Const(0U));
+    }
+    ctx.OpReturn();ctx.OpFunctionEnd();ctx.AddEntryPoint(spv::ExecutionModel::GLCompute,fn,"main");
+    ctx.AddExecutionMode(fn,spv::ExecutionMode::LocalSize,1U,1U,1U);
+    ctx.AddCapability(spv::Capability::SampledBuffer);ctx.AddCapability(spv::Capability::ImageQuery);
+    auto words=ctx.Assemble();std::map<u32,u32> pointees,variableTypes,resultTypes,loadedVariables;
+    unsigned images=0,fetches=0,queries=0,bitcasts=0;
+    std::map<u32,u32> constants;
+    std::vector<u32> queryResults;
+    for(size_t p=5;p<words.size();) {
+        auto n=words[p]>>16;auto op=static_cast<spv::Op>(words[p]&0xffff);const auto*w=words.data()+p;
+        assert(n && p+n<=words.size());
+        if(op==spv::Op::OpTypeImage) {
+            for(u32 i=0;i<3;++i) if(w[1]==ctx.texture_buffers[i].image_type.value) {
+                assert(w[2]==scalars[i].value && w[3]==static_cast<u32>(spv::Dim::Buffer) && w[7]==1);++images;
+            }
+        }
+        if(op==spv::Op::OpTypePointer) pointees[w[1]]=w[3];
+        if(op==spv::Op::OpVariable) variableTypes[w[2]]=w[1];
+        if(op==spv::Op::OpLoad) loadedVariables[w[2]]=w[3];
+        if(op==spv::Op::OpImageFetch) {
+            assert(fetches<3 && w[1]==vectors[fetches].value);
+            assert(loadedVariables.at(w[3])==ctx.texture_buffers[fetches].id.value);
+            resultTypes[w[2]]=w[1];++fetches;
+        }
+        if(op==spv::Op::OpBitcast) {assert(w[1]==ctx.F32[4].value);resultTypes[w[2]]=w[1];++bitcasts;}
+        if(op==spv::Op::OpImageQuerySize) {++queries;queryResults.push_back(w[2]);}
+        if(op==spv::Op::OpConstant && w[1]==ctx.U32[1].value) constants[w[2]]=w[3];
+        if(op==spv::Op::OpCompositeConstruct && w[1]==ctx.U32[4].value &&
+           std::find(queryResults.begin(),queryResults.end(),w[3])!=queryResults.end())
+            assert(constants.at(w[6])==1); // Buffer has one level, no mip query.
+        assert(op!=spv::Op::OpImageQueryLevels);
+        // No image-sampler wrapper is valid for these buffer bindings.
+        assert(op!=spv::Op::OpTypeSampledImage && op!=spv::Op::OpConvertUToF && op!=spv::Op::OpConvertSToF);
+        p+=n;
+    }
+    assert(images==3 && fetches==3 && queries==3 && bitcasts==2);
+    for(u32 i=0;i<3;++i) {
+        assert(pointees.at(variableTypes.at(ctx.texture_buffers[i].id.value))==ctx.texture_buffers[i].image_type.value);
+        assert(resultTypes.at(fetched[i].value)==ctx.F32[4].value);
+    }
+    std::ofstream out(path,std::ios::binary);out.write(reinterpret_cast<const char*>(words.data()),words.size()*4);
+}
+
 int main(int argc,char**argv){
     assert(argc==2);std::string base=argv[1];
+    sampled_test((base+"/sampled_mixed.spv").c_str());
     test(ImageNumericType::UnsignedInt,ImageFormat::Typeless,false,(base+"/uint.spv").c_str());
     test(ImageNumericType::SignedInt,ImageFormat::Typeless,false,(base+"/sint.spv").c_str());
     test(ImageNumericType::Float,ImageFormat::Typeless,false,(base+"/float.spv").c_str());

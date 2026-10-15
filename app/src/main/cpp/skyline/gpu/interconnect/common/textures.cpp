@@ -395,10 +395,10 @@ namespace skyline::gpu::interconnect {
             if (format->bpb != guestTexelBytes)
                 throw exception("Storage texel buffer {} changes texel size ({} to {})", index, guestTexelBytes, format->bpb);
         } else {
-            // This compiler's TEX-buffer SPIR-V has a floating sampled type.
-            using Component = TextureImageControl::ImageComponent;
-            if (tic.formatWord.componentR == Component::Uint || tic.formatWord.componentR == Component::Sint)
-                throw exception("Integer sampled texel buffer {} requires shader numeric-type specialization", index);
+            if (GetTexelBufferNumericType(ctx, index) != numericType) {
+                skyline::diagnostics::SaveArtifact("tic_rejected", index, &tic, sizeof(tic), "bin");
+                throw exception("Sampled texel buffer {} shader/TIC numeric type mismatch (formatWord=0x{:08X})", index, tic.formatWord.Raw());
+            }
 
             // VkBufferView has no component swizzle. Accept identity and the
             // canonical defaults for missing channels, not arbitrary remaps.
@@ -417,7 +417,7 @@ namespace skyline::gpu::interconnect {
                 tic.formatWord.swizzleX != Swizzle::R ||
                 (tic.formatWord.swizzleY != Swizzle::G && !(components < 2 && tic.formatWord.swizzleY == Swizzle::Zero)) ||
                 (tic.formatWord.swizzleZ != Swizzle::B && !(components < 3 && tic.formatWord.swizzleZ == Swizzle::Zero)) ||
-                (tic.formatWord.swizzleW != Swizzle::A && !(components < 4 && tic.formatWord.swizzleW == Swizzle::OneFloat)))
+                (tic.formatWord.swizzleW != Swizzle::A && !(components < 4 && tic.formatWord.swizzleW == (numericType == Shader::ImageNumericType::Float ? Swizzle::OneFloat : Swizzle::OneInt))))
                 throw exception("Noncanonical sampled texel buffer swizzle at TIC {}", index);
         }
 

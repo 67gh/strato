@@ -41,6 +41,17 @@ foreach(_strato_patch IN LISTS _strato_patch_files)
         execute_process(COMMAND ${_strato_git} apply --check "${_strato_patch_path}"
             RESULT_VARIABLE _strato_check OUTPUT_VARIABLE _strato_output ERROR_VARIABLE _strato_error)
         if(NOT _strato_check EQUAL 0)
+            # Upgrade an already-patched checkout without resetting local work.
+            set(_strato_upgrade "${_strato_patch_dir}/upgrades/${_strato_patch}")
+            if(EXISTS "${_strato_upgrade}")
+                execute_process(COMMAND ${_strato_git} apply --check "${_strato_upgrade}"
+                    RESULT_VARIABLE _strato_check OUTPUT_VARIABLE _strato_output ERROR_VARIABLE _strato_error)
+                if(_strato_check EQUAL 0)
+                    set(_strato_patch_path "${_strato_upgrade}")
+                endif()
+            endif()
+        endif()
+        if(NOT _strato_check EQUAL 0)
             message(FATAL_ERROR
                 "Cannot apply shader compiler patch ${_strato_patch}. "
                 "Initialize the pinned submodule or resolve conflicting local edits. "
@@ -64,6 +75,10 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
     foreach(_strato_patch IN LISTS _strato_patch_files)
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
             "${_strato_patch_dir}/${_strato_patch}")
+        if(EXISTS "${_strato_patch_dir}/upgrades/${_strato_patch}")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                "${_strato_patch_dir}/upgrades/${_strato_patch}")
+        endif()
     endforeach()
     foreach(_strato_source IN LISTS _strato_shader_files)
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

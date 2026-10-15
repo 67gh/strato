@@ -1,8 +1,40 @@
 diff --git a/backend/spirv/spirv_emit_context.cpp b/backend/spirv/spirv_emit_context.cpp
-index ac04b6c..21f99ca 100644
+index ac04b6c..003fb4a 100644
 --- a/backend/spirv/spirv_emit_context.cpp
 +++ b/backend/spirv/spirv_emit_context.cpp
-@@ -1267,7 +1267,15 @@ void EmitContext::DefineImageBuffers(const Info& info, u32& binding) {
+@@ -1236,15 +1236,18 @@ void EmitContext::DefineTextureBuffers(const Info& info, u32& binding) {
+         return;
+     }
+     const spv::ImageFormat format{spv::ImageFormat::Unknown};
+-    image_buffer_type = TypeImage(F32[1], spv::Dim::Buffer, 0U, false, false, 1, format);
+-    sampled_texture_buffer_type = TypeSampledImage(image_buffer_type);
+-
+-    const Id type{TypePointer(spv::StorageClass::UniformConstant, sampled_texture_buffer_type)};
+     texture_buffers.reserve(info.texture_buffer_descriptors.size());
+     for (const TextureBufferDescriptor& desc : info.texture_buffer_descriptors) {
+         if (desc.count != 1) {
+             throw NotImplementedException("Array of texture buffers");
+         }
++        const Id scalar_type{desc.numeric_type == ImageNumericType::Float ? F32[1] :
++                             desc.numeric_type == ImageNumericType::SignedInt ? S32[1] : U32[1]};
++        const Id vector_type{desc.numeric_type == ImageNumericType::Float ? F32[4] :
++                             desc.numeric_type == ImageNumericType::SignedInt ? S32[4] : U32[4]};
++        const Id image_type{TypeImage(scalar_type, spv::Dim::Buffer, 0U, false, false, 1, format)};
++        // Vulkan uniform texel buffers expose an image, without a sampler.
++        const Id type{TypePointer(spv::StorageClass::UniformConstant, image_type)};
+         const Id id{AddGlobalVariable(type, spv::StorageClass::UniformConstant)};
+         Decorate(id, spv::Decoration::Binding, binding);
+         Decorate(id, spv::Decoration::DescriptorSet, 0U);
+@@ -1252,6 +1255,8 @@ void EmitContext::DefineTextureBuffers(const Info& info, u32& binding) {
+         texture_buffers.push_back({
+             .id = id,
+             .count = desc.count,
++            .image_type = image_type,
++            .vector_type = vector_type,
+         });
+         if (profile.supported_spirv >= 0x00010400) {
+             interfaces.push_back(id);
+@@ -1267,7 +1272,15 @@ void EmitContext::DefineImageBuffers(const Info& info, u32& binding) {
              throw NotImplementedException("Array of image buffers");
          }
          const spv::ImageFormat format{GetImageFormat(desc.format)};
@@ -19,7 +51,7 @@ index ac04b6c..21f99ca 100644
          const Id pointer_type{TypePointer(spv::StorageClass::UniformConstant, image_type)};
          const Id id{AddGlobalVariable(pointer_type, spv::StorageClass::UniformConstant)};
          Decorate(id, spv::Decoration::Binding, binding);
-@@ -1277,6 +1285,7 @@ void EmitContext::DefineImageBuffers(const Info& info, u32& binding) {
+@@ -1277,6 +1290,7 @@ void EmitContext::DefineImageBuffers(const Info& info, u32& binding) {
              .id = id,
              .image_type = image_type,
              .count = desc.count,
