@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="up_title">Strato update</string>
+    <string name="up_close">Close / cancel</string>
+    <string name="up_retry">Try again</string>
+    <string name="up_install">Install update</string>
+    <string name="up_preparing">Preparing update…</string>
+    <string name="up_downloading">Downloading</string>
+    <string name="up_extracting">Extracting APK</string>
+    <string name="up_progress">%1$s — %2$d%%</string>
+    <string name="up_unknown_progress">%1$s — %2$d KiB received</string>
+    <string name="up_validating">Checking the downloaded APK…</string>
+    <string name="up_ready">The update is ready. Tap Install update to continue.</string>
+    <string name="up_installer_opened">Confirm the update in the Android installer. If you cancelled it, you can open it again here.</string>
+    <string name="up_cancelled">Download cancelled. You can try again.</string>
+    <string name="up_permission_needed">Allow Strato to install apps in Android settings, then tap Install update again.</string>
+    <string name="up_download_error">Download failed. Check your connection and free storage, then try again.</string>
+    <string name="up_extract_error">The update archive could not be read. Check free storage and download it again.</string>
+    <string name="up_invalid_apk">This file is not a valid newer APK for this Strato variant. Check the release before trying again.</string>
+    <string name="up_installed">Strato was updated successfully.</string>
+</resources>

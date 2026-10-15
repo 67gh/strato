@@ -240,6 +240,7 @@ function(target_link_libraries_system target)
 endfunction(target_link_libraries_system)
 
 # yuzu Shader Compiler
+include("cmake/ApplyShaderCompilerPatches.cmake")
 add_subdirectory("libraries/shader-compiler")
 target_include_directories(shader_recompiler PUBLIC "libraries/shader-compiler/include")
 target_link_libraries_system(shader_recompiler Boost::intrusive Boost::container range-v3)

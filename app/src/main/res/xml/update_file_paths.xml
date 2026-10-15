@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- APK updates are downloaded into the app's own external files dir (see UpdateInstaller.kt) -->
+    <!-- Legacy update location retained; new downloads use the internal cache. -->
     <external-files-path name="updates" path="updates/" />
+    <cache-path name="update_cache" path="updates/" />
     <cache-path name="diagnostics" path="diagnostics/" />
 </paths>

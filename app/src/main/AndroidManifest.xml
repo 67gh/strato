@@ -43,6 +43,19 @@
         </activity>
 
         <activity
+            android:name=".updater.UpdateActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
+
+        <receiver
+            android:name=".updater.AppInstallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <activity
             android:name=".SetupActivity"
             android:exported="false" />
 

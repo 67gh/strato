@@ -1,0 +1,27 @@
+diff --git a/backend/spirv/emit_spirv_image.cpp b/backend/spirv/emit_spirv_image.cpp
+index 68ea763..5a4bc90 100644
+--- a/backend/spirv/emit_spirv_image.cpp
++++ b/backend/spirv/emit_spirv_image.cpp
+@@ -493,12 +493,20 @@ Id EmitImageRead(EmitContext& ctx, IR::Inst* inst, const IR::Value& index, Id co
+         LOG_WARNING(Shader_SPIRV, "Typeless image read not supported by host");
+         return ctx.ConstantNull(ctx.U32[4]);
+     }
+-    return Emit(&EmitContext::OpImageSparseRead, &EmitContext::OpImageRead, ctx, inst, ctx.U32[4],
+-                Image(ctx, index, info), coords, std::nullopt, std::span<const Id>{});
++    const Id vector_type{info.type == TextureType::Buffer
++        ? ctx.image_buffers.at(info.descriptor_index).vector_type : ctx.U32[4]};
++    const Id result{Emit(&EmitContext::OpImageSparseRead, &EmitContext::OpImageRead, ctx, inst, vector_type,
++                        Image(ctx, index, info), coords, std::nullopt, std::span<const Id>{})};
++    return vector_type.value == ctx.U32[4].value ? result : ctx.OpBitcast(ctx.U32[4], result);
+ }
+ 
+ void EmitImageWrite(EmitContext& ctx, IR::Inst* inst, const IR::Value& index, Id coords, Id color) {
+     const auto info{inst->Flags<IR::TextureInstInfo>()};
++    if (info.type == TextureType::Buffer) {
++        const Id vector_type{ctx.image_buffers.at(info.descriptor_index).vector_type};
++        if (vector_type.value != ctx.U32[4].value)
++            color = ctx.OpBitcast(vector_type, color);
++    }
+     ctx.OpImageWrite(Image(ctx, index, info), coords, color);
+ }
+ 

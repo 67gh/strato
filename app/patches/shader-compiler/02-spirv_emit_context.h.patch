@@ -1,0 +1,12 @@
+diff --git a/backend/spirv/spirv_emit_context.h b/backend/spirv/spirv_emit_context.h
+index bc9ad9d..3c82dfc 100644
+--- a/backend/spirv/spirv_emit_context.h
++++ b/backend/spirv/spirv_emit_context.h
+@@ -46,6 +46,7 @@ struct ImageBufferDefinition {
+     Id id;
+     Id image_type;
+     u32 count;
++    Id vector_type; // Image operations return/store this numeric type.
+ };
+ 
+ struct ImageDefinition {
