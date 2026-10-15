@@ -1,0 +1,72 @@
+[
+  {
+    "file": ".github/workflows/build.yml",
+    "bytes": 4225,
+    "sha256": "c141d735501dca322c42483f5099296fa485d7ba1eb71db887307a45118becde"
+  },
+  {
+    "file": ".github/workflows/pr_build.yml",
+    "bytes": 2941,
+    "sha256": "6b4607cd99878e20307f47e09a999682a1ba4b7f4c7dd84f2ee75b4bec5f66bb"
+  },
+  {
+    "file": ".github/workflows/release.yml",
+    "bytes": 4575,
+    "sha256": "0144ecfe75407e2cab708d7f5342aa4eec04e432fe5a53bd9f80e0ba4a0c9b52"
+  },
+  {
+    "file": "app/src/main/java/org/stratoemu/strato/UpdateChecker.kt",
+    "bytes": 6890,
+    "sha256": "75696c7415b16ff4474bde5a1f860868c6613e0fcc6d2c463ad5f827e20391c1"
+  },
+  {
+    "file": "tools/updater_tests/ReleaseSelectionTests.kt",
+    "bytes": 3253,
+    "sha256": "1c297dfbb9abc7bd74eb1fd856142d0261db9a0cdefcdbe6929ab606230fa659"
+  },
+  {
+    "file": "tools/updater_tests/check_releases.py",
+    "bytes": 1485,
+    "sha256": "da25f9e973b81ae13345019c6685aa5722c2e93d7d801f7db74d0a9fb06ffab2"
+  },
+  {
+    "file": "tools/updater_tests/publication.py",
+    "bytes": 4767,
+    "sha256": "6bbbfd6b2ffb171dafef34d7773be2b8ccf76cd75311fb1e0dbc268d1cabe12e"
+  },
+  {
+    "file": "LIRE_MAJ_APK_DIRECT.txt",
+    "bytes": 4835,
+    "sha256": "a40d8d4c1e4305eea500cebb12cf89b596938789f5281b8f52c14da66c8bd198"
+  },
+  {
+    "file": "JOURNAL_ANALYSE_STRATO.txt",
+    "bytes": 1076714,
+    "sha256": "af99681922f1b41d0b8f99ff6ac0e9ca6cb401818699605dfc40967813a84919"
+  },
+  {
+    "file": "VERDICTS_CORRECTIONS_STRATO.txt",
+    "bytes": 172332,
+    "sha256": "81fe771239be8e38f5149eff07cfcebb35ac425a3718071540166db0f31789be"
+  },
+  {
+    "file": "rapports_maj_apk_direct/relectures.jsonl",
+    "bytes": 3478,
+    "sha256": "c2b296bb64d5760f16b04027946e9b7c0f45121387c2a057314199506e64a8e4"
+  },
+  {
+    "file": "rapports_maj_apk_direct/release_selection.log",
+    "bytes": 620,
+    "sha256": "e7e3b93dd95271e7e184ab04aa28a5390af5497d3ffaf2dd4e9f0dd47da68335"
+  },
+  {
+    "file": "rapports_maj_apk_direct/transfers.log",
+    "bytes": 855,
+    "sha256": "60c2c33030eef562033ee4b9805ae77d5a3fef70d9b393822d267b39f3ae6eb2"
+  },
+  {
+    "file": "rapports_maj_apk_direct/publication.log",
+    "bytes": 258,
+    "sha256": "1f89251e113c426044e69b63ea291c3acf870e7ed440d229762657d0f819844c"
+  }
+]
