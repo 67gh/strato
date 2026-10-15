@@ -96,6 +96,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
                 struct StorageTexelBufferDesc {
                     Shader::ImageFormat format;
+                    Shader::ImageNumericType numeric_type;
                     u32 cbuf_offset;
                     bool is_read;
                     bool is_written;
@@ -105,6 +106,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
                     StorageTexelBufferDesc(const Shader::ImageBufferDescriptor &desc)
                         : format{desc.format},
+                          numeric_type{desc.numeric_type},
                           cbuf_offset{desc.cbuf_offset},
                           is_read{desc.is_read},
                           is_written{desc.is_written},

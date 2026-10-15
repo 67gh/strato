@@ -76,6 +76,11 @@ union BindlessHandle {u32 raw;struct{u32 textureIndex:20;u32 samplerIndex:12;};}
 '''
 get=extract((src/'common/textures.cpp').read_text(),'Shader::ImageNumericType Textures::GetTexelBufferNumericType')+'\n'+extract((src/'common/textures.cpp').read_text().replace(') try {',') {'),'TexelBufferBinding Textures::GetTexelBuffer')
 binding=extract((src/'common/pipeline.inc').read_text(),'static TexelBufferBinding GetTexelBufferBinding')
+# Extract the production descriptors so a missing member in the graphics copy
+# cannot be hidden by a test-only storage descriptor.
+shader_info=(project/'app/libraries/shader-compiler/shader_info.h').read_text()
+descriptors='namespace Shader {\n'+extract(shader_info,'struct ImageBufferDescriptor')+';\n}\n'
+descriptors+=extract((src/'maxwell_3d/pipeline_manager.h').read_text(),'struct StorageTexelBufferDesc')+';\n'
 main='''
 template<class Fn>void rejects(Fn fn){bool rejected=false;try{fn();}catch(const std::runtime_error&){rejected=true;}assert(rejected);}
 int main(){Textures textures;InterconnectContext ctx;TextureImageControl tic{};
@@ -104,13 +109,44 @@ ctx.gpu.vkPhysicalDevice.features={};rejects([&]{get();});ctx.gpu.vkPhysicalDevi
 h.formatWord.swizzleX=TextureImageControl::ImageSwizzle::G;rejects([&]{get();});h=tic;
 h.textureType=TextureImageControl::TextureType::e2D;rejects([&]{get();});h=tic;
 rejects([&]{textures.GetTexelBuffer(ctx,1,false,Shader::ImageFormat::Typeless);});
-struct Sample{};struct Store{Shader::ImageNumericType numeric_type=Shader::ImageNumericType::UnsignedInt;bool is_written=true;Shader::ImageFormat format=Shader::ImageFormat::R32_UINT;};
+struct Sample{};
 vk::PipelineStageFlags source{},dest{};
 GetTexelBufferBinding(ctx,Sample{},textures,{.raw=0},vk::PipelineStageFlagBits::eFragmentShader,source,dest);assert(buffer.reads==1 && buffer.blocked && !buffer.dirty);
-GetTexelBufferBinding(ctx,Store{},textures,{.raw=0},vk::PipelineStageFlagBits::eComputeShader,source,dest);assert(buffer.reads==2 && buffer.dirty && source && dest);
+const std::array types{Type::UnsignedInt,Type::SignedInt,Type::Float};
+const std::array components{TextureImageControl::ImageComponent::Uint,TextureImageControl::ImageComponent::Sint,TextureImageControl::ImageComponent::Float};
+const std::array formats{vk::Format::eR32Uint,vk::Format::eR32Sint,vk::Format::eR32Sfloat};
+for (std::size_t i=0;i<types.size();++i) {
+    Shader::ImageBufferDescriptor original{};
+    original.format=SF::Typeless;original.numeric_type=types[i];
+    original.cbuf_index=3;original.cbuf_offset=64;original.count=1;original.size_shift=2;
+    original.is_read=true;
+    h=tic;h.formatWord.componentR=components[i];
+    for (bool writable : {false,true}) {
+        original.is_written=writable;
+        StorageTexelBufferDesc graphics{original};
+        assert(graphics.numeric_type==original.numeric_type && graphics.format==original.format);
+        assert(graphics.cbuf_index==original.cbuf_index && graphics.cbuf_offset==original.cbuf_offset);
+        assert(graphics.count==original.count && graphics.size_shift==original.size_shift);
+        assert(graphics.is_read==original.is_read && graphics.is_written==original.is_written);
+        auto changed=original;changed.numeric_type=types[(i+1)%types.size()];
+        assert(graphics==StorageTexelBufferDesc{original});
+        assert(graphics!=StorageTexelBufferDesc{changed});
+        auto check=[&](const auto& desc,vk::PipelineStageFlagBits stage) {
+            buffer=Buffer{};buffer.blocked=writable;source={};dest={};
+            auto result=GetTexelBufferBinding(ctx,desc,textures,{.raw=0},stage,source,dest);
+            assert(result.format==formats[i] && buffer.reads==1);
+            assert(buffer.dirty==writable);
+            if (writable) assert(source && dest);
+            else assert(buffer.blocked);
+        };
+        check(original,vk::PipelineStageFlagBits::eComputeShader);
+        check(graphics,vk::PipelineStageFlagBits::eFragmentShader);
+    }
+}
+
 }
 '''
-run('tic_and_hazards',header+mock+get+'\n'+binding+main)
+run('tic_and_hazards',header+mock+descriptors+get+'\n'+binding+main)
 
 
 _temp.cleanup()
