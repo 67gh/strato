@@ -10,23 +10,23 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import java.io.File
-import java.io.IOException
 
 object APKInstaller {
     @Suppress("DEPRECATION")
-    fun installedVersion(context: Context): Long =
-        context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+    fun installed(context: Context): InstalledAPK {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        return InstalledAPK(APKIdentity(info.packageName, info.longVersionCode), info.lastUpdateTime)
+    }
+
+    fun installedVersion(context: Context): Long = installed(context).identity.versionCode
 
     @Suppress("DEPRECATION")
     fun validate(context: Context, apk: File): Long {
-        if (!apk.isFile || apk.length() == 0L) throw IOException("APK missing or empty")
+        if (!apk.isFile || apk.length() == 0L)
+            throw APKValidationException(APKValidationFailure.UNREADABLE)
         val candidate = context.packageManager.getPackageArchiveInfo(apk.path, 0)
-            ?: throw IOException("Downloaded file is not a readable APK")
-        if (candidate.packageName != context.packageName)
-            throw IOException("APK belongs to a different application or build variant")
-        if (candidate.longVersionCode <= installedVersion(context))
-            throw IOException("APK version is not newer than the installed application")
-        return candidate.longVersionCode
+        return APKValidation.requireCompatible(installed(context).identity,
+            candidate?.let { APKIdentity(it.packageName, it.longVersionCode) })
     }
 
     fun permissionIntent(context: Context) = Intent(

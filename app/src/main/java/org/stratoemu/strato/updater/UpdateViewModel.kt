@@ -24,7 +24,8 @@ import java.security.MessageDigest
 
 enum class UpdateStage { IDLE, DOWNLOAD, EXTRACT, VALIDATE, READY, OPENED, FAILED, CANCELLED }
 data class UpdateState(val stage: UpdateStage = UpdateStage.IDLE, val bytes: Long = 0,
-                       val total: Long = -1, val error: Int = 0)
+                       val total: Long = -1, val error: Int = 0,
+                       val errorArguments: List<Any> = emptyList())
 data class UpdateRequest(val url: String, val label: String, val archive: Boolean)
 
 /** Holds no Activity or View; rotation keeps the transfer, closing the screen cancels it. */
@@ -94,6 +95,17 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: CancellationException) {
                 mutableState.value = UpdateState(UpdateStage.CANCELLED)
                 throw e
+            } catch (e: APKValidationException) {
+                Log.w("StratoUpdater", "Update APK rejected", e)
+                val (message, arguments) = when (e.reason) {
+                    APKValidationFailure.UNREADABLE -> R.string.up_invalid_apk to emptyList()
+                    APKValidationFailure.DIFFERENT_PACKAGE -> R.string.up_wrong_variant to
+                        listOf(e.candidate!!.packageName, e.installed!!.packageName)
+                    APKValidationFailure.OLDER_VERSION -> R.string.up_older_apk to
+                        listOf(e.candidate!!.versionCode, e.installed!!.versionCode)
+                }
+                mutableState.value = UpdateState(UpdateStage.FAILED, error = message,
+                    errorArguments = arguments)
             } catch (e: Exception) {
                 Log.w("StratoUpdater", "Update preparation failed", e)
                 mutableState.value = UpdateState(UpdateStage.FAILED, error = failureMessage)

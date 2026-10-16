@@ -16,6 +16,8 @@
     <string name="up_permission_needed">Autorise Strato à installer des applications dans les paramètres Android, puis appuie à nouveau sur Installer la mise à jour.</string>
     <string name="up_download_error">Le téléchargement a échoué. Vérifie ta connexion et l’espace libre, puis réessaie.</string>
     <string name="up_extract_error">Impossible de lire l’archive de mise à jour. Vérifie l’espace libre et télécharge-la à nouveau.</string>
-    <string name="up_invalid_apk">Ce fichier n’est pas un APK valide plus récent pour cette variante de Strato. Vérifie la version publiée avant de réessayer.</string>
+    <string name="up_invalid_apk">Android ne peut pas lire cet APK. Le fichier peut être incomplet, ou la publication peut contenir un ZIP ou une page web à la place de l’APK. Télécharge à nouveau l’APK de la publication.</string>
+    <string name="up_wrong_variant">Cet APK correspond à %1$s, mais l’application installée est %2$s. Télécharge un APK de la même variante de Strato.</string>
+    <string name="up_older_apk">L’APK téléchargé porte le code de version %1$d ; l’application installée porte %2$d. Publie une compilation avec un code de version égal ou supérieur.</string>
     <string name="up_installed">Strato a bien été mis à jour.</string>
 </resources>

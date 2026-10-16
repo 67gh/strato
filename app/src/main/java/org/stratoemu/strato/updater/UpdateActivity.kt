@@ -38,7 +38,8 @@ class UpdateActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         installWhenReady = savedInstanceState?.getBoolean("install_when_ready") ?: false
         val sourceVersion = intent.getLongExtra(EXTRA_SOURCE_VERSION, Long.MAX_VALUE)
-        if (APKInstaller.installedVersion(this) > sourceVersion) {
+        val sourceUpdateTime = intent.getLongExtra(EXTRA_SOURCE_UPDATE_TIME, 0L)
+        if (APKValidation.wasReplaced(APKInstaller.installed(this), sourceVersion, sourceUpdateTime)) {
             Toast.makeText(this, R.string.up_installed, Toast.LENGTH_LONG).show()
             finish()
             return
@@ -103,7 +104,7 @@ class UpdateActivity : AppCompatActivity() {
             UpdateStage.VALIDATE -> getString(R.string.up_validating)
             UpdateStage.READY -> getString(if (state.error != 0) state.error else R.string.up_ready)
             UpdateStage.OPENED -> getString(R.string.up_installer_opened)
-            UpdateStage.FAILED -> getString(state.error)
+            UpdateStage.FAILED -> getString(state.error, *state.errorArguments.toTypedArray())
             UpdateStage.CANCELLED -> getString(R.string.up_cancelled)
         }
         action.visibility = if (busy) View.GONE else View.VISIBLE
@@ -145,6 +146,7 @@ class UpdateActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SOURCE_VERSION = "update_source_version"
+        const val EXTRA_SOURCE_UPDATE_TIME = "update_source_update_time"
         const val EXTRA_URL = "update_url"
         const val EXTRA_LABEL = "update_label"
         const val EXTRA_ARCHIVE = "update_archive"

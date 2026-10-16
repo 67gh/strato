@@ -15,8 +15,10 @@ import org.stratoemu.strato.updater.APKInstaller
 object UpdateInstaller {
     fun downloadAndInstall(context: Context, downloadUrl: String, displayName: String, isArchive: Boolean) {
         try {
+            val installed = APKInstaller.installed(context)
             context.startActivity(Intent(context, UpdateActivity::class.java).apply {
-                putExtra(UpdateActivity.EXTRA_SOURCE_VERSION, APKInstaller.installedVersion(context))
+                putExtra(UpdateActivity.EXTRA_SOURCE_VERSION, installed.identity.versionCode)
+                putExtra(UpdateActivity.EXTRA_SOURCE_UPDATE_TIME, installed.lastUpdateTime)
                 putExtra(UpdateActivity.EXTRA_URL, downloadUrl)
                 putExtra(UpdateActivity.EXTRA_LABEL, displayName)
                 putExtra(UpdateActivity.EXTRA_ARCHIVE, isArchive)

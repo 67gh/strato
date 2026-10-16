@@ -16,6 +16,8 @@
     <string name="up_permission_needed">Allow Strato to install apps in Android settings, then tap Install update again.</string>
     <string name="up_download_error">Download failed. Check your connection and free storage, then try again.</string>
     <string name="up_extract_error">The update archive could not be read. Check free storage and download it again.</string>
-    <string name="up_invalid_apk">This file is not a valid newer APK for this Strato variant. Check the release before trying again.</string>
+    <string name="up_invalid_apk">Android could not read this APK. The file may be incomplete or the release may contain a ZIP or web page instead of an APK. Download the release APK again.</string>
+    <string name="up_wrong_variant">This APK is for %1$s, but the installed app is %2$s. Download an APK for the same Strato variant.</string>
+    <string name="up_older_apk">The downloaded APK has version code %1$d; the installed app has %2$d. Publish a build with an equal or higher version code.</string>
     <string name="up_installed">Strato was updated successfully.</string>
 </resources>
