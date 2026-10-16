@@ -27,6 +27,7 @@ class UpdateActivity : AppCompatActivity() {
     private lateinit var message: TextView
     private lateinit var bar: ProgressBar
     private lateinit var action: Button
+    private lateinit var downloadAgain: Button
     private var installWhenReady = false
     private val permission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         installWhenReady = packageManager.canRequestPackageInstalls()
@@ -59,12 +60,17 @@ class UpdateActivity : AppCompatActivity() {
             textSize = 24f
         })
         layout.addView(TextView(this).apply { text = model.request?.label })
-        message = TextView(this).apply { setPadding(0, padding, 0, padding); textSize = 16f }
+        message = TextView(this).apply { setPadding(0, padding, 0, padding); textSize = 16f; setTextIsSelectable(true) }
         bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }
         action = Button(this)
         layout.addView(message)
         layout.addView(bar)
         layout.addView(action)
+        downloadAgain = Button(this).apply {
+            setText(R.string.up_download_again)
+            setOnClickListener { installWhenReady = false; model.retry() }
+        }
+        layout.addView(downloadAgain)
         layout.addView(Button(this).apply {
             setText(R.string.up_close)
             setOnClickListener { model.cancel(); finish() }
@@ -78,19 +84,31 @@ class UpdateActivity : AppCompatActivity() {
             when (model.state.value.stage) {
                 UpdateStage.READY, UpdateStage.OPENED -> requestInstall()
                 UpdateStage.FAILED, UpdateStage.CANCELLED -> model.retry()
+                UpdateStage.INSTALLED -> finish()
                 else -> Unit
             }
         }
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                model.state.collect { render(it) }
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                launch { model.state.collect { render(it) } }
+                launch {
+                    UpdateSession.events.collect { event ->
+                        if (event?.url == model.request?.url) {
+                            val confirmation = UpdateSession.takeConfirmation()
+                            if (confirmation != null) {
+                                try { startActivity(confirmation) }
+                                catch (e: Exception) { model.installFailed(e) }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
     private fun render(state: UpdateState) {
         val transferring = state.stage == UpdateStage.DOWNLOAD || state.stage == UpdateStage.EXTRACT
-        val busy = transferring || state.stage == UpdateStage.VALIDATE || state.stage == UpdateStage.IDLE
+        val busy = transferring || state.stage == UpdateStage.VALIDATE || state.stage == UpdateStage.INSTALLING || state.stage == UpdateStage.IDLE
         bar.visibility = if (busy) View.VISIBLE else View.GONE
         bar.isIndeterminate = !transferring || state.total <= 0
         if (state.total > 0) bar.progress = (state.bytes.toDouble() * 100 / state.total).toInt().coerceIn(0, 100)
@@ -102,14 +120,18 @@ class UpdateActivity : AppCompatActivity() {
                 else getString(R.string.up_unknown_progress, stage, state.bytes / 1024)
             }
             UpdateStage.VALIDATE -> getString(R.string.up_validating)
+            UpdateStage.INSTALLING -> getString(R.string.up_staging)
+            UpdateStage.INSTALLED -> getString(R.string.up_installed)
             UpdateStage.READY -> getString(if (state.error != 0) state.error else R.string.up_ready)
             UpdateStage.OPENED -> getString(R.string.up_installer_opened)
             UpdateStage.FAILED -> getString(state.error, *state.errorArguments.toTypedArray())
             UpdateStage.CANCELLED -> getString(R.string.up_cancelled)
         }
-        action.visibility = if (busy) View.GONE else View.VISIBLE
+        if (state.detail.isNotBlank()) message.append("\n\n" + state.detail)
+        action.visibility = if (busy || state.stage == UpdateStage.OPENED) View.GONE else View.VISIBLE
+        downloadAgain.visibility = if (!busy && state.stage != UpdateStage.INSTALLED) View.VISIBLE else View.GONE
         action.setText(if (state.stage == UpdateStage.FAILED || state.stage == UpdateStage.CANCELLED)
-            R.string.up_retry else R.string.up_install)
+            R.string.up_retry else if (state.stage == UpdateStage.INSTALLED) R.string.up_close else R.string.up_install)
         if (state.stage == UpdateStage.READY && installWhenReady && packageManager.canRequestPackageInstalls())
             requestInstall()
     }
@@ -134,14 +156,8 @@ class UpdateActivity : AppCompatActivity() {
     }
 
     private fun openInstaller() {
-        val apk = model.readyFile ?: return
         installWhenReady = false
-        try {
-            startActivity(APKInstaller.installIntent(this, apk))
-            model.installerOpened()
-        } catch (e: Exception) {
-            model.installFailed(e)
-        }
+        model.install()
     }
 
     companion object {

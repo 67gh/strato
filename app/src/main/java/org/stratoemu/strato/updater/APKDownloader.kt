@@ -37,6 +37,8 @@ class APKDownloader {
             connection.connectTimeout = 15_000
             connection.readTimeout = 20_000
             connection.instanceFollowRedirects = true
+            connection.useCaches = false
+            connection.setRequestProperty("Cache-Control", "no-cache")
             connection.setRequestProperty("Accept-Encoding", "identity")
             connection.setRequestProperty("User-Agent", "Strato-Updater")
             if (connection.responseCode != HttpURLConnection.HTTP_OK)

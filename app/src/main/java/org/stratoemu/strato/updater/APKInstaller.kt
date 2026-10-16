@@ -21,12 +21,15 @@ object APKInstaller {
     fun installedVersion(context: Context): Long = installed(context).identity.versionCode
 
     @Suppress("DEPRECATION")
-    fun validate(context: Context, apk: File): Long {
+    fun validate(context: Context, apk: File): Long? {
         if (!apk.isFile || apk.length() == 0L)
             throw APKValidationException(APKValidationFailure.UNREADABLE)
         val candidate = context.packageManager.getPackageArchiveInfo(apk.path, 0)
+        // A null result does not expose the parser error. Let the system session
+        // return its real diagnosis after APKPayload has checked the bytes.
+        if (candidate == null) return null
         return APKValidation.requireCompatible(installed(context).identity,
-            candidate?.let { APKIdentity(it.packageName, it.longVersionCode) })
+            APKIdentity(candidate.packageName, candidate.longVersionCode))
     }
 
     fun permissionIntent(context: Context) = Intent(

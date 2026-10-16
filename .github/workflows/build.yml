@@ -107,6 +107,9 @@ jobs:
           cp "${apks[0]}" direct-artifacts/strato-mainline-release.apk
           git rev-parse HEAD > direct-artifacts/release-commit.txt
 
+      - name: Verify installable APK before upload
+        run: python3 tools/check_release_apk.py direct-artifacts/strato-mainline-release.apk
+
       # archive:false accepts one file and uses its basename as artifact name.
       - name: Upload APK without ZIP
         uses: actions/upload-artifact@v7

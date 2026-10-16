@@ -20,4 +20,15 @@
     <string name="up_wrong_variant">This APK is for %1$s, but the installed app is %2$s. Download an APK for the same Strato variant.</string>
     <string name="up_older_apk">The downloaded APK has version code %1$d; the installed app has %2$d. Publish a build with an equal or higher version code.</string>
     <string name="up_installed">Strato was updated successfully.</string>
+    <string name="up_staging">Preparing the Android installation…</string>
+    <string name="up_download_again">Download a fresh copy</string>
+    <string name="up_payload_error">The downloaded data could not be read as a complete APK. Details below.</string>
+    <string name="up_validation_error">APK metadata check failed. Details below.</string>
+    <string name="up_install_conflict">Android reports a conflict with an installed application (for example, different signing certificates). Details below.</string>
+    <string name="up_install_incompatible">Android reports an incompatible APK for this device. Details below.</string>
+    <string name="up_install_storage">Android could not install because of a storage problem. Details below.</string>
+    <string name="up_install_aborted">Installation was cancelled. You can retry.</string>
+    <string name="up_install_blocked">Android blocked installation. Details below.</string>
+    <string name="up_install_invalid">Android rejected the APK. The system reason is shown below.</string>
+    <string name="up_install_interrupted">Installation preparation was interrupted. Try again.</string>
 </resources>

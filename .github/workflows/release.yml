@@ -67,6 +67,9 @@ jobs:
           run-id: ${{ steps.build.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify downloaded APK before publication
+        run: python3 tools/check_release_apk.py artifacts/strato-mainline-release.apk
+
       - name: Inspect
         id: inspect
         run: |

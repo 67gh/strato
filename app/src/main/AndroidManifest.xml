@@ -48,6 +48,10 @@
             android:launchMode="singleTop" />
 
         <receiver
+            android:name=".updater.InstallStatusReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".updater.AppInstallReceiver"
             android:exported="false">
             <intent-filter>
