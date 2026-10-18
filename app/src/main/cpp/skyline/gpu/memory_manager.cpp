@@ -13,6 +13,28 @@ namespace skyline::gpu::memory {
             vk::throwResultException(vk::Result(result), function);
     }
 
+    Buffer &Buffer::operator=(Buffer &&other) noexcept {
+        if (this != &other) {
+            Buffer replacement{std::move(other)};
+            std::swap(static_cast<span<u8> &>(*this), static_cast<span<u8> &>(replacement));
+            std::swap(vmaAllocator, replacement.vmaAllocator);
+            std::swap(vmaAllocation, replacement.vmaAllocation);
+            std::swap(vkBuffer, replacement.vkBuffer);
+        }
+        return *this;
+    }
+
+    Image &Image::operator=(Image &&other) noexcept {
+        if (this != &other) {
+            Image replacement{std::move(other)};
+            std::swap(pointer, replacement.pointer);
+            std::swap(vmaAllocator, replacement.vmaAllocator);
+            std::swap(vmaAllocation, replacement.vmaAllocation);
+            std::swap(vkImage, replacement.vkImage);
+        }
+        return *this;
+    }
+
     Buffer::~Buffer() {
         if (vmaAllocator && vmaAllocation && vkBuffer)
             vmaDestroyBuffer(vmaAllocator, vkBuffer, vmaAllocation);

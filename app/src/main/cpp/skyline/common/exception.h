@@ -5,6 +5,7 @@
 
 #include <vector>
 #include "format.h"
+#include "diagnostic_recorder.h"
 
 namespace skyline {
     /**
@@ -21,6 +22,9 @@ namespace skyline {
         static std::vector<void *> GetStackFrames() __attribute__((noinline));
 
         template<typename... Args>
-        exception(fmt::format_string<Args...> formatStr, Args &&... args) : runtime_error(fmt::format(formatStr, std::forward<Args>(args)...)), frames(GetStackFrames()) {}
+        exception(fmt::format_string<Args...> formatStr, Args &&... args) : runtime_error(fmt::format(formatStr, std::forward<Args>(args)...)), frames(GetStackFrames()) {
+            diagnostics::Event("exception_created", 0, 0, frames.size(), what());
+            diagnostics::ObserveLog("exception", what());
+        }
     };
 }

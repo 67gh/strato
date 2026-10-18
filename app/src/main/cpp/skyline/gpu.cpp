@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include "gpu/diagnostic_device_fault.h"
 #include <dlfcn.h>
 #include <adrenotools/driver.h>
 #include <os.h>
@@ -33,6 +34,13 @@ namespace skyline::gpu {
             LOGD("Vulkan Layers:{}", layers);
         }
 
+        const int diagnosticMode = skyline::diagnostics::ValidationMode();
+        const bool validationAvailable = std::any_of(instanceLayers.begin(), instanceLayers.end(), [](const auto &layer) {
+            return std::string_view(layer.layerName) == "VK_LAYER_KHRONOS_validation";
+        });
+        if (diagnosticMode && validationAvailable && requiredLayers.empty()) requiredLayers.push_back("VK_LAYER_KHRONOS_validation");
+        skyline::diagnostics::Feature("validation", !diagnosticMode ? "disabled in diagnostic options" :
+            (validationAvailable ? "core requested" : "unavailable; install/package VK_LAYER_KHRONOS_validation"));
         for (const auto &requiredLayer : requiredLayers) {
             if (!std::any_of(instanceLayers.begin(), instanceLayers.end(), [&](const vk::LayerProperties &instanceLayer) {
                 return std::string_view(instanceLayer.layerName) == std::string_view(requiredLayer);
@@ -40,7 +48,7 @@ namespace skyline::gpu {
                 throw exception("Cannot find Vulkan layer: \"{}\"", requiredLayer);
         }
 
-        constexpr std::array<const char *, 3> requiredInstanceExtensions{
+        std::vector<const char *> requiredInstanceExtensions{
             VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
             VK_KHR_SURFACE_EXTENSION_NAME,
             VK_KHR_ANDROID_SURFACE_EXTENSION_NAME,
@@ -61,16 +69,32 @@ namespace skyline::gpu {
                 throw exception("Cannot find Vulkan instance extension: \"{}\"", requiredExtension);
         }
 
+        VkValidationFeaturesEXT validationFeatures{};
+        validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+        VkValidationFeatureEnableEXT validationFeature = diagnosticMode == 3 ? VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT : VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+        if (diagnosticMode > 1 && validationAvailable) {
+            auto layerExtensions = context.enumerateInstanceExtensionProperties(std::string{"VK_LAYER_KHRONOS_validation"});
+            bool available = std::any_of(layerExtensions.begin(), layerExtensions.end(), [](const auto &extension) {
+                return std::string_view(extension.extensionName) == VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME;
+            });
+            if (available) {
+                requiredInstanceExtensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+                validationFeatures.enabledValidationFeatureCount = 1;
+                validationFeatures.pEnabledValidationFeatures = &validationFeature;
+            }
+            skyline::diagnostics::Feature("validation", available ? (diagnosticMode == 3 ? "core plus GPU-assisted requested; check callback for activation failures" : "core plus synchronization requested") : "core only; advanced validation extension unavailable");
+        }
         return vk::raii::Instance(context, vk::InstanceCreateInfo{
+            .pNext = validationFeatures.enabledValidationFeatureCount ? &validationFeatures : nullptr,
             .pApplicationInfo = &applicationInfo,
             .enabledLayerCount = static_cast<u32>(requiredLayers.size()),
             .ppEnabledLayerNames = requiredLayers.data(),
-            .enabledExtensionCount = requiredInstanceExtensions.size(),
+            .enabledExtensionCount = static_cast<u32>(requiredInstanceExtensions.size()),
             .ppEnabledExtensionNames = requiredInstanceExtensions.data(),
         });
     }
 
-    static VkBool32 DebugCallback(vk::DebugReportFlagsEXT flags, vk::DebugReportObjectTypeEXT objectType, u64 object, size_t location, i32 messageCode, const char *layerPrefix, const char *messageCStr, GPU *gpu) {
+    static VkBool32 DebugCallback(vk::DebugReportFlagsEXT flags, vk::DebugReportObjectTypeEXT objectType, u64 object, size_t location, i32 messageCode, const char *layerPrefix, const char *messageCStr, GPU *gpu) try {
         constexpr std::array<AsyncLogger::LogLevel, 5> severityLookup{
             AsyncLogger::LogLevel::Info,    // VK_DEBUG_REPORT_INFORMATION_BIT_EXT
             AsyncLogger::LogLevel::Warning, // VK_DEBUG_REPORT_WARNING_BIT_EXT
@@ -87,13 +111,15 @@ namespace skyline::gpu {
             break;                                    \
         }
 
-        #define IGNORE_VALIDATION_CL(string, functionName) IGNORE_VALIDATION_C(string, { if (!functionName()) return VK_FALSE; })
+        #define IGNORE_VALIDATION_CL(string, functionName) IGNORE_VALIDATION_C(string, { if (!functionName()) { skyline::diagnostics::Event("validation_filtered", 0, 0, 0, string); return VK_FALSE; } })
 
-        #define IGNORE_VALIDATION(string) IGNORE_VALIDATION_C(string, { return VK_FALSE; })
+        #define IGNORE_VALIDATION(string) IGNORE_VALIDATION_C(string, { skyline::diagnostics::Event("validation_filtered",object,static_cast<u32>(messageCode),0,string); return VK_FALSE; })
 
         #define DEBUG_VALIDATION(string) IGNORE_VALIDATION_C(string, { raise(SIGTRAP); }) // Using __builtin_debugtrap() as opposed to raise(SIGTRAP) will result in the inability to continue
 
         std::string_view message{messageCStr ? messageCStr : "<null Vulkan debug message>"};
+        skyline::diagnostics::Event("validation_raw", object, static_cast<u32>(messageCode), static_cast<VkDebugReportFlagsEXT>(flags), message);
+        if (skyline::diagnostics::ValidationMode()) skyline::diagnostics::SaveArtifact("validation", static_cast<u32>(messageCode), message.data(), message.size(), "txt");
 
         std::string_view type{message};
         auto first{type.find('[')};
@@ -208,8 +234,12 @@ namespace skyline::gpu {
 
         auto logLevel{severityLookup.at(static_cast<size_t>(std::countr_zero(static_cast<u32>(flags))))};
         if (AsyncLogger::CheckLogLevel(logLevel))
-            AsyncLogger::LogAsync(logLevel, fmt::format("Vk{}:{}[0x{:X}]:I{}:L{}: {}", layerPrefix, vk::to_string(vk::DebugReportObjectTypeEXT(objectType)), object, messageCode, location, message));
+            AsyncLogger::LogAsync(logLevel, fmt::format("Vk{}:{}[0x{:X}]:I{}:L{}: {}", layerPrefix ? layerPrefix : "?", vk::to_string(vk::DebugReportObjectTypeEXT(objectType)), object, messageCode, location, message));
 
+        return VK_FALSE;
+    } catch (...) {
+        // Diagnostic failures must not unwind through the Vulkan driver's C ABI.
+        skyline::diagnostics::Event("validation_callback_failed");
         return VK_FALSE;
     }
 
@@ -289,6 +319,21 @@ namespace skyline::gpu {
         traits = TraitManager{deviceFeatures2, enabledFeatures2, deviceExtensions, enabledExtensions, deviceProperties2, physicalDevice};
         traits.ApplyDriverPatches(context, mapping);
 
+        VkPhysicalDeviceFaultFeaturesEXT faultFeatures{};
+        faultFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
+        if (std::any_of(deviceExtensions.begin(), deviceExtensions.end(), [](const auto &extension) {
+            return std::string_view(extension.extensionName) == VK_EXT_DEVICE_FAULT_EXTENSION_NAME;
+        })) {
+            VkPhysicalDeviceFeatures2 query{};query.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;query.pNext=&faultFeatures;
+            physicalDevice.getDispatcher()->vkGetPhysicalDeviceFeatures2(static_cast<VkPhysicalDevice>(*physicalDevice), &query);
+            if (faultFeatures.deviceFault) {
+                std::array<char, VK_MAX_EXTENSION_NAME_SIZE> name{};
+                std::strcpy(name.data(), VK_EXT_DEVICE_FAULT_EXTENSION_NAME);enabledExtensions.push_back(name);
+                faultFeatures.deviceFaultVendorBinary=VK_FALSE;
+                auto &head=enabledFeatures2.get<vk::PhysicalDeviceFeatures2>();
+                faultFeatures.pNext=head.pNext;head.pNext=&faultFeatures;
+            }
+        }
         std::vector<const char *> pEnabledExtensions;
         pEnabledExtensions.reserve(enabledExtensions.size());
         for (auto &extension : enabledExtensions)
@@ -346,6 +391,7 @@ namespace skyline::gpu {
             .enabledExtensionCount = static_cast<uint32_t>(pEnabledExtensions.size()),
             .ppEnabledExtensionNames = pEnabledExtensions.data(),
         })};
+        diagnostics::InitializeDeviceFault(static_cast<VkDevice>(*device), device.getDispatcher()->vkGetDeviceProcAddr, faultFeatures.deviceFault);
         diagnostics::WriteVulkanSnapshot(physicalDevice, deviceProperties2, traits, deviceExtensions, enabledExtensions, vkQueueFamilyIndex);
         return device;
     }
@@ -434,12 +480,13 @@ namespace skyline::gpu {
           debugTracingBuffer(memory.AllocateBuffer(DebugTracingBufferSize)) {}
 
     void GPU::Initialise() {
-        std::string titleId{state.loader->nacp->GetSaveDataOwnerId()};
+        skyline::diagnostics::Feature("shader_cache", *state.settings->disableShaderCache ? "disabled for this launch" : "enabled for this launch");
+        std::string titleId{state.loader->nacp ? state.loader->nacp->GetSaveDataOwnerId() : "homebrew"};
         graphicsPipelineAssembler.emplace(*this, state.os->publicAppFilesPath + "vk_graphics_pipeline_cache/" + titleId);
         shader.emplace(state, *this,
                        state.os->publicAppFilesPath + "shader_replacements/" + titleId,
                        state.os->publicAppFilesPath + "shader_dumps/" + titleId);
-        if (!*state.settings->disableShaderCache)
+        if (state.loader->nacp && !*state.settings->disableShaderCache)
             graphicsPipelineCacheManager.emplace(state,
                                                  state.os->publicAppFilesPath + "graphics_pipeline_cache/" + titleId);
         graphicsPipelineManager.emplace(*this, *state.jvm);

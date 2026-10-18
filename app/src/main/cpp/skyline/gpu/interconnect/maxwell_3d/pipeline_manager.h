@@ -69,6 +69,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
                 boost::container::small_vector<StorageBufferDesc, 8> storageBufferDescs;
 
                 struct UniformTexelBufferDesc {
+                    Shader::ImageNumericType numeric_type;
                     u32 cbuf_offset;
                     u32 secondary_cbuf_offset;
                     bool has_secondary;
@@ -80,7 +81,8 @@ namespace skyline::gpu::interconnect::maxwell3d {
                     u8 size_shift;
 
                     UniformTexelBufferDesc(const Shader::TextureBufferDescriptor &desc)
-                        : cbuf_offset{desc.cbuf_offset},
+                        : numeric_type{desc.numeric_type},
+                          cbuf_offset{desc.cbuf_offset},
                           secondary_cbuf_offset{desc.secondary_cbuf_offset},
                           has_secondary{desc.has_secondary},
                           cbuf_index{static_cast<u8>(desc.cbuf_index)},
@@ -96,6 +98,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
                 struct StorageTexelBufferDesc {
                     Shader::ImageFormat format;
+                    Shader::ImageNumericType numeric_type;
                     u32 cbuf_offset;
                     bool is_read;
                     bool is_written;
@@ -105,6 +108,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
                     StorageTexelBufferDesc(const Shader::ImageBufferDescriptor &desc)
                         : format{desc.format},
+                          numeric_type{desc.numeric_type},
                           cbuf_offset{desc.cbuf_offset},
                           is_read{desc.is_read},
                           is_written{desc.is_written},
@@ -232,17 +236,21 @@ namespace skyline::gpu::interconnect::maxwell3d {
 
         Pipeline(GPU &gpu, PipelineStateAccessor &accessor, const PackedPipelineState &packedState);
 
-        /**
-         * @return A description of the descriptors that are declared in the layout but never written (storage images and texel buffers aren't supported), empty if there are none
-         */
+        // Texel buffers and storage images must be rebound on each draw so
+        // backing changes and read/write hazards cannot bypass synchronization.
+        bool NeedsFullDescriptorSync() const {
+            if (descriptorInfo.totalTexelBufferDescCount)
+                return true;
+            for (const auto &stage : descriptorInfo.stages)
+                if (stage.storageImageDescTotalCount)
+                    return true;
+            return false;
+        }
+
+        // Every declared descriptor category now has a writer. Runtime format
+        // and mapping validation can still reject a particular resource.
         std::string DescribeUnwrittenDescriptors() const {
-            std::string description;
-            for (size_t i{}; i < descriptorInfo.stages.size(); i++) {
-                const auto &stage{descriptorInfo.stages[i]};
-                if (stage.storageImageDescTotalCount || stage.storageTexelBufferDescTotalCount || stage.uniformTexelBufferDescTotalCount)
-                    description += fmt::format(" stage{}[storage images:{} storage texel buffers:{} texel buffers:{}]", i, stage.storageImageDescTotalCount, stage.storageTexelBufferDescTotalCount, stage.uniformTexelBufferDescTotalCount);
-            }
-            return description;
+            return {};
         }
 
         /**

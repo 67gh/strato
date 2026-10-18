@@ -1,0 +1,20 @@
+--- a/backend/spirv/spirv_emit_context.h
++++ b/backend/spirv/spirv_emit_context.h
+@@ -40,6 +40,8 @@
+ struct TextureBufferDefinition {
+     Id id;
+     u32 count;
++    Id image_type;
++    Id vector_type;
+ };
+ 
+ struct ImageBufferDefinition {
+@@ -205,8 +207,6 @@
+     Id output_f32{};
+     Id output_u32{};
+ 
+-    Id image_buffer_type{};
+-    Id sampled_texture_buffer_type{};
+     Id image_u32{};
+ 
+     std::array<UniformDefinitions, Info::MAX_CBUFS> cbufs{};

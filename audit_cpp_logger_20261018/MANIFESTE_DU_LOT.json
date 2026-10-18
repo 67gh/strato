@@ -1,0 +1,152 @@
+[
+  {
+    "path": "app/src/main/cpp/skyline/audio.cpp",
+    "before_sha256": "056165d52d6f723d02d672a6808c96a75c22956efeda8cbed1c22175cf723cd7",
+    "after_sha256": "018854c0cf05b3fd1b31561b082933250277656a3e155754e0a15f583b74f030",
+    "lines": 55
+  },
+  {
+    "path": "app/src/main/cpp/skyline/common/circular_queue.h",
+    "before_sha256": "38b0a150b30b4db4019a4dc0422c321de01aa567776a22bc5f1f125481445afa",
+    "after_sha256": "157655ff4d81d79e71a0c1dd89c706f175fdbc0e022c5bc84a313dcd5929248d",
+    "lines": 232
+  },
+  {
+    "path": "app/src/main/cpp/skyline/common/diagnostic_crash.cpp",
+    "before_sha256": "f94048cbdfee08e0f5a32a116999c8d7ca24353220fe04f58ba8b89d11ba030b",
+    "after_sha256": "a9df0a8b9485174a8ba5893bead36bfbcde559603379e978c1fb34b276fea7b0",
+    "lines": 81
+  },
+  {
+    "path": "app/src/main/cpp/skyline/common/diagnostic_recorder.cpp",
+    "before_sha256": "ddcd0a657c88daf10cc547b45028319ad34c9846c2d1a028dbe2a16ef0c93e53",
+    "after_sha256": "1d68769b0cfbb77fc4867e65182a52873b4bf6d98ca5acc1d828f0e97b39ee01",
+    "lines": 296
+  },
+  {
+    "path": "app/src/main/cpp/skyline/common/diagnostic_recorder.h",
+    "before_sha256": "aca172ee354139c8f6443a0c5f13967f106402adb0036c73892b9349cee6316c",
+    "after_sha256": "9409c39b5d99a03ffb86bb6ecbbd8289f04af8dc65007f2d921731afa359c58f",
+    "lines": 60
+  },
+  {
+    "path": "app/src/main/cpp/skyline/common/exception.h",
+    "before_sha256": "7845840f5973e1bd699986b4324baf194c4e2f81d93ed3fc6291abe7fe156062",
+    "after_sha256": "8eddf60898c2c9fd203fb1a3bfa0208f25673424ef94322048b4d9e7448e5829",
+    "lines": 30
+  },
+  {
+    "path": "app/src/main/cpp/skyline/common/interval_list.h",
+    "before_sha256": "53609eedb0445460fe2180e467721a607dc98b233c773f1b920d937b023a87d0",
+    "after_sha256": "35fe70da655c04321e368829cbb389b952423252a206b38a74fe48cab6754576",
+    "lines": 128
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu.cpp",
+    "before_sha256": "d331d8a28f0921b2fde3836c25c395f6abe9871983c0a49e87c5c2c2071eb132",
+    "after_sha256": "bcd9e433cba4bddc2a7ec7868501a1799592555c3d9d04d64832f6678dea108b",
+    "lines": 494
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/buffer.cpp",
+    "before_sha256": "cef8a064b11d1d53276a8054176e76fbeed25fd49a3084382520df98e438eb4b",
+    "after_sha256": "95b016adcf91ff5a2804e963ec40f8a26e788e0a2a075c5d9be52313e8c9ea9c",
+    "lines": 737
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/buffer_manager.cpp",
+    "before_sha256": "83556b8536e7def2d1ab8d88799663861c36438ba19f6b97af85fe5fadb41a6b",
+    "after_sha256": "dda694d4c33dcda25fcf2803243305d7cd9e5d7a4c164bc65d990fa384c7b0f8",
+    "lines": 196
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/command_scheduler.cpp",
+    "before_sha256": "eee06b2c0e688534bc36b9a2975fa567c5d1a09c7d5dcce31820f25bfd7514f1",
+    "after_sha256": "2a471e0f1c10a6d6d3cc7430e16b7a2614cdb043310debee1f18fbae6c48ef62",
+    "lines": 127
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/diagnostic_device_fault.h",
+    "before_sha256": "b5f1cdce5b4292ad9620d264f5148bfc05a523f956be5389ec6ba848a1b78a63",
+    "after_sha256": "589d2646951c4f002e2cb79681d32687ba18fc3a5b3db3cec8c3524a93377b4f",
+    "lines": 48
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/diagnostics.cpp",
+    "before_sha256": "f7b7f0d1c15c21dda7fee24273e9369760f7c72a0476c6143f878c9fe2ccca9e",
+    "after_sha256": "2102a75bb4852c10dd4b6eec7a8ed0511b2a5f33b29833fe31adb6c15ac0771d",
+    "lines": 90
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp",
+    "before_sha256": "69a8ddc7eb645935db8b4d317742977d43d5ee36c94ef020409a8d38bed3969f",
+    "after_sha256": "6d73c5005a438f5d94020b6fce38e315208b4a51446048f32bf4cc510cfe2da4",
+    "lines": 287
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/memory_manager.cpp",
+    "before_sha256": "30222f2702d4dd02135638ae7c9c500eebef5ba80d42778c3ba41b7ece5e54f3",
+    "after_sha256": "dfa4599f3a14ca7f084f4ed5467cbc34ae919464e878d001ff90571dc9af7f6d",
+    "lines": 198
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/memory_manager.h",
+    "before_sha256": "06b717848c5ae8116759045c470463d49e4a4018128c2cb1563353cd3d861433",
+    "after_sha256": "ee0a9e5cb4c5038a971ee7c6ec9bee1bf1512182f091ae9deab2f50a4152b35a",
+    "lines": 154
+  },
+  {
+    "path": "app/src/main/cpp/skyline/gpu/shader_manager.cpp",
+    "before_sha256": "9d92de5641ea531315eef58f33fadea8f56fab455321b8cac385da7e5c67a102",
+    "after_sha256": "83752da0e1dd43356a0309754370a1dbcd272bf7ab9fc8db84ac8a27bb7d5473",
+    "lines": 467
+  },
+  {
+    "path": "app/src/main/cpp/skyline/logger/logger.cpp",
+    "before_sha256": "78201945aaf6a34dd623c2d20eb4d8ade799bbd8024e07d2da37901e9ccbac45",
+    "after_sha256": "cd61b80886411eece78bb69b9d9d4ed8b34b00e249b5663ef8b6f1f7a219bc29",
+    "lines": 240
+  },
+  {
+    "path": "app/src/main/cpp/skyline/logger/logger.h",
+    "before_sha256": "0ea4a1b2031b6dd43247fb54b9ec02e4415638e8321514bae634f45cb13a886b",
+    "after_sha256": "2fd80c48f352f3130f345fbe300ea8c7cf0c97d979b1b763ff1b4cc61aa28a9b",
+    "lines": 148
+  },
+  {
+    "path": "app/src/main/cpp/skyline/nce.cpp",
+    "before_sha256": "a86f96b0061eb6dfb0ef95314100c798d60dac897e548e465ff8985fbddfbc66",
+    "after_sha256": "c90dbe71627e6353420b0a161a160e01f177323dcd8fad2820b0defdc05ae734",
+    "lines": 632
+  },
+  {
+    "path": "app/src/main/cpp/skyline/nce/jit_fallback.cpp",
+    "before_sha256": "1fddff7f8f3e53fcca8c8dd321fc237bed6717414f445906eb95fb2555811ca4",
+    "after_sha256": "0b054792cd2ec1baa27d4a1a6930981696d4125bbeb8eba59d2a349027583ba5",
+    "lines": 734
+  },
+  {
+    "path": "app/src/main/cpp/skyline/services/base_service.cpp",
+    "before_sha256": "db6645c924274853864eb9f2e78413737b2e39f5bb0d32fc232fb3f1a224cde2",
+    "after_sha256": "b519cdb365dfb81b72dd7ea4edf36d39207a7fb51d423b938738b26022535e4e",
+    "lines": 68
+  },
+  {
+    "path": "app/src/main/cpp/skyline/services/base_service.h",
+    "before_sha256": "89c061d99ba401aa8f62563e999f17c7d919cfc1abb148ace71562d06c3b648e",
+    "after_sha256": "6e61ada2d3cbe702b37a4cd01d7c789472445d29cefbb040ed6a1762b33b65da",
+    "lines": 148
+  },
+  {
+    "path": "app/src/main/cpp/skyline/services/diagnostic_noops.h",
+    "before_sha256": null,
+    "after_sha256": "0cd9e0ca6c1eb2a794346074571bb7298a89308bcc0d0fc861ecb340a7f91210",
+    "lines": 105
+  },
+  {
+    "path": "app/src/main/cpp/skyline/services/stub_service.cpp",
+    "before_sha256": "41fff4215fae8e59e7737e5764ae9858c068aef626905950738e4dce2dcc92fb",
+    "after_sha256": "9452c12095797e29c2653811e16c28c6ba637cfb7b1aac6c29d6cf36417701cc",
+    "lines": 20
+  }
+]

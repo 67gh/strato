@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <vector>
 #include <tsl/robin_map.h>
 #include <shader_compiler/frontend/ir/program.h>
 #include <gpu/interconnect/common/samplers.h>
@@ -67,6 +68,8 @@ namespace skyline::gpu::interconnect::kepler_compute {
             return !std::exchange(skipLogged, true);
         }
 
+        bool MatchesTexelTypes(InterconnectContext &ctx, Textures &textures, ConstantBufferSet &constantBuffers) const;
+
         Pipeline(InterconnectContext &ctx, Textures &textures, ConstantBufferSet &constantBuffers, const PackedPipelineState &packedState, const ShaderBinary &shaderBinary);
 
         /**
@@ -77,15 +80,19 @@ namespace skyline::gpu::interconnect::kepler_compute {
 
     class PipelineManager {
       private:
-        tsl::robin_map<PackedPipelineState, std::unique_ptr<Pipeline>, util::ObjectHash<PackedPipelineState>> map;
+        tsl::robin_map<PackedPipelineState, std::vector<std::unique_ptr<Pipeline>>, util::ObjectHash<PackedPipelineState>> map;
 
       public:
         Pipeline *FindOrCreate(InterconnectContext &ctx, Textures &textures, ConstantBufferSet &constantBuffers, const PackedPipelineState &packedState, const ShaderBinary &shaderBinary) {
-            auto it{map.find(packedState)};
-            if (it != map.end())
-                return it->second.get();
-
-            return map.emplace(packedState, std::make_unique<Pipeline>(ctx, textures, constantBuffers, packedState, shaderBinary)).first->second.get();
+            auto &variants{map[packedState]};
+            for (auto &pipeline : variants)
+                if (pipeline->MatchesTexelTypes(ctx, textures, constantBuffers))
+                    return pipeline.get();
+            // Retain old variants: in-flight command buffers can still reference them.
+            auto pipeline{std::make_unique<Pipeline>(ctx, textures, constantBuffers, packedState, shaderBinary)};
+            auto *result{pipeline.get()};
+            variants.push_back(std::move(pipeline));
+            return result;
         }
     };
 }

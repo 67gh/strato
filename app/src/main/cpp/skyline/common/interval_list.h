@@ -46,6 +46,8 @@ namespace skyline {
          * @brief Forces future accesses to the given interval to use the shadow copy
         */
         void Insert(Interval entry) {
+            if (entry.offset >= entry.end)
+                return; // Empty/reversed half-open intervals contain no bytes.
             auto firstIt{std::lower_bound(intervals.begin(), intervals.end(), entry, [](const auto &lhs, const auto &rhs) {
                 return lhs.end < rhs.offset;
             })}; // Lowest offset entry that (maybe) overlaps with the new entry
@@ -78,9 +80,16 @@ namespace skyline {
         /**
          * @brief Merge the given interval into the list
          */
-        void Merge(const IntervalList<SizeType> &list) {
-            for (auto &entry : list.intervals)
-                Insert(entry);
+        void Merge(const IntervalList<SizeType> &list, DifferenceType displacement = {}) {
+            if (&list == this) {
+                if (!displacement)
+                    return;
+                auto copy{list};
+                Merge(copy, displacement);
+                return;
+            }
+            for (const auto &entry : list.intervals)
+                Insert({entry.offset + displacement, entry.end + displacement});
         }
 
         /**
@@ -88,7 +97,7 @@ namespace skyline {
          */
         QueryResult Query(SizeType offset) {
             auto it{std::lower_bound(intervals.begin(), intervals.end(), offset, [](const auto &lhs, const auto &rhs) {
-                return lhs.end < rhs;
+                return lhs.end <= rhs;
             })}; // Lowest offset entry that (maybe) overlaps with the new entry
 
             if (it == intervals.end()) // No overlaps past offset

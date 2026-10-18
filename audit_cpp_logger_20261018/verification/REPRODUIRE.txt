@@ -1,0 +1,3 @@
+Fixtures hôte G++ C++20 : utiliser run_host_tests.sh avec FMT_INCLUDE pointant vers include/ de fmt si le sous-module n’est pas initialisé.
+Les fixtures conteneurs/mémoire sont des extractions du code avec substituts décrits dans BILAN_CPP_LOGGER.txt. Elles ne compilent pas les unités GPU du projet. Le test runtime compile les unités réelles indiquées dans le script.
+Les logs joints proviennent de l’environnement de livraison. Les binaires temporaires ne sont pas inclus.

@@ -21,11 +21,11 @@ import java.util.zip.ZipOutputStream
 /** Export a single session with explicit provenance and a finite byte budget. Run off the UI thread. */
 object DiagnosticExporter {
     private const val MIB = 1024L * 1024L
-    private const val ZIP_LIMIT = 64 * MIB
+    private const val ZIP_LIMIT = 160 * MIB
     // Reserve space for the manifest and ZIP headers, including worst-case deflate overhead.
-    private const val PAYLOAD_LIMIT = 62 * MIB
+    private const val PAYLOAD_LIMIT = 156 * MIB
 
-    private data class Evidence(val name : String, val limit : Long, val description : String, val structured : Boolean = false)
+    private data class Evidence(val name : String, val limit : Long, val description : String, val structured : Boolean = false, val binary : Boolean = false)
 
     // An allowlist intentionally excludes keys, firmware, saves, arbitrary app files and global logs.
     private val evidence = listOf(
@@ -33,6 +33,16 @@ object DiagnosticExporter {
         Evidence("device.json", MIB, "Device, app, memory and firmware version at launch", true),
         Evidence("settings.json", MIB, "Global, game and effective launch settings", true),
         Evidence("collector.json", MIB, "Collector availability, errors and retention", true),
+        Evidence("recorder_status.json", MIB, "Progress, request ID, dropped evidence and recorder bounds", true),
+        Evidence("diagnostic_features.json", MIB, "Actual diagnostic tool availability", true),
+        Evidence("hang_snapshot.json", 4 * MIB, "Progress-triggered or manual guest/host PC LR stacks and waiters", true),
+        Evidence("gpu_mappings.json", 16 * MIB, "Live mapped regions and generations; gaps and dropped updates must be checked", true),
+        Evidence("unsupported.json", 2 * MIB, "Counted unsupported services and observed operations", true),
+        Evidence("native_modules.json", 4 * MIB, "Host modules with load bias and GNU Build ID", true),
+        Evidence("device_fault.json", MIB, "Optional driver fault addresses after device loss", true),
+        Evidence("native_crash.bin", MIB, "Fixed native crash record; use tools/symbolize_diagnostic.py", binary = true),
+        Evidence("diagnostic_options.cfg", MIB, "Validation and shader capture settings used for this launch"),
+        Evidence("flight_recorder.jsonl", 8 * MIB, "Correlated bounded draw, dispatch, submission, completion, IPC and resource events"),
         Evidence("native.json", MIB, "Native initialization and actual compiled JIT status", true),
         Evidence("vulkan.json", 2 * MIB, "Vulkan driver, capabilities, quirks and memory snapshot", true),
         Evidence("native_failure.json", MIB, "Exception caught at the JNI execution boundary", true),
@@ -74,7 +84,13 @@ object DiagnosticExporter {
             val availability = JSONArray()
             var payloadBytes = 0L
             ZipOutputStream(LimitedOutput(FileOutputStream(partial), ZIP_LIMIT).buffered()).use { zip ->
-                for (entry in evidence) {
+                val artifacts = session.listFiles().orEmpty().filter {
+                    (it.name.startsWith("shader-") && it.extension in setOf("bin", "spv", "txt")) ||
+                        (it.name.startsWith("frame") && it.extension == "rdc")
+                }.sortedBy { it.name }.map {
+                    Evidence(it.name, if (it.extension == "rdc") 128 * MIB else 4 * MIB, "Captured native artifact; binary is never truncated", binary = true)
+                }
+                for (entry in evidence + artifacts) {
                     val record = JSONObject().put("file", entry.name).put("description", entry.description)
                         .put("per_file_limit_bytes", entry.limit)
                     availability.put(record)
@@ -103,7 +119,24 @@ object DiagnosticExporter {
                         val sourceSize = source.length()
                         record.put("source_size_at_open_bytes", sourceSize)
                         val limit = minOf(entry.limit, remaining)
-                        if (entry.structured) {
+                        if (entry.binary) {
+                            if (sourceSize > limit) {
+                                record.put("status", "omitted").put("included_bytes", 0).put("reason", "Binary exceeds export budget; original retained in session")
+                            } else {
+                                zip.putNextEntry(ZipEntry(entry.name))
+                                val buffer = ByteArray(65536)
+                                var copied = 0L
+                                while (copied < sourceSize) {
+                                    val count = source.read(buffer, 0, minOf(buffer.size.toLong(), sourceSize - copied).toInt())
+                                    if (count <= 0) throw IOException("Binary changed during export: ${entry.name}")
+                                    zip.write(buffer, 0, count)
+                                    copied += count
+                                }
+                                zip.closeEntry()
+                                payloadBytes += copied
+                                record.put("included_bytes", copied).put("status", "included")
+                            }
+                        } else if (entry.structured) {
                             // Never turn a JSON object into an apparently valid tail fragment.
                             if (sourceSize > limit) {
                                 record.put("status", "omitted").put("included_bytes", 0)
@@ -186,11 +219,11 @@ object DiagnosticExporter {
 
     private fun limitations() = JSONObject()
         .put("diagnosis", "Evidence supports diagnosis; it cannot guarantee a unique cause for every hang")
-        .put("gpu_memory", "vulkan.json is an initialization snapshot when available; no allocation/budget timeline in this delivery")
-        .put("ipc", "A bounded IPC command/stub ring is not implemented in this delivery; existing native logs may contain IPC messages")
+        .put("gpu_memory", "gpu_mappings.json records observed GMMU regions, not all physical RAM. Dropped updates invalidate completeness; buffer events are bounded")
+        .put("ipc", "IPC requests and explicit service stubs are recorded; observed unsupported logs depend on call-site log filtering")
         .put("guest_threads", "Host thread counts are not guest thread states; see emulation.log for existing watchdog traces")
-        .put("pc_lr_sampling", "Existing watchdog samples may be present in emulation.log; this delivery adds no structured PC/LR capture or new progress-triggered watchdog")
-        .put("draws_dispatches_pipelines", "Periodic counters are unavailable in this delivery")
+        .put("pc_lr_sampling", "hang_snapshot.json contains bounded live advisory samples; signals can time out and busy locks can cause omissions")
+        .put("draws_dispatches_pipelines", "recorder_status.json counts attempts, accepted submissions, real completions and presents separately; a draw attempt is not proof of execution")
         .put("logcat", "Finite process-filtered snapshots every 2 seconds; the last interval can be lost on abrupt death, and OS buffer overwrite or clock changes can lose records. System-wide tombstones and restricted buffers may be unavailable")
         .put("retention", "timeline and logcat retain two bounded chunks; older records may be overwritten, see collector.json")
         .put("native_log_retention", "Oversized native logs are tail-truncated in the export; this export does not cap native on-device writers")
@@ -309,7 +342,7 @@ object DiagnosticExporter {
         }
 
         private fun ensureCapacity(length : Int) {
-            if (length > limit - count) throw IOException("Diagnostic ZIP exceeded its 64 MiB limit")
+            if (length > limit - count) throw IOException("Diagnostic ZIP exceeded its 160 MiB limit")
         }
 
         override fun flush() = target.flush()

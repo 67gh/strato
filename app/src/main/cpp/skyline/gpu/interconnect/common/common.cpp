@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2022 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <gpu/buffer_manager.h>
 #include <soc/gm20b/channel.h>
 #include <soc/gm20b/gmmu.h>
@@ -8,11 +9,17 @@
 
 namespace skyline::gpu::interconnect {
     void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn) {
-        // Ignore size for the mapping end check here as we don't support buffers split across multiple mappings so only the first one would be used anyway. It's also impossible for the mapping to have been remapped with a larger one since the original lookup because the we force the mapping to be reset after semaphores
+        skyline::diagnostics::Event("buffer_mapping_request", ctx.channelCtx.asCtx->gmmu.diagnosticSpaceId, address, size);
+        if (!size) {
+            view = {};
+            return;
+        }
+        // Semaphore handling purges this cache after guest mapping changes.
         if (address < blockMappingStartAddr || address >= blockMappingEndAddr) {
             u64 blockOffset{};
             std::tie(blockMapping, blockOffset) = ctx.channelCtx.asCtx->gmmu.LookupBlock(address);
             if (!blockMapping.valid()) {
+                skyline::diagnostics::Event("buffer_unmapped", ctx.channelCtx.asCtx->gmmu.diagnosticSpaceId, address, size);
                 view = {};
                 blockMappingEndAddr = 0;
                 return;
@@ -25,10 +32,21 @@ namespace skyline::gpu::interconnect {
         // Mapping from the start of the buffer view to the end of the block
         auto fullMapping{blockMapping.subspan(address - blockMappingStartAddr)};
 
-        if (splitMappingWarn && fullMapping.size() < size)
-            LOGW("Split buffer mappings are not supported");
+        if (fullMapping.size() < size) {
+            // TranslateRange merges adjacent host ranges. A guest resource may
+            // cross mapping boundaries while still having contiguous backing.
+            auto &gmmu{ctx.channelCtx.asCtx->gmmu};
+            auto ranges{gmmu.TranslateRange(address, std::min(size, gmmu.vaLimit - address))};
+            if (!ranges.empty() && ranges.front().valid())
+                fullMapping = ranges.front();
+            if (splitMappingWarn && fullMapping.size() < size)
+                LOGW("Buffer at 0x{:X}: contiguous mapped prefix 0x{:X} of requested 0x{:X} bytes", address, fullMapping.size(), size);
+        }
 
-        // Mapping covering just the requested input view (or less in the case of split mappings)
+        // Constant/index buffer callers may supply an estimated upper bound.
+        // Exact-size resources (texel buffers) reject a shorter view themselves.
+        if (fullMapping.size() < size) skyline::diagnostics::Event("buffer_partial_mapping", ctx.channelCtx.asCtx->gmmu.diagnosticSpaceId, address, fullMapping.size());
+        skyline::diagnostics::Event("buffer_host_range", ctx.channelCtx.asCtx->gmmu.diagnosticSpaceId, reinterpret_cast<uintptr_t>(fullMapping.data()), std::min(fullMapping.size(), size));
         auto viewMapping{fullMapping.first(std::min(fullMapping.size(), size))};
 
         // First attempt to skip lookup by trying to reuse the previous view's underlying buffer

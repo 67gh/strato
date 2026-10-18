@@ -1,0 +1,9 @@
+{
+  "g++": "/usr/bin/g++",
+  "clang++": null,
+  "cmake": null,
+  "ninja": null,
+  "java": "/usr/bin/java",
+  "adb": null,
+  "ndk_path_in_user_log_exists": false
+}

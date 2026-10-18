@@ -1,0 +1,2125 @@
+STRATO — VERDICTS CUMULATIFS DES CORRECTIONS
+10 OCTOBRE — app/src/main/cpp/skyline/logger/logger.cpp
+Fiche détaillée ajoutée au journal et lue avant édition. Première proposition : contexte copié et préfixe changé à7 ; deux relectures intégrales, puis test échoué sur le tag. Proposition rejetée, erreur de comptage du préfixe consignée ; pas de verdict favorable ni troisième relecture revendiquée pour cette version abandonnée.
+Fiche rectifiée relue avant réédition : préfixe conservé à8, contexte possédé par valeur et accesseurs const.
+Relecture intégrale 1 après réédition : construction et déplacement de LogMessage ; aucune adresse de thread_local transmise au message.
+Relecture intégrale 2 : lecture complète, accès const de WriteFile/WriteAndroid et accès mutable de UpdateTag ; capacité du nom et terminateur conservés.
+Relecture intégrale 3 : lecture complète des chemins sync/async, interface publique inchangée ; défauts distincts CircularQueue/Finalize toujours ouverts et non masqués.
+Test : types ThreadLogContext/LogMessage extraits directement de cette version dans un banc C++20 ; message créé sur un thread, nom du producteur changé puis thread terminé. Nom et tag d’origine restent corrects. Réussi avec AddressSanitizer/UndefinedBehaviorSanitizer, detect_leaks=0 car LeakSanitizer ne fonctionne pas dans cet environnement (erreur /proc/ptrace). Test limité aux types, pas à toute la file ni au logger Android. git diff --check réussi.
+Verdict : durée de vie du nom de thread corrigée ; validation Android et défauts de file/arrêt restants. Rendu3D non réparé.
+Diagnostic GPU précisé : le SIGSEGV Dragon Ball traverse vulkan.adreno.so -> vkCreateImageView -> TextureView::GetView -> Pipeline::SyncDescriptors -> PrepareDraw. L’autre session échoue aussi à vkCreateImageView avec ErrorOutOfHostMemory. Cela localise l’échec sans attribuer sûrement sa cause au pilote ou aux paramètres/mémoire de l’émulateur. Les fonctions graphiques non prises en charge restent une limitation indépendante.
+
+10 OCTOBRE — app/src/main/java/org/stratoemu/strato/MainActivity.kt, nouvelle édition
+Fiche historique et complément « log ancien » lus avant modification.
+Changement : le bouton des logs ouvre DiagnosticActivity, au lieu de partager logs/emulation.log, qui peut appartenir à une ancienne session. Imports devenus inutiles retirés.
+Relecture intégrale 1 : toutes les lignes du fichier après modification ; listener enregistré dans onCreate, Intent explicite vers l’activité existante, autres corrections conservées.
+Relecture intégrale 2 : toutes les lignes relues ; import résolu, déclaration de DiagnosticActivity confirmée dans AndroidManifest.xml ; liste des sessions triée dans DiagnosticSession, sélection/export relus dans DiagnosticActivity.
+Relecture intégrale 3 : toutes les lignes relues ; aucun accès restant à l’ancien fichier global dans MainActivity ; aucune suppression de logs, gestion « aucune session » assurée par l’écran existant ; diff --check réussi.
+Verdict : chemin de partage périmé corrigé dans les sources. Pas d’APK construit ni de test appareil. Cela ne corrige pas les défauts séparés de la file du logger natif et ne prouve pas la cause de la 3D absente. Il faut le diagnostic du lancement touché et la version d’APK réellement exécutée.
+
+Périmètre : défauts fonctionnels établis par le journal ; keystore, signature et durcissement uniquement sécuritaire exclus.
+Méthode : fiche lue avant édition ; relecture 1 pour logique ; relecture 2 pour contrats/appelants ; relecture 3 pour erreurs/régressions. Les tests sont distingués des relectures. Toute réédition impose de nouvelles relectures.
+État : corrections en cours. Build Android non validé, sous-modules absents.
+
+app/src/main/java/org/stratoemu/strato/MainViewModel.kt — F45
+Fiche relue avant édition.
+Relecture 1 : fichier complet ; LiveData modifiée sur Main, IO isolées par withContext ; Loading visible immédiatement.
+Relecture 2 : diff, signatures de sérialisation et appelants ; ancien refresh annulé et rejoint avant nouveau scan, empêchant son cache tardif de remplacer le nouveau.
+Relecture 3 : fichier complet ; exception de refresh conserve la liste visible, Job terminé libère la garde, annulation propagée ; cache actualisé après changement, Loaded publié avant checkRomHash.
+Verdict : races postValue et drapeau permanent corrigés à la lecture ; pas de test de coroutines Android. Un fournisseur SAF bloquant peut retarder la fin du scan et donc le join asynchrone, sans bloquer directement le thread UI. Import de clés conservé sans changement de politique.
+
+app/src/main/java/org/stratoemu/strato/UpdateChecker.kt — F64 et partie F09
+Fiche et complément de conception relus avant édition.
+Relecture 1 : diff ; tous les retours de checkForUpdate respectent Result<UpdateInfo?>, failures séparés de success(null).
+Relecture 2 : fichier complet ; finally disconnect conservé, erreur HTTP capturée, pas de popup automatique imposée ; seuls les ZIP strato-update.zip sont préférés, nom confirmé dans release.yml.
+Relecture 3 : fonction et deux appelants ; getOrNull seulement après traitement de failure. Réponse non vide sans release exploitable signalée comme erreur.
+Verdict : confusion panne/à jour corrigée ; aucun appel réseau effectué pour valider, compilation Kotlin indisponible. Comparaison published_at/versionCode toujours à résoudre avec le format de publication.
+
+app/src/main/java/org/stratoemu/strato/MainActivity.kt — seconde édition, F64
+Fiche relue avant nouvelle édition ; nouvelle série de trois relectures effectuée.
+Relecture 1 : diff de l’appel et des chemins erreur/succès.
+Relecture 2 : checkForUpdate complet ; erreur automatique silencieuse, erreur manuelle affichée, succès sans update « à jour ».
+Relecture 3 : retour du contexte IO sur Main et garde isFinishing/isDestroyed avant UI ; dialogue uniquement avec UpdateInfo non nul.
+Verdict : F64 traité côté activité, remplace le statut ouvert de son premier verdict ; validation Android restante.
+
+app/src/main/java/org/stratoemu/strato/settings/SettingsHomeFragment.kt — F64, deuxième appelant
+Fiche automatique et complément détaillé lus avant édition.
+Relecture 1 : diff et contrat Result ; échec vérifié avant null.
+Relecture 2 : bloc complet du contrôle manuel ; garde isAdded avant accès contexte.
+Relecture 3 : contrôle manuel et showUpdateCheckResult ; échec affiche erreur existante, succès sans update affiche « à jour », update affiche son dialogue.
+Verdict : faux message « à jour » corrigé côté paramètres ; pas de test Android.
+
+Suite du 9 octobre — six fichiers supplémentaires. Les trois passes ci-dessous sont des relectures ciblées des changements et de leurs interactions, pas trois lectures intégrales de chaque long fichier.
+
+app/src/main/java/org/stratoemu/strato/EmulationActivity.kt — F60/F61/F62 rectifié/F63
+Fiche et rectification du journal lues avant édition ; fichier source lu intégralement.
+Relecture 1 : diff complet, Runnable nommé et suppression du callback dans onDestroy, packageName effectif.
+Relecture 2 : blocs onCreate/statistiques/onNewIntent/onDestroy ; enregistrement retour unique avec propriétaire de cycle de vie.
+Relecture 3 : executeApplication, populateAppItem, pause/reprise et destruction ; un nouvel AppItem ou URI déclenche recreate pour recharger aussi les réglages et contrôleurs du nouveau jeu.
+Verdict : corrections appliquées, validation Android restante. F59 reste ouvert : boucles Surface et attente native ; pas de remplacement asynchrone improvisé qui permettrait de détruire une surface encore utilisée. Le redémarrage natif existant conserve son mécanisme d’arrêt et de relance du processus.
+
+app/src/main/java/org/stratoemu/strato/MainActivity.kt — F65
+Fiche lue avant édition, fichier source lu intégralement.
+Relecture 1 : diff ; callback retour enregistré une seule fois dans onCreate.
+Relecture 2 : recherche dans onCreate et onStart ; mise à jour de l’activation intégrée au listener existant.
+Relecture 3 : retour, effacement du texte et reprise ; onStart ne fait plus qu’actualiser l’état, sans ajouter de listener.
+Verdict : accumulation corrigée ; pas de test Android. F64 reste ouvert dans ce lot ; un deuxième appelant existe dans SettingsHomeFragment et doit être corrigé conjointement avec UpdateChecker.
+
+app/src/main/java/org/stratoemu/strato/RomProvider.kt
+Fiche lue avant édition.
+Relecture 1 : fichier complet, catch au niveau de chaque entrée.
+Relecture 2 : diff et propagation récursive ; les jeux déjà ajoutés restent dans la liste partagée lorsqu’un enfant échoue.
+Relecture 3 : fichier complet ; racine inaccessible toujours ignorée par le traitement existant, déduplication conservée.
+Verdict : un fichier illisible ne masque plus les autres jeux de sa racine. Pas de test SAF Android ; cycles d’un fournisseur et annulation du scan restent à examiner.
+
+publish_local.sh — F07
+Fiche lue avant édition.
+Relecture 1 : fichier complet ; les guillemets non fermés sont remplacés par printf.
+Relecture 2 : diff ; %q conserve correctement les espaces et guillemets du titre et du chemin dans la commande affichée.
+Relecture 3 : fichier complet ; copie et heredoc conservés, aucune commande de publication exécutée.
+Verdict : bash -n OK. Exécution dans un dossier temporaire avec faux APK : copie identique, notes créées, commande affichée syntaxiquement valide, absence d’argument renvoie 1. Aucune release distante créée.
+
+tools/analyze_nce_fallback.py — F50
+Fiche lue avant édition, fichier source lu intégralement.
+Relecture 1 : parsing JSON et validation de type avant appartenance à un ensemble.
+Relecture 2 : diff et comptage invalid_records ; court-circuit Python empêche TypeError pour liste/dictionnaire.
+Relecture 3 : poursuite de lecture, warning et complétude ; le record suivant reste analysé.
+Verdict : défaut reproduit corrigé ; 22 tests Python réussis. Limites mémoire des journaux arbitraires inchangées.
+
+tools/tests/test_analyze_nce_fallback.py — régression F50
+Fiche lue avant édition, fichier source lu intégralement.
+Relecture 1 : cas liste/dictionnaire/null/nombre/booléen, événement valide après le record incorrect.
+Relecture 2 : diff ; assertions sur occurrences, warning, invalid_records et absence de fausse exactitude.
+Relecture 3 : emplacement dans la classe et appel à analyze/session/failure/end ; test découvert et exécuté.
+Verdict : nouveau test réussi avec ses cinq sous-cas ; suite totale 22/22.
+
+app/src/main/java/org/stratoemu/strato/utils/DirectoryReplacement.kt — nouveau, F20/F21
+Fiche de conception ajoutée au journal et lue avant création.
+Relecture 1 : préparation complète avant renommage de l’ancienne cible ; staging sur le même volume.
+Relecture 2 : sauvegarde restaurée si installation échoue ; dossier backup conservé si restauration impossible ; imports sérialisés dans le processus.
+Relecture 3 : récupération au prochain import si arrêt entre les deux renommages ; finally ne supprime que le staging ; backup laissé si nettoyage échoue.
+Verdict : transaction par répertoire implémentée, non testée sur Android ; pas de transaction globale multi-répertoires ni de garantie de persistance après panne électrique.
+
+app/src/main/java/org/stratoemu/strato/utils/SaveManagementUtils.kt — F20
+Fiche lue avant édition. Extraction dans un cache unique ; remplacement via DirectoryReplacement ; retour réel de suppression.
+Relecture 1 : aucune suppression de la sauvegarde active avant copie complète.
+Relecture 2 : ouverture flux dans le try en IO, fermeture use, notifications Main ; dossiers TitleId seulement.
+Relecture 3 : échec de copie conserve l’ancien dossier ; nettoyage touche seulement le cache de cet import. Plusieurs jeux sont validés/committés séparément.
+Verdict : perte par suppression-avant-copie corrigée ; tests Android de disque plein/interruption restants.
+
+app/src/main/java/org/stratoemu/strato/preference/FirmwareImportPreference.kt — F21
+Fiche lue avant édition. Cache unique, ouverture protégée, refus de doublons NCA, extraction polices avant commit firmware, remplacement sauvegardé, UI Main.
+Relecture 1 : firmware ancien conservé pendant extraction/copie ; erreurs de copie ne laissent pas le dossier effacé.
+Relecture 2 : polices existantes fusionnées dans staging ; version persistée uniquement après résultat de succès.
+Relecture 3 : finally enlève seulement le workspace temporaire ; copie firmware et polices sont DEUX transactions distinctes. Une erreur firmware après commit polices peut donc conserver des polices nouvelles avec ancien firmware.
+Verdict : suppression destructive corrigée ; frontière native extractFonts restant à corriger et atomicité globale non fournie.
+
+app/src/main/java/org/stratoemu/strato/model/TaskViewModel.kt — F26
+Fiche lue avant édition. Travail IO via withContext ; état final publié sur Main même après exception ; task perdue explicitement traitée.
+Relecture 1 : isRunning repasse false et isComplete true dans finally.
+Relecture 2 : Exception devient résultat observable ; CancellationException reste propagée.
+Relecture 3 : garde lateinit avant utilisation et exécution unique tant que running ; pas de prétention à restaurer une lambda après mort du processus.
+Verdict : blocage de progression ciblé corrigé statiquement ; recréation Android à tester.
+
+app/src/main/java/org/stratoemu/strato/fragments/IndeterminateProgressDialogFragment.kt — F26
+Fiche lue avant édition. Observation des résultats Exception avec message utilisateur.
+Relecture 1 : erreur visible avant le nettoyage d’état.
+Relecture 2 : observation rattachée au fragment ; completion existante ferme le dialogue.
+Relecture 3 : ressouce R.string.error existante, aucun nouveau chemin de tâche concurrente introduit.
+Verdict : erreurs de tâche affichées ; partage du ViewModel entre plusieurs dialogues inchangé.
+
+app/src/main/cpp/skyline/loader/nso.cpp — F54/F55
+Fiche lue avant édition. Décompression LZ4 vérifiée ; lecture du chemin de module bornée ; rodata inférieure à huit octets acceptée sans index invalide.
+Relecture 1 : échec LZ4 ou taille décodée différente provoque une erreur explicite avant exécution.
+Relecture 2 : fallback regex et données de sections restent disponibles ; chaîne construite à partir d’itérateurs bornés.
+Relecture 3 : garde longueur>0 avant conversion, limite contents.size()-8 après garde taille ; cas rodata vide sûr pour ce diagnostic.
+Verdict : corrections statiques appliquées ; fixture NSO/Appareil non testée.
+
+app/src/main/cpp/skyline/gpu.cpp — F51/F52
+Fiche lue avant édition. Identifiant homebrew si NACP absent ; cache de pipelines guest désactivé dans ce cas ; callback de diagnostic contient ses exceptions et accepte layerPrefix nul.
+Relecture 1 : plus de déréférencement NACP inconditionnel dans Initialise.
+Relecture 2 : chemins avec NACP inchangés ; cache Vulkan natif partageable reste distinct du cache de commandes guest.
+Relecture 3 : fonction-try-block ferme la frontière C du callback ; aucune signature de callback changée.
+Verdict : défauts ciblés corrigés statiquement ; lancement homebrew/Vulkan à valider sur appareil.
+
+app/src/main/cpp/skyline/gpu/frame_generation/frame_generator.h — F15/F16
+Fiche lue avant édition. Cycle de soumission passé explicitement aux trois fonctions ; commentaire de latence corrigé.
+Relecture 1 : signatures header/implémentation identiques.
+Relecture 2 : appel depuis présentation mis à jour ; enums et constantes conservés.
+Relecture 3 : cycle reçu avant tout dispatch, modes désactivés inchangés.
+Verdict : contrat adapté ; compilation Vulkan indisponible ici.
+
+app/src/main/cpp/skyline/gpu/frame_generation/frame_generator.cpp — F15/F17/F18/F19
+Fiche lue avant éditions. Descripteurs, vues et textures attachés au cycle ; allocation transactionnelle ; attente des anciennes copies avant réutilisation ; pas fin égal à 1 pixel ; demi-dimensions arrondies vers le haut.
+Relecture 1 : les deux dispatchs attachent leurs gardes AVANT leur fin de portée ; dstSet utilise bien **shared_ptr.
+Relecture 2 : signatures, push constants et shader cohérents ; vues temporaires également retenues.
+Relecture 3 : allocation échouée ne publie pas cachedExtent ; modes 2/3/4 utilisent au plus trois sorties ; TransitionLayout/Wait antérieurs aux nouvelles écritures.
+Verdict : corrections statiques appliquées. Synthèse temporelle complète et performance non validées sur Vulkan ; conservation de la frame précédente dans un snapshot indépendant reste à traiter.
+
+app/src/main/cpp/skyline/gpu/command_scheduler.h — support F15
+Fiche lue avant édition. Submit accepte aussi un recorder(cmd,cycle).
+Relecture 1 : les lambdas existantes à un argument gardent leur branche.
+Relecture 2 : le cycle transmis est celui du command buffer soumis ; gestion des exceptions inchangée.
+Relecture 3 : trait d’invocabilité et include type_traits explicites ; aucune duplication de soumission.
+Verdict : adaptation statique cohérente ; compilation complète à faire.
+
+app/src/main/cpp/skyline/gpu/presentation_engine.cpp — F15/F16
+Fiche lue avant éditions. Intermédiaires présentés avant N ; cycle passé au générateur ; sources attachées et prêtes en layout General ; changement de résolution saute l’interpolation.
+Relecture 1 : ordre N-1/intermédiaires/N rétabli ; compteur réel incrémenté une fois.
+Relecture 2 : ancien callback GPU conservé via nouvelle branche Submit ; durée de vie sources retenue.
+Relecture 3 : gardes mode/première frame/résolution présentes ; génération attendue avant copie.
+Verdict : partiellement corrigé. Snapshot indépendant de la frame précédente, récupération swapchain et libération fenêtre native restent à traiter ; pas de test sur appareil.
+
+app/src/main/cpp/skyline/gpu/fence_cycle.h — F66
+Fiche complémentaire lue avant édition. Cancel publie sous mutex et notifie ; les deux attentes acceptent signalled.
+Relecture 1 : l’annulation avant et pendant attente permet le retour.
+Relecture 2 : même mutex pour prédicat/transition, notification après déverrouillage ; branche Wait évite l’attente Vulkan après annulation.
+Relecture 3 : nettoyage des dépendances conserve son garde atomique ; le problème indépendant d’exception dans le destructeur n’est pas traité.
+Verdict : blocage de pré-soumission corrigé statiquement ; stress multithread réel restant.
+
+app/src/main/cpp/skyline/gpu/descriptor_allocator.cpp
+Fiche lue avant édition. Décrément freeSetCount uniquement après allocation réussie.
+Relecture 1 : succès consomme un slot, erreur n’en consomme aucun.
+Relecture 2 : croissance du pool reçoit désormais un compteur cohérent.
+Relecture 3 : garde compteur>0 et types de résultat conservés.
+Verdict : compteur corrigé statiquement.
+
+app/src/main/shaders/fg_motion_estimate.comp — F17/F19
+Fiche lue avant édition. Échantillonnage normalisé au niveau grossier et préférence au mouvement minimal en cas de coût égal.
+Relecture 1 : coordonnées couvrent toute l’image, pas seulement le quadrant supérieur gauche.
+Relecture 2 : vecteurs documentés courant→précédent ; interpolateur consomme ce même sens.
+Relecture 3 : réduction garde les barrières pour 64 invocations ; bloc uniforme peut conserver mouvement zéro.
+Verdict : correction statique ; glslc/glslangValidator absents, SPIR-V et qualité visuelle non testés.
+
+app/src/main/shaders/fg_frame_interpolate.comp — F19
+Fiche lue avant édition. Signes des deux warps inversés pour correspondre au SAD.
+Relecture 1 : pour objet 10→14, vecteur -4, pixel intermédiaire 12 à t=.5 lit précédent10 et courant14.
+Relecture 2 : interfaces/push constants inchangés ; facteurs t gardés.
+Relecture 3 : tests hors image et repli de mélange inchangés ; pas de prétention à résoudre toute occlusion.
+Verdict : signe corrigé statiquement ; shader non compilé dans cet environnement.
+
+app/src/main/cpp/skyline/vfs/backing.h — F27
+Fiche lue avant édition. Correction : retour du nombre lu, exception sur lecture incomplète, objet lu initialisé.
+Relecture 1 : contrat Read complet respecté, ReadUnchecked partiel conservé.
+Relecture 2 : les consommateurs de structures ne reçoivent plus d’objet partiellement initialisé ; lecture complète d’un shader garde le bon nombre d’octets.
+Relecture 3 : taille zéro/fin de fichier et lecture courte examinées ; harness compilant le vrai header réussi (4/4, 2/4 rejetée, 0/0).
+Verdict : lecture corrigée et testée isolément. Politiques Write de modes/plages non modifiées dans ce lot.
+
+app/src/main/cpp/skyline/vfs/os_backing.cpp — F32
+Fiche lue avant édition. Correction : EINTR, copie limitée aux octets effectivement lus dans le repli EFAULT, EOF sans boucle infinie, répétition des écritures partielles.
+Relecture 1 : progression des compteurs et offsets correcte.
+Relecture 2 : copy_from(amount=0) signifiant copie complète, le cas ret==0 est sorti AVANT copie.
+Relecture 3 : absence de progression en écriture lève ; ret négatif ne devient jamais size_t. Pas de simulation réelle EFAULT dans ce lot.
+Verdict : corrigé statiquement ; test POSIX complet restant.
+
+app/src/main/cpp/skyline/services/fssrv/IFile.cpp — F35
+Fiche lue avant édition. Correction : spans limités à la taille demandée, zéro sans accéder au buffer, buffer lecture trop petit rejeté.
+Relecture 1 : taille négative toujours traitée avant conversion.
+Relecture 2 : ReadUnchecked conserve la possibilité de lecture courte à EOF ; Write attend exactement size.
+Relecture 3 : aucune écriture préalable au rejet de buffer ; taille zéro ne modifie plus de données.
+Verdict : taille IPC corrigée statiquement. Flush demeure un stub, à traiter séparément ; pas de test IPC Android.
+
+app/src/main/cpp/skyline/services/fssrv/IDirectory.cpp — F36
+Fiche lue avant édition. Correction : index cursor+i et soustractions gardées lorsque le dossier rétrécit.
+Relecture 1 : deux pages successives reprennent après la dernière entrée consommée.
+Relecture 2 : buffer vide laisse le curseur intact, fin retourne zéro.
+Relecture 3 : aucune soustraction non signée si curseur supérieur à la nouvelle taille.
+Verdict : défaut de répétition corrigé ; vue stable pendant mutation concurrente du dossier non garantie par l’API actuelle.
+
+app/src/main/cpp/skyline/vfs/rom_filesystem.cpp — F30
+Fiche lue avant édition. Correction : test de sentinelle AVANT lecture des listes fichiers/enfants.
+Relecture 1 : répertoire vide renvoie un vecteur vide sans lire l’offset sentinelle.
+Relecture 2 : progression siblingOffset et filtrage listMode inchangés.
+Relecture 3 : les deux boucles du listing sont corrigées ; traversée initiale déjà gardée par les appelants conservée.
+Verdict : listing vide corrigé statiquement. Durcissement contre cycles de métadonnées malformées non appliqué.
+
+app/src/main/cpp/skyline/nce/guest.h — F56
+Analyse préalable : fiche guest.h + rectification des deux chevauchements lues.
+Modification : FpRegisters devient une structure ; assertions pour huit offsets utilisés en assembleur.
+Relecture 1 : vecteurs, FPSR et FPCR occupent des zones distinctes.
+Relecture 2 : lecteurs C++ fpr.regs/fpsr/fpcr conservés ; offsets liés à guest.S, nce.cpp et KThread.cpp mis à jour ensemble.
+Relecture 3 : tailles SaveCtx/LoadCtx inchangées ; test hôte du header et conservation des 32 registres après écriture FPSR/FPCR réussis.
+Verdict : corrigé au niveau disposition mémoire ; exécution ARM sur appareil non validée.
+
+app/src/main/cpp/skyline/nce/guest.S — F56
+Analyse préalable : fiche guest.S lue.
+Modification : six offsets système remplacés (save/load FPSR, FPCR, NZCV).
+Relecture 1 : les stores ne recouvrent plus Q31.
+Relecture 2 : restauration symétrique, offsets conformes aux assertions du header.
+Relecture 3 : aucun ajout/retrait d’instruction ; sauvegardes GP/SIMD, pile et LR inchangées.
+Verdict : cohérent avec le contexte corrigé ; assemblage Android et exécution ARM restent à vérifier.
+
+app/src/main/cpp/skyline/nce.cpp — F56/F57/F58
+Analyse préalable : fiche nce.cpp lue.
+Modification : opcodes LDR/STR des contextes décalés de 16 octets ; SVC inconnu traité par erreur existante ; dump limité aux 31 registres réels.
+Relecture 1 : tous les accès TLS/stack identifiés corrigés, y compris les deux branches MSR et les hooks entrée/sortie.
+Relecture 2 : imm12 des accès 64 bits augmenté de 2 ; registres sources/destinations conservés ; table SVC toujours traitée par le même chemin d’erreur.
+Relecture 3 : tailles des trampolines inchangées ; parcours des registres sans index 31 ; diff sans erreur d’espaces.
+Verdict : correctifs statiques cohérents ; aucune validation Android complète. Le reste des limites JIT/signaux n’est pas résolu par ce changement.
+
+app/src/main/cpp/skyline/kernel/types/KThread.cpp — adaptation F56
+Analyse préalable : fiche complémentaire rédigée et lue avant édition.
+Modification : deux stores initiaux TLS/SP déplacés à 0x2B0/0x2B8.
+Relecture 1 : valeurs sauvegardées identiques, nouvelles adresses correctes.
+Relecture 2 : entrée de thread alignée sur les trampolines et les assertions du contexte.
+Relecture 3 : initialisation X/SIMD, timers, arrêt et ordonnanceur inchangés ; aucune modification de la structure de sortie SVC.
+Verdict : adaptation cohérente, test de disposition hôte réussi ; démarrage guest à vérifier sur appareil.
+
+
+OPTION CACHE SHADERS PAR JEU — 10 OCTOBRE 2026
+Analyse préalable lue avant chaque édition.
+
+FICHIER : app/src/main/java/org/stratoemu/strato/AppDialog.kt
+RELECTURE 1 : intégralité du fichier, logique et portée vérifiées.
+RELECTURE 2 : intégralité du fichier, interactions et erreurs vérifiées.
+RELECTURE 3 : intégralité du fichier final, cohérence avec les chemins natifs et ressources vérifiée.
+VERDICT : Bouton par fiche, confirmation avec titre, suppression sur Dispatchers.IO, messages distincts, restauration des commandes. Refus si une session diagnostique est active. Vérification statique des appels existants ; interface Android non exécutée.
+SHA256 : 8e4c14c86a6fea0c25c3d2ee199bd69710ebc18b2c9e1313b3bfba77fe4f73c6
+
+FICHIER : app/src/main/java/org/stratoemu/strato/utils/ShaderCacheFiles.java
+RELECTURE 1 : intégralité du fichier, logique et portée vérifiées.
+RELECTURE 2 : intégralité du fichier, interactions et erreurs vérifiées.
+RELECTURE 3 : intégralité du fichier final, cohérence avec les chemins natifs et ressources vérifiée.
+VERDICT : Trois chemins exacts : fichier pipelines, compagnon .staging, répertoire Vulkan. Nouvelle série de trois lectures intégrales après ajout du .staging. Compilation Java et tests exécutés : suppression ciblée, staging seul, répétition sans cache, autres jeux/sauvegardes/remplacements/dumps conservés, IDs invalides et liens symboliques. PASS. Une erreur peut laisser une suppression partielle, signalée à utilisateur ; pas de rollback.
+SHA256 : 52858d0aadc45a84028c7272e5ac199b0890fc6a820a03a3802eac126614765b
+
+FICHIER : app/src/main/res/values/shader_cache_strings.xml
+RELECTURE 1 : intégralité du fichier, logique et portée vérifiées.
+RELECTURE 2 : intégralité du fichier, interactions et erreurs vérifiées.
+RELECTURE 3 : intégralité du fichier final, cohérence avec les chemins natifs et ressources vérifiée.
+VERDICT : Six textes anglais : action, confirmation, succès, absence, échec et session active. XML parsé, absence de doublons et placeholder validés.
+SHA256 : 56ec157eab445b80554655fb48bac895cb68097cf45e96aa7a946e6202e81670
+
+FICHIER : app/src/main/res/values-fr/shader_cache_strings.xml
+RELECTURE 1 : intégralité du fichier, logique et portée vérifiées.
+RELECTURE 2 : intégralité du fichier, interactions et erreurs vérifiées.
+RELECTURE 3 : intégralité du fichier final, cohérence avec les chemins natifs et ressources vérifiée.
+VERDICT : Six traductions françaises correspondantes. XML parsé, clés identiques, absence de doublons et placeholder validés.
+SHA256 : 7efe4cac4b4f7e2fc7a1e30af323881ab2454d6edbdae458eccb31227c3d834c
+
+Limites : sources uniquement ; pas de compilation APK ni test sur appareil. Le nettoyage ne constitue pas une correction démontrée de la 3D de Zelda. Le contrôle des sessions actives ne remplace pas un verrou transactionnel partagé avec tous les points de lancement externes.
+
+
+CORRECTIONS NATIVES — 11 OCTOBRE 2026
+Fiches analyse lues avant édition. Après réapplication, trois lectures intégrales séparées effectuées pour chacun des quatre fichiers.
+
+FICHIER : app/src/main/cpp/skyline/common/circular_queue.h
+RELECTURE1 : intégralité, logique et durée de vie.
+RELECTURE2 : intégralité, exceptions et intégration ; résultats tests.
+RELECTURE3 : intégralité finale, bornes et propriété mémoire.
+VERDICT : Allocation alignée et durée de vie explicite corrigées. Test hôte : copie/déplacement, alignement128, 1000 tours, destruction éléments restants, Process et 20000 messages à quatre producteurs : PASS. Type sans affectation accepté ; ancien code échoue. Mono-consommateur, pas arrêt concurrent garanti.
+SHA256 : 38b0a150b30b4db4019a4dc0422c321de01aa567776a22bc5f1f125481445afa
+
+FICHIER : app/src/main/cpp/skyline/common/spin_lock.h
+RELECTURE1 : intégralité, logique et durée de vie.
+RELECTURE2 : intégralité, exceptions et intégration ; résultats tests.
+RELECTURE3 : intégralité finale, bornes et propriété mémoire.
+VERDICT : Double unlock supprimé dans wait. 100 réveils forcés sur voie bloquante : PASS. Ancienne version échoue avec mutex instrumenté. Aucun verdict global sur ordonnanceur ou RecursiveSpinLock.
+SHA256 : d3e2fffdc2f7ac0b50585985efa8e614fcde2d76dc2767077fa958f2e55f2858
+
+FICHIER : app/src/main/cpp/skyline/gpu/interconnect/common/shader_cache.cpp
+RELECTURE1 : intégralité, logique et durée de vie.
+RELECTURE2 : intégralité, exceptions et intégration ; résultats tests.
+RELECTURE3 : intégralité finale, bornes et propriété mémoire.
+VERDICT : Copie bornée exactement64K, contrôle mappings et propriété stable. 101 allocations et préservation du premier shader : PASS sous ASan/UBSan. BRA terminal inclus après examen statique ; aucune preuve de résolution DragonBall sans shader fautif. Heuristique première BRA et taille fallback restent limitations.
+SHA256 : 6dacbff0a625c5e364c63abe45666af39944991a3af2b261914f99fff1d4818f
+
+FICHIER : app/src/main/cpp/skyline/gpu/interconnect/common/shader_cache.h
+RELECTURE1 : intégralité, logique et durée de vie.
+RELECTURE2 : intégralité, exceptions et intégration ; résultats tests.
+RELECTURE3 : intégralité finale, bornes et propriété mémoire.
+VERDICT : deque de vectors garde les allocations pointées par spans ; inclusion deque explicite. Test croissance101 allocations PASS. Dépendances Android complètes non compilées.
+SHA256 : 06d0609194094555f8e47d857630fb51a6187e8aba48dab3a4def570df52ee8a
+
+Tests isolés reproductibles : verification_native/run.py et RESULTATS.txt. Adaptateurs explicités dans résultats ; ce ne sont pas tests Vulkan ni compilation APK. Sources seulement.
+
+
+DRAGON BALL — 11 OCTOBRE SOIR
+Fiches d’analyse lues avant modification. Tests reproductibles : verification_dragon/run.py.
+
+kernel/scheduler.cpp
+SHA256 7c38472110e14caa2d21a1f82e1373579cfa011ddbd83054a7ba601dd3b43b6b
+Trois relectures intégrales finales : ordre migration→core cohérent ; garde next(end) revue ; guards front/null revus. Test extrait TimedWaitSchedule avec verrous instrumentés PASS, ancien FAIL. Autres courses/heuristiques restent à auditer. Verdict : défaut ciblé corrigé, gel en jeu non validé.
+
+gpu/interconnect/common/pipeline.inc
+SHA256 7a0cbbab62f1df047d8e647949da240a2a4dfd1621f25fd16c48bbd0219480ea
+Trois relectures intégrales : calcul primaire/secondaire, indices de tableaux et cbuf absent vérifiés. Tests handles ASan/UBSan PASS, ancien FAIL. Verdict : calcul de handles corrigé ; aucun nouveau support texel.
+
+gpu/interconnect/kepler_compute/pipeline_manager.cpp
+SHA256 8d828833cc44100ced9057c39441d9f7abad5da7f41e03f98aa572e98529becd
+Trois relectures intégrales : ordre layout/écritures, capacité des spans et indices cache relus. Test SSBO PASS, ancien FAIL ; contrat slots PASS. Verdict : décalage et dépassement évités ; texel buffers toujours non écrits, tableaux SSBO génériques à approfondir.
+
+gpu/interconnect/kepler_compute/kepler_compute.cpp
+SHA256 28f6162c043cb9e5ddedbe804d184640f805b74e7e04e640a0c3bec6e75a626a
+Trois relectures intégrales après nettoyage espaces : garde null sur les deux chemins de descriptors, dispatch conservé et dépendance du set attachée. Contrat structurel PASS. Verdict : null dereference corrigé ; pas de test Vulkan. Commentaire hérité sur ressources non supportées trop général, drapeau non renseigné signalé au rapport.
+
+
+IMPLÉMENTATION TEXEL BUFFERS — 12 OCTOBRE 2026
+Méthode : fiches TXT lues avant édition ; revue ciblée du code et de ses interactions en trois axes ci-dessous. Trois scans automatisés intégraux de chaque fichier sont enregistrés dans verification_texel/RELECTURES.json. Ces scans ne sont pas trois audits manuels indépendants ligne par ligne.
+
+common/common.h
+Rôle : Transport des bindings différés et propriétaire des vues.
+Passe1 — structure/API : Spans de bindings et handles séparés ; aucun objet RAII placé dans l’allocateur sans destructeur.
+Passe2 — données/durée de vie : Création des vues à Record ; propriétaire vector conservé par cycle.
+Passe3 — intégration/cas limites : Agrégats existants utilisent initialiseurs désignés ; champs omis vides. API Vulkan compilée.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : 73f022e49f8e33a2df198efd9df689b27394251b03e3b97be3bf5b4dc1e0d6aa
+
+common/textures.h
+Rôle : Interface texel distincte des images.
+Passe1 — structure/API : Déclaration concordante avec définition et retour TexelBufferBinding.
+Passe2 — données/durée de vie : Le pool TIC reste celui de Textures.
+Passe3 — intégration/cas limites : Pas de modification de GetTexture ni de représentation des images.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : 07dbcf16eb215dc4fc099820ab3d628dbcad094bd0f80bbc18dd8b0214eada2e
+
+common/textures.cpp
+Rôle : Décodage TIC Buffer1D, formats et mapping.
+Passe1 — structure/API : Largeur32bits+1 calculée en64bits, adresse48bits ; capacité maximale vérifiée.
+Passe2 — données/durée de vie : Mapping intégral exigé, buffer attaché avant retour ; formats/swizzles incompatibles refusés.
+Passe3 — intégration/cas limites : Tests de largeur haute, adresse, mapping tronqué, swizzle, format et dépassement PASS ; formats storage étendus non activés rejetés.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : d49e87d5743a405dd6e07c4e16815ad8260d6d5f5c89cd842286e01c294c1e8c
+
+common/pipeline.inc
+Rôle : Allocation des descripteurs texel et hazards lecture/écriture.
+Passe1 — structure/API : Allocation et attachement propriétaire uniquement si count>0.
+Passe2 — données/durée de vie : Lectures utilisent PopulateReadBarrier ; écritures MarkGpuDirty et blocage CPU séquencé comme SSBO.
+Passe3 — intégration/cas limites : Aucun megabuffer de copie qui désolidariserait les écritures ; tests hazards et lifetime PASS.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : 307d2517882ca4935592749f90dbd2308895be4a8adf9e8161d693d9732f1519
+
+common/state_updater.h
+Rôle : Création tardive de VkBufferView pour push/update.
+Passe1 — structure/API : Binding résolu au Record, offset final vérifié avant création.
+Passe2 — données/durée de vie : Handles envoyés aux writes après construction ; propriétaire retenu jusqu’à fin cycle.
+Passe3 — intégration/cas limites : Deux instanciations compilées avec Vulkan-Hpp exact ; déplacement backing et durée de vie testés avec doubles.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : 4c3b8a402e664056b57eeab252369e92267988b389057b36d192a9a865797a53
+
+kepler_compute/pipeline_manager.cpp
+Rôle : Writes uniform/storage texel dans moteur compute.
+Passe1 — structure/API : Allocation totale déjà comptée ; une écriture par binding avec tous éléments.
+Passe2 — données/durée de vie : Ordre UBO/SSBO/uniform texel/storage texel/images conservé ; handles différés.
+Passe3 — intégration/cas limites : Test des pointeurs dans tableau, indices et types PASS ; warning texel global retiré.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : 687d5f98009ff8aeb5b03e57d4e4fb92767ccb09f851043657bf633318d7000c
+
+maxwell_3d/pipeline_manager.cpp
+Rôle : Writes texel graphiques, compte des writes et secours quick-bind.
+Passe1 — structure/API : Counts texel par binding, correction compte storage images pour quirk individual.
+Passe2 — données/durée de vie : Full-sync si texel/storage image, maintien des barrières et pointeurs.
+Passe3 — intégration/cas limites : Tests builder layout et écrivain PASS ; counts8 ou11 selon quirk pour fixture11bindings.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : 4365956bbee77bc18d4dbd4e88ec7c4331dcba8dd727454b8c21312715f2bd9e
+
+maxwell_3d/pipeline_manager.h
+Rôle : Contrat full-sync et diagnostic des catégories non écrites.
+Passe1 — structure/API : NeedsFullDescriptorSync couvre texels et storage images.
+Passe2 — données/durée de vie : DescribeUnwrittenDescriptors vide signifie qu’un writer existe, pas que chaque format ou chaque jeu fonctionne.
+Passe3 — intégration/cas limites : Test sélection full-sync PASS ; compatibilité runtime contrôlée dans GetTexelBuffer.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : 870fa25b0400c65e09cab526b8624eeab12906a391e2549b49326f4fa42d1980
+
+maxwell_3d/maxwell_3d.cpp
+Rôle : Sélection mise à jour des descripteurs avant Draw/DrawIndirect.
+Passe1 — structure/API : Nouvelle garde avant optimisation quick-bind, même quand pipeline identique.
+Passe2 — données/durée de vie : Forcer full-sync empêche de sauter hazards des texels ; coût performance possible.
+Passe3 — intégration/cas limites : Draw direct et indirect passent par PrepareDraw ; autres chemins inchangés dans cette passe.
+Verdict : implémentation ciblée contrôlée ; validation Android/GPU restante.
+SHA256 : 05de9f9b77c2d85a5c02f232c8ff992949ed0f3a3c58a4082dd7d45d5f7897f8
+
+=== Verdicts mémoire — 2026-10-12 ===
+Analyse TXT relue avant modifications. Trois relectures intégrales des versions finales des cinq fichiers ont été effectuées, avec les axes ci-dessous. Les ajustements intermédiaires de compilation et de compatibilité ont été faits avant ces trois lectures finales ; il ne s’agit pas de trois audits indépendants après chaque patch intermédiaire.
+Les PASS concernent le correctif ciblé, pas la totalité de chaque fichier ni le rendu de Dragon Ball.
+
+common/segment_table.h
+Rôle : Table de traduction L1/L2 partagée par GMMU et BufferManager.
+Relecture 1 — logique : Rapport L2/L1 corrigé : 32 petites pages pour une grande page 128 KiB, et conservation du suffixe.
+Relecture 2 — limites et cohérence : Bornes de la dernière table partielle relues ; allocations/destruction et surcharges existantes examinées.
+Relecture 3 — intégration et vérification : Test sur toutes les pages après 16 512 remappages/démappages exhaustifs et 10 000 opérations aléatoires. Échec reproduit avant correction.
+Verdict : PASS pour les chemins Set(start,end,value)/lookup testés. Les affectations et deux surcharges inutilisées conservent des défauts préexistants décrits dans le journal.
+SHA256 : 13af1e815f485568a27a5d4b0b3b26a55146c112e7e728b57617050bdff96aaf
+
+common/address_space.h
+Rôle : Traduction rapide, cache des blocs, Map/Unmap et API lecture/écriture.
+Relecture 1 — logique : Après découpe, reconstruction des entrées concernées et de leurs voisins pour que leurs tailles ne traversent plus une nouvelle allocation ou un trou.
+Relecture 2 — limites et cohérence : Validation avant indexation et modification ; zéro octet traité sans lookup ; soustraction non signée protégée. Les limites non alignées passent par le vecteur canonique.
+Relecture 3 — intégration et vérification : Contrat callbacks Write(span) rétabli ; données comparées à un modèle indépendant après 1 000 opérations alignées et 1 000 non alignées.
+Verdict : PASS des fonctions modifiées en tests natifs. Après une opération non alignée, lookup O(log n) pour cet espace ; pas de mesure sur Android. ReadTill conserve des risques préexistants de fin de vecteur.
+SHA256 : 2d82202da2901c633cb45ea54e170d54c3c9055254df94cdac9559ff31b69b45
+
+common/address_space.inc
+Rôle : Mutation des blocs et traduction des plages ; base également employée par FlatAllocator.
+Relecture 1 — logique : Remplacement de MapLocked/UnmapLocked par insertion bornée de la nouvelle plage et de sa queue, fusion des trous adjacents ; adresse zéro et limite exclusive pris en charge.
+Relecture 2 — limites et cohérence : Traduction lente sans accès end(), sans addition sur nullptr et sans exposition du pointeur sparse factice ; fusion uniquement des plages hôtes adjacentes ou des trous.
+Relecture 3 — intégration et vérification : Tests des limites du GMMU réel 40 bits, des mappings mixtes/sparse, du callback Write et du comportement de base de FlatAllocator. mmap compare MAP_FAILED.
+Verdict : PASS des chemins de mappage/traduction testés. Les routines Read/Write/Copy conservent des risques préexistants hors plages valides ; Copy vers une destination sparse reste à corriger. La recherche libre de FlatAllocator n’a pas été validée exhaustivement.
+SHA256 : 417231cdf26db3369f2ffa5b608069f2e6e080c6a9a73f43912a93f04750918e
+
+gpu/interconnect/common/common.cpp
+Rôle : Construction et réutilisation des vues des buffers GPU à partir du GMMU.
+Relecture 1 — logique : Traduit au-delà du premier bloc et utilise tout le préfixe hôte contigu, même s’il traverse plusieurs mappings GPU.
+Relecture 2 — limites et cohérence : Tailles estimées conservées pour constant/index buffers ; bornage à la fin de l’espace ; les texels continuent de rejeter toute vue plus courte que leur taille exacte.
+Relecture 3 — intégration et vérification : Intégration du vrai GMMU avec les vraies méthodes Update/PurgeCaches : trois mappings adjacents, trou, backing non contigu, purge puis remappage, taille zéro, estimation débordante.
+Verdict : PASS avec BufferManager/executor simulés. Les buffers à backing hôte réellement non contigu ne sont toujours pas pris en charge intégralement. Coût de traduction des grandes estimations à mesurer.
+SHA256 : ff2c0b719d48105d59c2c9d8c53c960f9cc6d55f0ba3fc096bef6fd199210940
+
+gpu/interconnect/common/common.h
+Rôle : Contrat du cache de vues et types de descripteurs, dont les texel buffers.
+Relecture 1 — logique : Initialisation explicite du span et des deux bornes du cache ; aucune lecture de borne indéfinie à la première mise à jour.
+Relecture 2 — limites et cohérence : PurgeCaches force toujours le prochain lookup ; les structures de descripteurs et la propriété des vues Vulkan restent intactes.
+Relecture 3 — intégration et vérification : Test avec construction sans accolades et reprise des six tests texel : PASS.
+Verdict : PASS de la modification et des tests ciblés ; compilation Android complète non réalisée.
+SHA256 : abdedfd3110aa996335d1d5df4e48b1e1f09266126a72208007d6d3e20ee1b80
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_recorder.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : aca172ee354139c8f6443a0c5f13967f106402adb0036c73892b9349cee6316c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ef235d74a087c13093e7aed93d08e234c46a8c764c0f975684696c4938be01e9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/CMakeLists.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : a57088e88be659feb91e019124f25a8d851ec0d104ebf9c459ea382908a289a9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 480c616311d3420bf90aa5a9d78d404ef4e0283ccaeaad85709975bc8e648e1f
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/emu_jni.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 5d8b90a560babe48f2bd084f31b80318a595786b8cba2647631933326dd4c412
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/diagnostics.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : f7b7f0d1c15c21dda7fee24273e9369760f7c72a0476c6143f878c9fe2ccca9e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/fence_cycle.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : d4775721eb0e8e4b8e92c5c108aeb689b43e2681e599acd544b3ce82728009d3
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/command_scheduler.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 2ac4fe04b2ba367152d2bd7917f6e1f843f0d7450d6d5b3aa0bfc9fb0efcbec4
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 39696d7a719f49e2de806d6e4d9c60a02f6dccf609ba1b54e153f4927a1fba9b
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/kepler_compute.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 58a232b9b7d3703690f824cd01b39c456e8312e9821a24f9fd9feb4318ceb770
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/presentation_engine.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 408ab1eafd8d809bcde4e4079cbad82a83ad434f173da663a560b6d259b724bf
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/address_space.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 536c22fc3c2bc8b497f1b7c51600b6c02ad72bd9c76dcd88a6ed34555954566d
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/address_space.inc
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 838a7b25047ff7d118488b9f716f86fcb1e08b2262ee0e0ecfb2009739a12764
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/logger/logger.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 78201945aaf6a34dd623c2d20eb4d8ade799bbd8024e07d2da37901e9ccbac45
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/services/base_service.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 89c061d99ba401aa8f62563e999f17c7d919cfc1abb148ace71562d06c3b648e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/services/base_service.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : db6645c924274853864eb9f2e78413737b2e39f5bb0d32fc232fb3f1a224cde2
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/shader_manager.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 9d92de5641ea531315eef58f33fadea8f56fab455321b8cac385da7e5c67a102
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/presentation_engine.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : e45ec7d20737d59bda728b36f987fe6648082266842a8f4eb1f3907beba9ff52
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/buffer.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 07bed7e718754179bb31352fc6aa325deec6adfd8c004bcc7a2ea58d7a662e77
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/nce/hang_watchdog.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : eda7484283f080efbf4931c853bb321f9be79b058cccb04cc652d067fc3033da
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 8df91378bf2995516f5a901f31e825d1bbe23bec5a7465d41f64cb653db178f7
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_crash.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : b25066fd8e44c4092faa3b4b97761e758b3a8b409dde1c1756f57040f806e2d3
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_crash.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 4c8ff06acca878d22420d6ae33541aadeb93bc4fa2d130c59926ff96868035d6
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/CMakeLists.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 48113042dc9fedbb95be50e58730e14bdd6a4bb9175b43de856c23a6fafce56e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/CMakeLists.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 79a14acde719c9f4d098a0bcf7f148b1a17812726c66f4859f07b05345db3c37
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/emu_jni.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 0243af2ddc7710a3cff182b5617f4c06f35e3a1cc819b76cb2c6423e3dd4ba1c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/signal.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 24623893e4fc1c323e7d9b8b221d496e479988695c8f17797c156a1814addccd
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/nce.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : a86f96b0061eb6dfb0ef95314100c798d60dac897e548e465ff8985fbddfbc66
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/diagnostic_fault_compat.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : df30e4ee4170e74747029180406ae2f57453c3a53f00d3871f541f0475f4acd8
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/diagnostic_device_fault.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 38faff3811b1243fbb841395fcfcbce8e0536ccbf8e34dc5b1d74c95979911e1
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 18f834047958575635d6c1c3efe0c31b63ee31f04c877fb196496d0dbe79b70c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/command_scheduler.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : eee06b2c0e688534bc36b9a2975fa567c5d1a09c7d5dcce31820f25bfd7514f1
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/fence_cycle.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 1caaad9edcf3405245995c61e84b5a29605a3dc63551bf06d78da2043c866277
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/CMakeLists.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 99718a90cd7f9c9f84f99393e08d54a87f790bdbc98cc774cbb11c29c967d5f9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/emu_jni.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : daced8441d0b5ec2799ca4dec070c4dcef7894e05550fc7b1df99a00b1074d4e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/java/org/stratoemu/strato/EmulationActivity.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 69711b63268b1994dde527a8c7cf60b4f30d7137b06aeb5a97625a9569cc5203
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/res/layout/emu_activity.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : f716aaa1697abcbb8f1455b57c2c04fcfa3190f8f8fc3e84e294280438b8298b
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticSession.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : cd543619a8987d57b440a586970dc6ac228fe8271045e096740b01f2df214fa6
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticActivity.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ee0dce749a09764c6626bede75c3e02f04e9e1168e72155c8e982b21aa29a4bb
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/res/layout/diagnostic_activity.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 15a65b64c56a80a923fcb41861e6b7b1e348b4c83ad424bc06dee7eb76637357
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/res/values/diagnostic_tools.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : e35be14a6c2d7c80d727849e567621a3dc0a82cbbc7b2b54b2b0d18cabd0ea42
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/res/values-fr/diagnostic_tools.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 34a6026b477d2bf56fff4c5cbe408d8ac21401410f865a50d52805e518996935
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticExporter.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 86061c1dc92302b793a4df59e276f639f986825bad52a219037bb1b7886ac2be
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 0701e654c8fd088db66123baa1d878065d1527383d44ca052895bf78bb0020bc
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : dd600601e5e8916bcf1db58150d32f1a371e87f9ce0701a392a82ea5f568d807
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : e093f79c3977f98c7a05bded04896de1893db1d1dbb7abd1eda778d6da4dfcf2
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 7aa7024b4a09c7bfa132dcfd8901b44ea36d4819e3f7681a4b4fda09d58d956a
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/nce/hang_watchdog.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 2745ebe18bedbdb4b7096e1f24af359ab0c6cfed515a4da94b6b59400828c0aa
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — tools/symbolize_diagnostic.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 0d1db2f682b08ee5697f38e0eaa8bbb0f817ec8b44b3ceb2cbbc01f45dd94f15
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — tools/inspect_diagnostic.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 5051c87837710cc0a348089b39ecb3fe732f36bc09774577a3a4b3eaf8bd8b0d
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : d331d8a28f0921b2fde3836c25c395f6abe9871983c0a49e87c5c2c2071eb132
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 5c78f6e8c65522f39aa86438d001905ca05f98e3e6fa2fd5c93e97a5fc4d5a33
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/diagnostic_device_fault.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : b5f1cdce5b4292ad9620d264f5148bfc05a523f956be5389ec6ba848a1b78a63
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 74e873678ce8f195f92be7d28583ad32b528e9bb28e9d7ae21b846edf47227c9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/nce/hang_watchdog.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 3e68a6cebb3b885ec29a70cb33389320bdf429ccd56f293e570a08010a2f0741
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/java/org/stratoemu/strato/EmulationActivity.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : b4b3d1cda9c6ca89db120bdb7f73e035591690230c69ca68f13850cf4a9d7b97
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/gpu/diagnostic_fault_compat.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : c76df27069c5ade7acf18b648f29f64ff8518578b4948f4cdba286837060369c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 3b353675abdd7f3fe2b7fcca235a1c6638211bcefe030da16407f96c1393cda2
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_crash.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : f94048cbdfee08e0f5a32a116999c8d7ca24353220fe04f58ba8b89d11ba030b
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/nce/hang_watchdog.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : e5171181ff87f60bc2e2e8a0b1ec478e3beb12eaec5c27b266cce12c93aad91b
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — tools/diagnostics_tests/host_test.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : fd4d1862605f24858e5174fd305199e7e7238cc0ddc88ac2fe83580a787aa9f3
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — tools/diagnostics_tests/vulkan_api_test.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : d13c15d0b2c9565b1c9602f04bfd4319cc69f1be006ce1fbf587bc31d1a9dddd
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — tools/diagnostics_tests/run.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 3b5f7154b9e1b8d2899e1c054e71b03d9283bd7897c45a2f9198f7971c85f0e1
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 54fc9986cc87cd3aafe4dae75208ab5a3cdea98006cccfbf78016c7db3c83290
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Diagnostic — LIRE_AVANT_COPIE.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 35bdaa838ce595dfa71e389e538030259f6939dd0bdb280b8af4c8dce704d6b7
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+VERDICT FINAL DIAGNOSTIC — LIRE_AVANT_COPIE.txt
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 35bdaa838ce595dfa71e389e538030259f6939dd0bdb280b8af4c8dce704d6b7. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/CMakeLists.txt
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 99718a90cd7f9c9f84f99393e08d54a87f790bdbc98cc774cbb11c29c967d5f9. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/emu_jni.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final daced8441d0b5ec2799ca4dec070c4dcef7894e05550fc7b1df99a00b1074d4e. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/common/address_space.h
+PASS tests GMMU hôtes ASan/UBSan incluant 1000 opérations ; mémoire réelle Android non testée.
+Trois lectures complètes automatisées, hash final 536c22fc3c2bc8b497f1b7c51600b6c02ad72bd9c76dcd88a6ed34555954566d. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/common/address_space.inc
+PASS tests GMMU hôtes ASan/UBSan incluant 1000 opérations ; mémoire réelle Android non testée.
+Trois lectures complètes automatisées, hash final 838a7b25047ff7d118488b9f716f86fcb1e08b2262ee0e0ecfb2009739a12764. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/common/diagnostic_crash.cpp
+PASS HÔTE : compilation/exécution portable testée ; intégration Android non compilée.
+Trois lectures complètes automatisées, hash final f94048cbdfee08e0f5a32a116999c8d7ca24353220fe04f58ba8b89d11ba030b. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/common/diagnostic_crash.h
+PASS HÔTE : compilation/exécution portable testée ; intégration Android non compilée.
+Trois lectures complètes automatisées, hash final b25066fd8e44c4092faa3b4b97761e758b3a8b409dde1c1756f57040f806e2d3. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+PASS HÔTE : compilation/exécution portable testée ; intégration Android non compilée.
+Trois lectures complètes automatisées, hash final 54fc9986cc87cd3aafe4dae75208ab5a3cdea98006cccfbf78016c7db3c83290. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/common/diagnostic_recorder.h
+PASS HÔTE : compilation/exécution portable testée ; intégration Android non compilée.
+Trois lectures complètes automatisées, hash final aca172ee354139c8f6443a0c5f13967f106402adb0036c73892b9349cee6316c. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/common/signal.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 24623893e4fc1c323e7d9b8b221d496e479988695c8f17797c156a1814addccd. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final d331d8a28f0921b2fde3836c25c395f6abe9871983c0a49e87c5c2c2071eb132. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/buffer.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 07bed7e718754179bb31352fc6aa325deec6adfd8c004bcc7a2ea58d7a662e77. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/command_scheduler.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final eee06b2c0e688534bc36b9a2975fa567c5d1a09c7d5dcce31820f25bfd7514f1. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/diagnostic_device_fault.h
+PASS HÔTE : compilation/exécution portable testée ; intégration Android non compilée.
+Trois lectures complètes automatisées, hash final b5f1cdce5b4292ad9620d264f5148bfc05a523f956be5389ec6ba848a1b78a63. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/diagnostic_fault_compat.h
+PASS HÔTE : compilation/exécution portable testée ; intégration Android non compilée.
+Trois lectures complètes automatisées, hash final c76df27069c5ade7acf18b648f29f64ff8518578b4948f4cdba286837060369c. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/diagnostics.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final f7b7f0d1c15c21dda7fee24273e9369760f7c72a0476c6143f878c9fe2ccca9e. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/fence_cycle.h
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 1caaad9edcf3405245995c61e84b5a29605a3dc63551bf06d78da2043c866277. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 7aa7024b4a09c7bfa132dcfd8901b44ea36d4819e3f7681a4b4fda09d58d956a. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 0701e654c8fd088db66123baa1d878065d1527383d44ca052895bf78bb0020bc. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final dd600601e5e8916bcf1db58150d32f1a371e87f9ce0701a392a82ea5f568d807. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/kepler_compute.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 58a232b9b7d3703690f824cd01b39c456e8312e9821a24f9fd9feb4318ceb770. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 39696d7a719f49e2de806d6e4d9c60a02f6dccf609ba1b54e153f4927a1fba9b. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final e093f79c3977f98c7a05bded04896de1893db1d1dbb7abd1eda778d6da4dfcf2. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/presentation_engine.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final e45ec7d20737d59bda728b36f987fe6648082266842a8f4eb1f3907beba9ff52. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/gpu/shader_manager.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 9d92de5641ea531315eef58f33fadea8f56fab455321b8cac385da7e5c67a102. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/logger/logger.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 78201945aaf6a34dd623c2d20eb4d8ade799bbd8024e07d2da37901e9ccbac45. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/nce.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final a86f96b0061eb6dfb0ef95314100c798d60dac897e548e465ff8985fbddfbc66. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/nce/hang_watchdog.h
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final e5171181ff87f60bc2e2e8a0b1ec478e3beb12eaec5c27b266cce12c93aad91b. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/services/base_service.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final db6645c924274853864eb9f2e78413737b2e39f5bb0d32fc232fb3f1a224cde2. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/cpp/skyline/services/base_service.h
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 89c061d99ba401aa8f62563e999f17c7d919cfc1abb148ace71562d06c3b648e. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/java/org/stratoemu/strato/EmulationActivity.kt
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final b4b3d1cda9c6ca89db120bdb7f73e035591690230c69ca68f13850cf4a9d7b97. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticActivity.kt
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final ee0dce749a09764c6626bede75c3e02f04e9e1168e72155c8e982b21aa29a4bb. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticExporter.kt
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final 86061c1dc92302b793a4df59e276f639f986825bad52a219037bb1b7886ac2be. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticSession.kt
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final cd543619a8987d57b440a586970dc6ac228fe8271045e096740b01f2df214fa6. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/res/layout/diagnostic_activity.xml
+PASS contrôle syntaxe/format et tests hôtes ciblés ; usage Android non testé.
+Trois lectures complètes automatisées, hash final 15a65b64c56a80a923fcb41861e6b7b1e348b4c83ad424bc06dee7eb76637357. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/res/layout/emu_activity.xml
+PASS contrôle syntaxe/format et tests hôtes ciblés ; usage Android non testé.
+Trois lectures complètes automatisées, hash final f716aaa1697abcbb8f1455b57c2c04fcfa3190f8f8fc3e84e294280438b8298b. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/res/values-fr/diagnostic_tools.xml
+PASS contrôle syntaxe/format et tests hôtes ciblés ; usage Android non testé.
+Trois lectures complètes automatisées, hash final 34a6026b477d2bf56fff4c5cbe408d8ac21401410f865a50d52805e518996935. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — app/src/main/res/values/diagnostic_tools.xml
+PASS contrôle syntaxe/format et tests hôtes ciblés ; usage Android non testé.
+Trois lectures complètes automatisées, hash final e35be14a6c2d7c80d727849e567621a3dc0a82cbbc7b2b54b2b0d18cabd0ea42. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — tools/diagnostics_tests/host_test.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final fd4d1862605f24858e5174fd305199e7e7238cc0ddc88ac2fe83580a787aa9f3. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — tools/diagnostics_tests/run.py
+PASS contrôle syntaxe/format et tests hôtes ciblés ; usage Android non testé.
+Trois lectures complètes automatisées, hash final 3b5f7154b9e1b8d2899e1c054e71b03d9283bd7897c45a2f9198f7971c85f0e1. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — tools/diagnostics_tests/vulkan_api_test.cpp
+REVU : analyse préalable et intégration examinées ; compilation et comportement Android à valider.
+Trois lectures complètes automatisées, hash final d13c15d0b2c9565b1c9602f04bfd4319cc69f1be006ce1fbf587bc31d1a9dddd. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — tools/inspect_diagnostic.py
+PASS contrôle syntaxe/format et tests hôtes ciblés ; usage Android non testé.
+Trois lectures complètes automatisées, hash final 5051c87837710cc0a348089b39ecb3fe732f36bc09774577a3a4b3eaf8bd8b0d. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+VERDICT FINAL DIAGNOSTIC — tools/symbolize_diagnostic.py
+PASS contrôle syntaxe/format et tests hôtes ciblés ; usage Android non testé.
+Trois lectures complètes automatisées, hash final 0d1db2f682b08ee5697f38e0eaa8bbb0f817ec8b44b3ceb2cbbc01f45dd94f15. Ces lectures ne constituent pas trois revues manuelles indépendantes.
+
+Ordonnanceur — app/src/main/cpp/skyline/kernel/scheduler_timing.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 7a4082316088518df68531c5346c8b0ceccea541398188c228abf7bf9eb693a9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Ordonnanceur — app/src/main/cpp/skyline/kernel/scheduler_timing.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 7a4082316088518df68531c5346c8b0ceccea541398188c228abf7bf9eb693a9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Ordonnanceur — app/src/main/cpp/skyline/kernel/scheduler.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 8d976707213567d4e53d17ccd7acb8bac2aaa7cdfadde1074aafa5bd52c8af3d
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Ordonnanceur — app/src/main/cpp/skyline/kernel/types/KThread.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 3541892d3877735132393020c00fbd39f4ecf816687f866f64a3a973461a8869
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Ordonnanceur — tools/scheduler_tests/run.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 5f2355a54ad03f51b0d9334260b0bc18d1415299fc1a6da0712df61c02a96ff4
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Ordonnanceur — tools/scheduler_tests/scheduler_host.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 602acf98d1301670acb9b2af3180450b8ef04263668de3e678f63f6c95f6100f
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+
+=== Verdicts finaux — patch threads invités, 2026-10-12 ===
+Les trois relectures complètes sont automatisées ; elles contrôlent les octets UTF-8 et les empreintes. Elles ne sont pas trois audits manuels indépendants. La revue de logique et les tests sont distincts.
+
+app/src/main/cpp/skyline/kernel/scheduler.cpp
+Revue logique : huit réveils convertis ; verrous pris un cœur à la fois ; ordre migration/cœur conservé. Les méthodes de sélection, insertion, migration, attente, rotation et retrait sont exercées dans le banc hôte. Livraison retenue ; validation Android restante.
+SHA256 : 8d976707213567d4e53d17ccd7acb8bac2aaa7cdfadde1074aafa5bd52c8af3d
+
+
+app/src/main/cpp/skyline/kernel/types/KThread.h
+Revue logique : changement limité à scheduleCondition et son include standard. Les appels temporisés et non temporisés utilisent le type réel dans le banc. Notifications du scheduler compatibles. Livraison retenue ; signaux natifs et arrêt Android non exécutés ici.
+SHA256 : 3541892d3877735132393020c00fbd39f4ecf816687f866f64a3a973461a8869
+
+
+app/src/main/cpp/skyline/kernel/scheduler_timing.h
+Revue arithmétique : moyenne sans uptime ni débordement, reste saturé, somme saturée, recul plafonné. Oracle 128 bits sur 100000 cas et limites : PASS. Livraison retenue.
+SHA256 : 7a4082316088518df68531c5346c8b0ceccea541398188c228abf7bf9eb693a9
+
+
+tools/scheduler_tests/run.py
+Revue du lanceur : chemins relatifs à la racine réelle, extraction des huit méthodes de production, compilation UBSan, timeout global du binaire. Exécution PASS. Dépendances hôtes g++ et Python nécessaires.
+SHA256 : 5f2355a54ad03f51b0d9334260b0bc18d1415299fc1a6da0712df61c02a96ff4
+
+
+tools/scheduler_tests/scheduler_host.cpp
+Revue du banc : modèles explicites pour signaux/timers/LockSlow ; scénarios multi-threads protégés par le même verrou que le prédicat. 2000 réveils PASS. Les deux mutations de formules sont détectées. Ne couvre pas le runtime Android complet.
+SHA256 : 602acf98d1301670acb9b2af3180450b8ef04263668de3e678f63f6c95f6100f
+
+Crashes — app/src/main/cpp/skyline/soc/smmu.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : feeb3de489a44df2218f23175b3f72553d8f51faac13e18fc64d49f7a454dfc5
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Crashes — app/src/main/cpp/skyline/soc/smmu.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 42f4f90585ae819f253325a1fab70beda68b41e0c878d3b47e8f68b0cbbb9c03
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Crashes — app/src/main/cpp/skyline/common/address_space.inc
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 9724a158f9e3b6fa5e63f07b95568429d317bc4b4cf2917c3e910264f404cb0c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Crashes — app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 50c82c49dc52c266ea9969d00f98721dbe1a300b8108f6314bc27dd43bb169c2
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Crashes — tools/smmu_tests/run.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : c7ff4d14ddf770e0341a0b59d4cb9597e839f75d06a9e092c16b23b449541df7
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Crashes — tools/smmu_tests/run.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ecc47a69bffb9b7815bb837f977d81d9ef4e511168709b956dd7a70c0d53567b
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+
+=== Verdicts finaux crashes du 13 octobre ===
+Les trois relectures intégrales sont automatisées, distinctes de la revue de logique et des tests ; elles ne sont pas trois audits manuels indépendants.
+app/src/main/cpp/skyline/soc/smmu.h
+Corrige le débordement SMMU sans élargir l’espace invité ; plage réelle et dernier octet testés : PASS.
+
+app/src/main/cpp/skyline/soc/smmu.cpp
+Instanciations explicites compilées dans le banc ASan/UBSan : PASS.
+
+app/src/main/cpp/skyline/common/address_space.inc
+Garde-fou de compilation testé en négatif ; SMMU 32 et GMMU 40 testés : PASS.
+
+app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+Capture déplacée dans la branche de rejet et format enrichi ; revue syntaxe/types Raw() const et SaveArtifact. Diagnostic amélioré uniquement : crash Dragon Ball NON résolu, compilation APK non effectuée.
+
+tools/smmu_tests/run.py
+Exécution du lanceur et des scénarios positifs/négatifs : PASS. La première erreur de préambule cstdint a été corrigée et retestée.
+
+Rendu/vidéo — app/src/main/cpp/skyline/gpu/buffer.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : cef8a064b11d1d53276a8054176e76fbeed25fd49a3084382520df98e438eb4b
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/libraries/shader-compiler/shader_info.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 2d7971adcdeddb56484b5e40272567506f7444d41d653cbd9ef6736335d4fef6
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/libraries/shader-compiler/backend/spirv/spirv_emit_context.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 967398d90f5ad95fb9a2a9638b3b3464be2b99ba5055ff272176a82c94c84626
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/libraries/shader-compiler/backend/spirv/spirv_emit_context.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 9e92b73333c8d70c0b69317c9584a0ac925c916b4779af796983da56c67d5610
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : a896b8af32d6985c6cbac3631e9277024fc5d53cbdb5d4e026f1de3771560ac4
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 0986de4624877e84a93a2195fe9a9992f63e4e156032b090130d4a4e2d8326ac
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 7efd67b776a9f21d1dad57c660d4aa83913c8f76679a752afe503313e32cfec9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 1ea0217a0bcac9db39f1d25e80d725d4fa144e451b17be196c326049f7127038
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 15dab515bec51de0f64df39085b139931e1b94e9788a2c8bfc7e7adae95e9ab3
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 25ad443d5ce960176c34a17eb6a5d0ba4728d0b9145ea7e748586420182eb952
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — tools/render_tests/run.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 50e1564f97f78d06a3fbcf79098ec76188a7191f3acfb8439cb54a9c3288046f
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 8e490bb2ff6d6bce7ee61ed9c1128871d85dcb56f7f53b866b6e03ac94716f38
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — tools/render_tests/texel.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 58e60094bb5d14f5d1f3482f26bdfa41bfadff64399db7dd12d18798a6a224a3
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/libraries/shader-compiler/backend/spirv/emit_spirv_image_atomic.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : a4c05a80b9927472185f216e9f528f585dcfc37f4ad21f79ad2e2c5a4327e692
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — tools/render_tests/shaders.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 8665175b63326d6c49151c333ba7e63ac077c77d64cc9749ea23352a5a65d845
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 1021f488ddee766e0d301ab6e183f70e314047e173e8f69a821ee1e3e7ad1c4f
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — tools/render_tests/shaders.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 177c3e3d3a824d84dc56473811ad22c43597cbbfbeb380de4e1f5e202a2bc077
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — tools/render_tests/shaders.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 587b11a10a0c303cea6aeb7f725c26550f79b415941378b25bbf343f506e58e4
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — tools/render_tests/shaders.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 12774386ddf9743c37d8c65282fd4b8a39b571406d92979a9e27b3cb0a1fe8a7
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/soc/host1x/video_capture.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : a65a7a07e76772abca6a6f1a1e207a01d22e67c15c74b6025d03d695b5ac5a3e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/soc/host1x/classes/nvdec.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 6e15322c1ffe611f5275e238aa092cec37e02956a29c8e3cbcd96c42297129b6
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/soc/host1x/classes/nvdec.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 029a4e869b04704f1423bb50b0ce05527d5de6f9c276191983c6bdc1b4ff30d1
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/soc/host1x/classes/vic.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 41c88ce8f93f83b90497c1eda3674a13522502665416fff6f3173fc3be267d18
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/soc/host1x/classes/vic.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 367d4cade797a68d3e5bde86130884f6126fa324f17e73fce8591f94aabebdb3
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/soc/host1x/tegra_host_interface.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : e201897acf9091660e3a6fb2cab28db42d2df41fb0262f06880121d616ca123d
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/soc/host1x/command_fifo.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 7b686a98085fd0d73eea44118afee03e445ef72fc01285bc8fccc9357bea6e53
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — app/src/main/cpp/skyline/soc/host1x/video_capture.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 051b35106e60c54d20c2412a8e1618c5cb9493584e5fee48abaa29c51d9fc30a
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — tools/inspect_video_capture.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ea715038d809fd851ccdbd98206a472706ab28ed10fbc564b33e3bb9320e4aac
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — tools/render_tests/video.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : afb29abf0850ca1f67ca4a7ca3434608c871204c35b89901c0c6d2c2d91e20b5
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Rendu/vidéo — LIRE_AVANT_COPIE.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 1a98b081cb9d64725165cf4076a39cdbb4da09df13fab5e398b456cc4590df75
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+VERDICT FINAL — RENDU/VIDÉO — LIRE_AVANT_COPIE.txt
+SHA-256 : 1a98b081cb9d64725165cf4076a39cdbb4da09df13fab5e398b456cc4590df75
+Relu pour cohérence avec le contenu ZIP, les prérequis, résultats et limites ; livraison explicitement incrémentale.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp
+SHA-256 : 1021f488ddee766e0d301ab6e183f70e314047e173e8f69a821ee1e3e7ad1c4f
+Compilation réelle réussie après correction Id.value. Modules UINT/SINT/float et R8_SINT vérifient les types lecture/écriture et bitcasts.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/libraries/shader-compiler/backend/spirv/emit_spirv_image_atomic.cpp
+SHA-256 : a4c05a80b9927472185f216e9f528f585dcfc37f4ad21f79ad2e2c5a4327e692
+Compilation réelle réussie. Module émis accède au descripteur 1 avec argument IR vide ; indice pris dans les flags.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/libraries/shader-compiler/backend/spirv/spirv_emit_context.cpp
+SHA-256 : 9e92b73333c8d70c0b69317c9584a0ac925c916b4779af796983da56c67d5610
+Compilation réelle et construction des types SPIR-V testées avec Sirit du commit exact. Les tableaux de storage buffers restent explicitement non gérés.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/libraries/shader-compiler/backend/spirv/spirv_emit_context.h
+SHA-256 : 967398d90f5ad95fb9a2a9638b3b3464be2b99ba5055ff272176a82c94c84626
+Cohérence de vector_type avec définition, lecture et écriture ; testé par compilation et génération réelle.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/libraries/shader-compiler/shader_info.h
+SHA-256 : 2d7971adcdeddb56484b5e40272567506f7444d41d653cbd9ef6736335d4fef6
+Nouvelle spécialisation par défaut unsigned ; TexturePass et backend compilent. Champ non utilisé pour changer automatiquement les variantes graphiques.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/gpu/buffer.cpp
+SHA-256 : cef8a064b11d1d53276a8054176e76fbeed25fd49a3084382520df98e438eb4b
+Défaut du retour anticipé reproduit avec ancien code ; protection/version renouvelées au test ASan/UBSan. Hypothèse Zelda, pas confirmation en jeu.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+SHA-256 : 1ea0217a0bcac9db39f1d25e80d725d4fa144e451b17be196c326049f7127038
+Paramètre numérique transmis pour storage ; tests barrières/protection et binding réussis.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+SHA-256 : 7efd67b776a9f21d1dad57c660d4aa83913c8f76679a752afe503313e32cfec9
+Binding réel testé (dépendances simulées) avec Vulkan-Hpp : unsigned/signed/float, discordance refusée, capacités et limites conservées.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
+SHA-256 : 0986de4624877e84a93a2195fe9a9992f63e4e156032b090130d4a4e2d8326ac
+Signatures vérifiées contre définitions/appels ; valeur par défaut conserve le chemin graphique existant.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.cpp
+SHA-256 : 15dab515bec51de0f64df39085b139931e1b94e9788a2c8bfc7e7adae95e9ab3
+Revue de la spécialisation avant CompileShader ; PipelineState::Update appelle FindOrCreate à chaque dispatch. Tests de variantes et durée de vie réussis.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.h
+SHA-256 : 8e490bb2ff6d6bce7ee61ed9c1128871d85dcb56f7f53b866b6e03ac94716f38
+Cache de variantes testé : changement de TIC, réutilisation et maintien des instances précédentes. Include vector explicite.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/soc/host1x/classes/nvdec.cpp
+SHA-256 : 029a4e869b04704f1423bb50b0ce05527d5de6f9c276191983c6bdc1b4ff30d1
+Vrai fichier compilé dans le test hôte ; accès SMMU simulé. Warning unique et capture branchés. Décodeur absent.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/soc/host1x/classes/nvdec.h
+SHA-256 : 6e15322c1ffe611f5275e238aa092cec37e02956a29c8e3cbcd96c42297129b6
+Constructeur avec DeviceState compilé avec vrai cpp et THI ; état diagnostic indépendant par instance.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/soc/host1x/classes/vic.cpp
+SHA-256 : 367d4cade797a68d3e5bde86130884f6126fa324f17e73fce8591f94aabebdb3
+Vrai fichier compilé dans le test hôte ; configuration VIC capturée. Aucune conversion YUV/RGB ni sortie produite.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/soc/host1x/classes/vic.h
+SHA-256 : 41c88ce8f93f83b90497c1eda3674a13522502665416fff6f3173fc3be267d18
+Constructeur avec DeviceState compilé avec vrai cpp et THI ; état diagnostic indépendant par instance.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/soc/host1x/command_fifo.cpp
+SHA-256 : 7b686a98085fd0d73eea44118afee03e445ef72fc01285bc8fccc9357bea6e53
+Revue des deux constructions THI et recherche des autres sites ; nouvelles signatures compilées dans le test hôte. Unité Android complète non compilée.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/soc/host1x/tegra_host_interface.h
+SHA-256 : e201897acf9091660e3a6fb2cab28db42d2df41fb0262f06880121d616ca123d
+Constructeur et méthodes réelles compilés dans le test hôte ; transmission état et incrément immédiat vérifiés, protocole OpDone antérieur inchangé.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — app/src/main/cpp/skyline/soc/host1x/video_capture.h
+SHA-256 : 051b35106e60c54d20c2412a8e1618c5cb9493584e5fee48abaa29c51d9fc30a
+Capture réelle H1VC testée ASan/UBSan : limites, demandes, mémoire absente, H264/VP8/VP9/VIC, pas de décodage ni faux OpDone.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — tools/inspect_video_capture.py
+SHA-256 : ea715038d809fd851ccdbd98206a472706ab28ed10fbc564b33e3bb9320e4aac
+Parser testé contre les snapshots C++ et fichiers tronqués/incohérents. Extraction brute seulement, aucun décodage.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — tools/render_tests/run.py
+SHA-256 : 50e1564f97f78d06a3fbcf79098ec76188a7191f3acfb8439cb54a9c3288046f
+Test exécuté avec succès sur le code final. Dépendances de contexte simulées sauf shaders.cpp/shaders.py qui utilisent Sirit et le backend réels ; pas de GPU Android.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — tools/render_tests/shaders.cpp
+SHA-256 : 177c3e3d3a824d84dc56473811ad22c43597cbbfbeb380de4e1f5e202a2bc077
+Test exécuté avec succès sur le code final. Dépendances de contexte simulées sauf shaders.cpp/shaders.py qui utilisent Sirit et le backend réels ; pas de GPU Android.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — tools/render_tests/shaders.py
+SHA-256 : 12774386ddf9743c37d8c65282fd4b8a39b571406d92979a9e27b3cb0a1fe8a7
+Test exécuté avec succès sur le code final. Dépendances de contexte simulées sauf shaders.cpp/shaders.py qui utilisent Sirit et le backend réels ; pas de GPU Android.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — tools/render_tests/texel.py
+SHA-256 : 58e60094bb5d14f5d1f3482f26bdfa41bfadff64399db7dd12d18798a6a224a3
+Test exécuté avec succès sur le code final. Dépendances de contexte simulées sauf shaders.cpp/shaders.py qui utilisent Sirit et le backend réels ; pas de GPU Android.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+VERDICT FINAL — RENDU/VIDÉO — tools/render_tests/video.py
+SHA-256 : afb29abf0850ca1f67ca4a7ca3434608c871204c35b89901c0c6d2c2d91e20b5
+Test exécuté avec succès sur le code final. Dépendances de contexte simulées sauf shaders.cpp/shaders.py qui utilisent Sirit et le backend réels ; pas de GPU Android.
+Trois lectures automatisées et contrôle d’intégrité enregistrés pour chaque modification ; revue de logique séparée. Validation en jeu non effectuée.
+
+Intégration shader — app/patches/shader-compiler/01-shader_info.h.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 7b082f7d2eb5c541677a2c91cb96b1b35a52de2d21f0d7d2f6e85256107bf4fc
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — app/patches/shader-compiler/02-spirv_emit_context.h.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 58206d40f4d798b6eb35442bdf861f5931e6a470fd13a3c8645a3b5ecb52239d
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — app/patches/shader-compiler/03-spirv_emit_context.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 5fdad5deb248323c52d4a12f2adf5e4fd39fa52baa014046592c0bd08525818c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — app/patches/shader-compiler/04-emit_spirv_image.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 760f86a52007c7a1178da8cf5fc953be3acdf71e23cecefe39df13e9ee575d78
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — app/patches/shader-compiler/05-emit_spirv_image_atomic.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 037b782bc1ff665352601c08d424c54c0f599e26aa0219ad5259e5d7bc952a10
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — app/cmake/ApplyShaderCompilerPatches.cmake
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : aa8c1f84375e7f89d48d05f2509515b62b0680fce71ffbd09f56e4f80e6b3b0a
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — app/CMakeLists.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 6c685fb82e0a52ae18394e0b11f807db8d8278c431417ac09d406d969eb3278f
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — tools/test_shader_compiler_patches.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 69a215a22278160736763da8590c640fd48031ff2c0c6a333d5eb957032a6fea
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — app/cmake/ApplyShaderCompilerPatches.cmake
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 0ae7c56230e044e708a9656fc9dd4432a53acde6649ec29e591759fbf3409dd1
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — tools/test_shader_compiler_patches.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 9ec2d5d4658eb104236c62ce74051b78fa8609f7668743ae34b5aea7857340a5
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Intégration shader — LIRE_CORRECTIF_COMPILATION_SHADERS.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : e9575d46963d927baaccf6dffd3e626a680956d180020dd8ae5547ad2a33270c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+=== Verdict final : correction de la livraison shader-compiler (2026-10-14) ===
+
+app/patches/shader-compiler/01-shader_info.h.patch
+Diff appliqué sur le commit épinglé ; fichier reconstruit identique au code précédemment livré et compilé avec le vrai émetteur SPIR-V. Rejoué après reset et copie partielle.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+app/patches/shader-compiler/02-spirv_emit_context.h.patch
+Diff appliqué sur le commit épinglé ; fichier reconstruit identique au code précédemment livré et compilé avec le vrai émetteur SPIR-V. Rejoué après reset et copie partielle.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+app/patches/shader-compiler/03-spirv_emit_context.cpp.patch
+Diff appliqué sur le commit épinglé ; fichier reconstruit identique au code précédemment livré et compilé avec le vrai émetteur SPIR-V. Rejoué après reset et copie partielle.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+app/patches/shader-compiler/04-emit_spirv_image.cpp.patch
+Diff appliqué sur le commit épinglé ; fichier reconstruit identique au code précédemment livré et compilé avec le vrai émetteur SPIR-V. Rejoué après reset et copie partielle.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+app/patches/shader-compiler/05-emit_spirv_image_atomic.cpp.patch
+Diff appliqué sur le commit épinglé ; fichier reconstruit identique au code précédemment livré et compilé avec le vrai émetteur SPIR-V. Rejoué après reset et copie partielle.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+app/cmake/ApplyShaderCompilerPatches.cmake
+Neuf scénarios réels PASS, dont reset du sous-module, conflit sans écriture et build Ninja en cache. Défaut découvert sur archive exportée corrigé puis retesté.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+app/CMakeLists.txt
+Ajout d’un seul include avant add_subdirectory par rapport à la version de départ de cette intervention. Les changements antérieurs de diagnostic sont conservés.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+tools/test_shader_compiler_patches.py
+Exécuté avec Git 2.51.1, CMake 4.4 et Ninja 1.13.2 : neuf PASS, aucun SKIP. Toutes les écritures destructives du test restent dans un répertoire temporaire.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+LIRE_CORRECTIF_COMPILATION_SHADERS.txt
+Instructions cohérentes avec l’archive ; référence au patch précédent et limites de validation explicites.
+Trois lectures intégrales automatisées consignées après chaque édition ; contrôles de logique et tests ci-dessus en complément.
+Verdict : VALIDÉ dans les limites des tests hôte, compilation Android complète non effectuée.
+
+Les conversions signalées comme warnings restent à examiner séparément. Aucun résultat de fonctionnement des jeux déduit de ces tests.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateFiles.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 6c22c51865b18c6ea83a21ca88898cca4d0e8d0d32335316bf3a3805f4f7825a
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/APKDownloader.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : c34a5ab4781c2692136d2173f3cefec207498b090960ea1e94950245b58e1754
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/APKInstaller.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : bd16c3c90b6365866d2b755bd466bcd0dc62124b3f1aa2fd610c6e6808ccd6a8
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/AppInstallReceiver.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 760aa71f4ef2b24a51de8c8dbbe72a7a8253f74dad602556c2e60906d711c369
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateViewModel.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 6068724600aee3a155cdaba86973cdd019527478aaf8e54c0768d5a6337ccefb
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 106a9823fc5b4c45a9333d41933a260ce145cbfb3299fbaf7ec1eaa7a11e7dcc
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/UpdateInstaller.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 183b9f2ab9493e8e529f86644b7a270aa0f3a96cf34bd3d1e54ab1bdd82022f0
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/AndroidManifest.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 81c84a9f48924f0a847798bac1593eeba4c14be2302b0f274225a1911ad2cfd5
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/res/xml/update_file_paths.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ce59d581aeab4a1ec2cdb64a263765b7fdf9d4a120f4ca2d4822b027831cdefd
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/res/values/updater_strings.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 7b638e4be24b112b858e8f9e19d55ee63b8c1518e55cc013aa1f37931e02ce8a
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/res/values-fr/updater_strings.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 3ce13f48f432c6bdc14f2e66a438d242cc883b47bf5cac2af29941965e1a15d7
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/APKDownloader.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 9a67e66af08fedfe5966dc2811c336e3ab302f5bc8e5cc24fb0d6ba773ef67fd
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateViewModel.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 121b94e732f49e596998af11a3fa05d4b6cd34fac7171de800264847b805bd83
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 98540e282398664b2f99a6675cfb2ebf97818fe0ccae0f63c4d36f1d5768da26
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — tools/updater_tests/UpdaterTests.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : e2f12925cb7e4a1ed1ea6d24beb027ba578907d4f89b5b8faa3e69b398eb05ed
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — tools/updater_tests/run.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 6fed49e481c78904b6d72ea3b10f819b9b388b019e05d7906a7f319159be0e40
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — tools/updater_tests/UpdaterTests.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : d3eb8dd0c66383ea9cea5b3524a898f4418a790bf6a2318d0bb1bf9c9e71f5f9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : f28f3c90d38896b8cf4486b000b1221efa29a50127d816f08197ca3d00baaf26
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateViewModel.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : c52ced0efa1edb0dc981d89776387746d7a2f7a8ea4c8f6d20e46e2426d36689
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 443745be430ccd22a7a32b95da0329acfae9e0c5265f4dc51569bf9614e188bb
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/APKDownloader.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 4157df0e4550c36dadbecfdaf4670d88cb1b6ffb6372d3856d77ee67afcbe6ea
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — tools/updater_tests/UpdaterTests.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 2ed1520c24073f38e55ec99a39d771e02cb35f2ba515abaa7bd44ea25fc02207
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/APKInstaller.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : baea06aee3e84580d957d4c3e3716a8f2b5a6f7a397ee1c5b9eacbfe06ff790e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/UpdateInstaller.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 619a5b79cd4cf44f8f44329d72b3f1d295905ae841a49f54d8b0a80bfad21835
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 5a31c26766ee406cb54824a7b3cf3f90f7d028ec4526b01cf0c3d5ae5a4df322
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/res/values/updater_strings.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 76a2f81ede1bc69f272c81db921e87b8c62ea07a533ddbc25b255dbad0d4a86e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — app/src/main/res/values-fr/updater_strings.xml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 3385ba06ec09321d0efa85388f58bd6d3edf5d5d907d14554cdd391b8a996d4e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Mise à jour — LIRE_REFONTE_MISE_A_JOUR.txt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 37a9a18bf80df7af801ba3986f827c7c88525d35e71e60cfb2be276f64d278e4
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+=== Verdicts finaux — refonte mise à jour, 2026-10-15 ===
+
+app/src/main/java/org/stratoemu/strato/updater/UpdateFiles.kt
+Validation : 14 groupes de tests JVM réussis sur classes réelles et serveur HTTP local ; ressources temporaires et cas d’échec vérifiés.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/java/org/stratoemu/strato/updater/APKDownloader.kt
+Validation : 14 groupes de tests JVM réussis sur classes réelles et serveur HTTP local ; ressources temporaires et cas d’échec vérifiés.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/java/org/stratoemu/strato/updater/APKInstaller.kt
+Validation : compilation Kotlin ciblée avec API Android et AndroidX réelles réussie ; revue des callbacks, états, annulation et restauration. Exécution Android sur appareil restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/java/org/stratoemu/strato/updater/AppInstallReceiver.kt
+Validation : compilation Kotlin ciblée avec API Android et AndroidX réelles réussie ; revue des callbacks, états, annulation et restauration. Exécution Android sur appareil restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/java/org/stratoemu/strato/updater/UpdateViewModel.kt
+Validation : compilation Kotlin ciblée avec API Android et AndroidX réelles réussie ; revue des callbacks, états, annulation et restauration. Exécution Android sur appareil restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt
+Validation : compilation Kotlin ciblée avec API Android et AndroidX réelles réussie ; revue des callbacks, états, annulation et restauration. Exécution Android sur appareil restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/java/org/stratoemu/strato/UpdateInstaller.kt
+Validation : compilation Kotlin ciblée avec API Android et AndroidX réelles réussie ; revue des callbacks, états, annulation et restauration. Exécution Android sur appareil restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/AndroidManifest.xml
+Validation : XML analysé ; ressources et formats EN/FR, références Kotlin et intégration manifeste/provider contrôlés. Compilation AAPT complète restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/res/xml/update_file_paths.xml
+Validation : XML analysé ; ressources et formats EN/FR, références Kotlin et intégration manifeste/provider contrôlés. Compilation AAPT complète restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/res/values/updater_strings.xml
+Validation : XML analysé ; ressources et formats EN/FR, références Kotlin et intégration manifeste/provider contrôlés. Compilation AAPT complète restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+app/src/main/res/values-fr/updater_strings.xml
+Validation : XML analysé ; ressources et formats EN/FR, références Kotlin et intégration manifeste/provider contrôlés. Compilation AAPT complète restante.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+tools/updater_tests/UpdaterTests.kt
+Validation : 14 groupes de tests JVM réussis sur classes réelles et serveur HTTP local ; ressources temporaires et cas d’échec vérifiés.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+tools/updater_tests/run.py
+Validation : 14 groupes de tests JVM réussis sur classes réelles et serveur HTTP local ; ressources temporaires et cas d’échec vérifiés.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+LIRE_REFONTE_MISE_A_JOUR.txt
+Validation : guide relu, chemins et limites conformes au contenu livré.
+Trois lectures intégrales automatisées après chaque écriture, avec empreinte identique à chaque série ; revues de logique complémentaires consignées dans le journal. Verdict : cohérent dans le périmètre contrôlé, pas de certification APK/téléphone.
+
+Réserves globales : pas de test des écrans, des autorisations et de l’installation réelle sur Android. Pas de service de téléchargement persistant ni reprise HTTP par plages. Aucun jeu ni rendu modifié par ce lot.
+
+Descripteur graphique — tools/render_tests/texel.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 249546209141329cf7afe43dfd559973b78ab3d534c5d0030d143f605ead6aee
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Descripteur graphique — tools/render_tests/texel.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : d01d678df250382bb2dbf1a6ea764a18e399c6ed6ace2345e7f74aa802cc3b56
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Descripteur graphique — app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 52bab0a3a118bc093f5a3257e72b251207fe76a9b935325a81d3fcc12dc8fc59
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+VERDICT FINAL — app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h
+Trois lectures intégrales automatisées après chaque modification consignées dans relectures.jsonl ; revue de logique complémentaire.
+Champ numeric_type conservé avec son type exact et initialisé depuis desc ; ordre des initialisations vérifié ; comparaison inclut la nouvelle donnée. Défaut de compilation reproduit avant correction et éliminé dans le test ciblé.
+Limites : vérification hôte isolée, pas de build APK complet ou test GPU Android.
+
+VERDICT FINAL — tools/render_tests/texel.py
+Trois lectures intégrales automatisées après chaque modification consignées dans relectures.jsonl ; revue de logique complémentaire.
+Test utilisant les structures de production : échec attendu avant correction, réussite après avec ASan/UBSan. Vérifie UINT/SINT/FLOAT, lecture/écriture et comparaison.
+Limites : vérification hôte isolée, pas de build APK complet ou test GPU Android.
+
+Texels échantillonnés — app/libraries/shader-compiler/shader_info.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ddbd68c8c3872cf336fdecab3afd51a722a658a8e7c7403a25576bac68b304c7
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/libraries/shader-compiler/backend/spirv/spirv_emit_context.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 677a1a5a3e46a8ab8be122130dfb9fb2011564c87a9e5d21f04cd7dbe153113c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/libraries/shader-compiler/backend/spirv/spirv_emit_context.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : fd7d022083e444b7918b5fa362e0d4ce88338c79877c8569fe739d50f418fd62
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : e3ef84860d6b727fd88cfa442c89072eafcf57f0f22c935272dec82217a60ae7
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ef4786885865c3d8f10469b1051f690a732274fb4a21b0a6901fa44923fa1415
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 12c177c1b6ae4be077180db9cdd891c93c088cca9856b42b0368fb7b6d2818fb
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 782eed551d8970bb479cc11c280e0783a45807c8acbad6f5a80b54f96b618adc
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 58ff7c2fd1ffc5101e18443d14029aea255c19a98fb0991cbc8025c01e130e1c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/render_tests/texel.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 117dacc39332e601e2a3090eb756db17f25180e02f930b4692ad764056ba855f
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/render_tests/run.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 35b4b9842c9db6ebf16b4d744d5e66436b345b60b581f49168e61db6e605a00c
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/render_tests/shaders.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : c485513471e7aa5e81d85f53f809e518bd0631c334c05f0d6c4df65d8e6786b9
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ddcd0a657c88daf10cc547b45028319ad34c9846c2d1a028dbe2a16ef0c93e53
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/diagnostics_tests/host_test.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : a839c1fc44244fd78ffd467f069609dcde8678b024c319e79332510e133b2bb7
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/diagnostics_tests/run.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : c3c5ddff00e6222d0f90fb5703122682fce39e72cec0e54762101c335e30aec5
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/upgrades/01-shader_info.h.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 1beebd6d3781de3bfcd477c80e38cf7a9eaad42c35da577254d14b5fc9148e45
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/01-shader_info.h.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 29136bef9d53c9a6ac98c7b50a13f1b8504ca2e4458ea4539a54be5ce9830607
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/upgrades/02-spirv_emit_context.h.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 8877e883acb82ee695925fb42d130a0c79cf1e49a34cc286d7f20dc2813ddd08
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/02-spirv_emit_context.h.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : b24ce07accc526d0cbe29adaf4ee6ac45fe60c743bf14987f852bba266017eca
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/upgrades/03-spirv_emit_context.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 7da0ea731c63c96e6c4fa27a5d329f7b4ffaf2b35ba9c2d18c97bc4e1af30cfc
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/03-spirv_emit_context.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : cee4af18e94e8c08a76d4a00642b43b02bae66068736e385a3cc89059bfc26df
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/upgrades/04-emit_spirv_image.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : c7a6dffdfb254aa4353ab4efd7f8d175ce0bb8c237b7e9a45bcd930e1f90b081
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/04-emit_spirv_image.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 929ec87d8b68a560dfb1fb98abde37939490e23eeac767c554d67f5d3c7e07fe
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/cmake/ApplyShaderCompilerPatches.cmake
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : ce8111ff5398377e6122efaaddbe63142f3727219269eff93f9d7d6d838fe2aa
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/test_shader_compiler_patches.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : effe5090d04820d76bcd0cbd70a5c19a8bd0b97975f39c4402a8e67e55cadeac
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/src/main/cpp/skyline/nce/hang_watchdog.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : a1fb08fca7860cde7bc1bb163bd090d8f292bd17c7066563f81cfcf5a5576b19
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/diagnostics_tests/watchdog.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : b61494fb931e3a98d611b7e71cf410ccec2e2e424633f1b19c90fa08eb094370
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/src/main/cpp/skyline/nce/hang_watchdog.h
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 2046922cb49e61eed96488c29d92a0d263cc7838e23506198e622efcbef24216
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/diagnostics_tests/watchdog.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 5707efd8d7ce3ee1a5d114dd05566429b467c9fe2b57ba00e1ee908ebf46d72a
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — tools/render_tests/shaders.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 93208d0963879b5820a6fc5b1f35c5ca8ea7fdf22a0db0f37f957f4d23b78056
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 8daac97191479ac2881ab9738d924dba0535c2f22fc69bc7a0ac7439f35ff03a
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/upgrades/04-emit_spirv_image.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : a7249b985588f075607e077ff8519a80b2c4e47e92fa7ca971769e6e0c5f8180
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+Texels échantillonnés — app/patches/shader-compiler/04-emit_spirv_image.cpp.patch
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 6dfec1fd9e6a9d3c26610b7f7242defe2ba294186acd233763b6278739727699
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+
+=== 2026-10-15 — Texels sampled compute et diagnostics des trois sessions ===
+Chaque modification a une analyse préalable et trois lectures intégrales automatisées enregistrées dans relectures.jsonl. Les empreintes ont été recoupées avec les fichiers livrés. Une revue manuelle des différences et de leur intégration complète ces contrôles ; il ne s’agit pas de trois audits manuels indépendants.
+
+app/cmake/ApplyShaderCompilerPatches.cmake
+SHA256 final : ce8111ff5398377e6122efaaddbe63142f3727219269eff93f9d7d6d838fe2aa
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp
+SHA256 final : 8daac97191479ac2881ab9738d924dba0535c2f22fc69bc7a0ac7439f35ff03a
+Verdict : PASS : backend réel/Sirit compilé, six modules générés ; sampled float/uint/sint, bitcasts, absence de sampler et de QueryLevels pour Buffer ; storage/atomiques préservés. spirv-val et exécution Vulkan indisponibles.
+
+app/libraries/shader-compiler/backend/spirv/spirv_emit_context.cpp
+SHA256 final : fd7d022083e444b7918b5fa362e0d4ce88338c79877c8569fe739d50f418fd62
+Verdict : PASS : backend réel/Sirit compilé, six modules générés ; sampled float/uint/sint, bitcasts, absence de sampler et de QueryLevels pour Buffer ; storage/atomiques préservés. spirv-val et exécution Vulkan indisponibles.
+
+app/libraries/shader-compiler/backend/spirv/spirv_emit_context.h
+SHA256 final : 677a1a5a3e46a8ab8be122130dfb9fb2011564c87a9e5d21f04cd7dbe153113c
+Verdict : PASS : backend réel/Sirit compilé, six modules générés ; sampled float/uint/sint, bitcasts, absence de sampler et de QueryLevels pour Buffer ; storage/atomiques préservés. spirv-val et exécution Vulkan indisponibles.
+
+app/libraries/shader-compiler/shader_info.h
+SHA256 final : ddbd68c8c3872cf336fdecab3afd51a722a658a8e7c7403a25576bac68b304c7
+Verdict : PASS : backend réel/Sirit compilé, six modules générés ; sampled float/uint/sint, bitcasts, absence de sampler et de QueryLevels pour Buffer ; storage/atomiques préservés. spirv-val et exécution Vulkan indisponibles.
+
+app/patches/shader-compiler/01-shader_info.h.patch
+SHA256 final : 29136bef9d53c9a6ac98c7b50a13f1b8504ca2e4458ea4539a54be5ce9830607
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/patches/shader-compiler/02-spirv_emit_context.h.patch
+SHA256 final : b24ce07accc526d0cbe29adaf4ee6ac45fe60c743bf14987f852bba266017eca
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/patches/shader-compiler/03-spirv_emit_context.cpp.patch
+SHA256 final : cee4af18e94e8c08a76d4a00642b43b02bae66068736e385a3cc89059bfc26df
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/patches/shader-compiler/04-emit_spirv_image.cpp.patch
+SHA256 final : 6dfec1fd9e6a9d3c26610b7f7242defe2ba294186acd233763b6278739727699
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/patches/shader-compiler/upgrades/01-shader_info.h.patch
+SHA256 final : 1beebd6d3781de3bfcd477c80e38cf7a9eaad42c35da577254d14b5fc9148e45
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/patches/shader-compiler/upgrades/02-spirv_emit_context.h.patch
+SHA256 final : 8877e883acb82ee695925fb42d130a0c79cf1e49a34cc286d7f20dc2813ddd08
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/patches/shader-compiler/upgrades/03-spirv_emit_context.cpp.patch
+SHA256 final : 7da0ea731c63c96e6c4fa27a5d329f7b4ffaf2b35ba9c2d18c97bc4e1af30cfc
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/patches/shader-compiler/upgrades/04-emit_spirv_image.cpp.patch
+SHA256 final : a7249b985588f075607e077ff8519a80b2c4e47e92fa7ca971769e6e0c5f8180
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+SHA256 final : ddcd0a657c88daf10cc547b45028319ad34c9846c2d1a028dbe2a16ef0c93e53
+Verdict : PASS : conservation de deux événements GPU malgré 12000 IPC, capacité bornée 8192+2048, ordre global conservé ; suite diagnostic hôte réussie. Des pertes par contention restent possibles et comptées.
+
+app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+SHA256 final : 12c177c1b6ae4be077180db9cdd891c93c088cca9856b42b0368fb7b6d2818fb
+Verdict : PASS ciblé ASan/UBSan : vrai helper de binding et descripteurs extraits, propagation numeric_type, Float/Uint/Sint, swizzles et mismatch ; vérification de barrières. Spécialisation graphique dynamique entière encore non implémentée.
+
+app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+SHA256 final : 58ff7c2fd1ffc5101e18443d14029aea255c19a98fb0991cbc8025c01e130e1c
+Verdict : PASS ciblé ASan/UBSan : vrai helper de binding et descripteurs extraits, propagation numeric_type, Float/Uint/Sint, swizzles et mismatch ; vérification de barrières. Spécialisation graphique dynamique entière encore non implémentée.
+
+app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.cpp
+SHA256 final : ef4786885865c3d8f10469b1051f690a732274fb4a21b0a6901fa44923fa1415
+Verdict : PASS ciblé : types sampled intégrés aux variantes compute, invalidation/relecture des TIC et éléments de descripteurs vérifiées ; transitions de buffers antérieures toujours testées. Compilation Android complète non réalisée.
+
+app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h
+SHA256 final : 782eed551d8970bb479cc11c280e0783a45807c8acbad6f5a80b54f96b618adc
+Verdict : PASS ciblé ASan/UBSan : vrai helper de binding et descripteurs extraits, propagation numeric_type, Float/Uint/Sint, swizzles et mismatch ; vérification de barrières. Spécialisation graphique dynamique entière encore non implémentée.
+
+app/src/main/cpp/skyline/nce/hang_watchdog.h
+SHA256 final : 2046922cb49e61eed96488c29d92a0d263cc7838e23506198e622efcbef24216
+Verdict : PASS hôte : classe entière parsée avec interfaces simulées ; formatage réel ASan/UBSan sans accès loader ni pointeur de propriétaire mutable. Lectures fragiles retirées. SIGSEGV exact non symbolisé ; pas de garantie que tout gel soit corrigé.
+
+tools/diagnostics_tests/host_test.cpp
+SHA256 final : a839c1fc44244fd78ffd467f069609dcde8678b024c319e79332510e133b2bb7
+Verdict : PASS : conservation de deux événements GPU malgré 12000 IPC, capacité bornée 8192+2048, ordre global conservé ; suite diagnostic hôte réussie. Des pertes par contention restent possibles et comptées.
+
+tools/diagnostics_tests/run.py
+SHA256 final : c3c5ddff00e6222d0f90fb5703122682fce39e72cec0e54762101c335e30aec5
+Verdict : PASS : conservation de deux événements GPU malgré 12000 IPC, capacité bornée 8192+2048, ordre global conservé ; suite diagnostic hôte réussie. Des pertes par contention restent possibles et comptées.
+
+tools/diagnostics_tests/watchdog.py
+SHA256 final : 5707efd8d7ce3ee1a5d114dd05566429b467c9fe2b57ba00e1ee908ebf46d72a
+Verdict : PASS hôte : classe entière parsée avec interfaces simulées ; formatage réel ASan/UBSan sans accès loader ni pointeur de propriétaire mutable. Lectures fragiles retirées. SIGSEGV exact non symbolisé ; pas de garantie que tout gel soit corrigé.
+
+tools/render_tests/run.py
+SHA256 final : 35b4b9842c9db6ebf16b4d744d5e66436b345b60b581f49168e61db6e605a00c
+Verdict : PASS ciblé : types sampled intégrés aux variantes compute, invalidation/relecture des TIC et éléments de descripteurs vérifiées ; transitions de buffers antérieures toujours testées. Compilation Android complète non réalisée.
+
+tools/render_tests/shaders.cpp
+SHA256 final : 93208d0963879b5820a6fc5b1f35c5ca8ea7fdf22a0db0f37f957f4d23b78056
+Verdict : PASS : backend réel/Sirit compilé, six modules générés ; sampled float/uint/sint, bitcasts, absence de sampler et de QueryLevels pour Buffer ; storage/atomiques préservés. spirv-val et exécution Vulkan indisponibles.
+
+tools/render_tests/texel.py
+SHA256 final : 117dacc39332e601e2a3090eb756db17f25180e02f930b4692ad764056ba855f
+Verdict : PASS ciblé ASan/UBSan : vrai helper de binding et descripteurs extraits, propagation numeric_type, Float/Uint/Sint, swizzles et mismatch ; vérification de barrières. Spécialisation graphique dynamique entière encore non implémentée.
+
+tools/test_shader_compiler_patches.py
+SHA256 final : effe5090d04820d76bcd0cbd70a5c19a8bd0b97975f39c4402a8e67e55cadeac
+Verdict : PASS : prévalidation CMake, installation propre, migration depuis ancien patch, idempotence, reset CI et reconfiguration Ninja. Dix groupes de scénarios réussis. Patches shader synchronisés avec sources finales.
+
+Rapports relus : les deux crashs natifs (Zelda et second DB) sont distingués de l’exception texel présente dans les deux DB. Inventaire 1228 fichiers, aucune erreur JSON/JSONL/structure SPIR-V détectée. Les limitations de preuve et de test sont explicites.
+
+APK direct — .github/workflows/build.yml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : c141d735501dca322c42483f5099296fa485d7ba1eb71db887307a45118becde
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+APK direct — .github/workflows/pr_build.yml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 6b4607cd99878e20307f47e09a999682a1ba4b7f4c7dd84f2ee75b4bec5f66bb
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+APK direct — .github/workflows/release.yml
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 0144ecfe75407e2cab708d7f5342aa4eec04e432fe5a53bd9f80e0ba4a0c9b52
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+APK direct — app/src/main/java/org/stratoemu/strato/UpdateChecker.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 75696c7415b16ff4474bde5a1f860868c6613e0fcc6d2c463ad5f827e20391c1
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+APK direct — tools/updater_tests/ReleaseSelectionTests.kt
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 1c297dfbb9abc7bd74eb1fd856142d0261db9a0cdefcdbe6929ab606230fa659
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+APK direct — tools/updater_tests/check_releases.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : da25f9e973b81ae13345019c6685aa5722c2e93d7d801f7db74d0a9fb06ffab2
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+APK direct — tools/updater_tests/publication.py
+Trois lectures intégrales automatisées du contenu UTF-8, empreinte identique : 6bbbfd6b2ffb171dafef34d7773be2b8ccf76cd75311fb1e0dbc268d1cabe12e
+Verdict intermédiaire : écriture contrôlée ; revue de logique et tests d’intégration à compléter. Ces lectures ne constituent pas trois audits manuels indépendants.
+
+
+=== 2026-10-15 — Publication APK directe ===
+Analyse préalable relue pour chaque modification. Trois lectures automatisées intégrales après chaque écriture, avec SHA256 ; revue manuelle des différences et tests ci-dessous.
+
+.github/workflows/build.yml
+SHA256 : c141d735501dca322c42483f5099296fa485d7ba1eb71db887307a45118becde
+Verdict : PASS : scripts réels testés localement et câblage raw artefacts vérifié. Aucun run GitHub exécuté.
+
+.github/workflows/pr_build.yml
+SHA256 : 6b4607cd99878e20307f47e09a999682a1ba4b7f4c7dd84f2ee75b4bec5f66bb
+Verdict : PASS : scripts réels testés localement et câblage raw artefacts vérifié. Aucun run GitHub exécuté.
+
+.github/workflows/release.yml
+SHA256 : 0144ecfe75407e2cab708d7f5342aa4eec04e432fe5a53bd9f80e0ba4a0c9b52
+Verdict : PASS : scripts réels testés localement et câblage raw artefacts vérifié. Aucun run GitHub exécuté.
+
+app/src/main/java/org/stratoemu/strato/UpdateChecker.kt
+SHA256 : 75696c7415b16ff4474bde5a1f860868c6613e0fcc6d2c463ad5f827e20391c1
+Verdict : PASS : neuf scénarios de sélection sur UpdateChecker compilé et JSON Android réels. Téléchargeur existant : quatorze groupes réussis. APK complet non compilé.
+
+tools/updater_tests/ReleaseSelectionTests.kt
+SHA256 : 1c297dfbb9abc7bd74eb1fd856142d0261db9a0cdefcdbe6929ab606230fa659
+Verdict : PASS : neuf scénarios de sélection sur UpdateChecker compilé et JSON Android réels. Téléchargeur existant : quatorze groupes réussis. APK complet non compilé.
+
+tools/updater_tests/check_releases.py
+SHA256 : da25f9e973b81ae13345019c6685aa5722c2e93d7d801f7db74d0a9fb06ffab2
+Verdict : PASS : neuf scénarios de sélection sur UpdateChecker compilé et JSON Android réels. Téléchargeur existant : quatorze groupes réussis. APK complet non compilé.
+
+tools/updater_tests/publication.py
+SHA256 : 6bbbfd6b2ffb171dafef34d7773be2b8ccf76cd75311fb1e0dbc268d1cabe12e
+Verdict : PASS : scripts réels testés localement et câblage raw artefacts vérifié. Aucun run GitHub exécuté.
+
+
+=== 16 octobre 2026 — Rejet APK à la fin du téléchargement ===
+
+Fichier : app/src/main/java/org/stratoemu/strato/updater/APKValidation.kt
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique d315df6200aed0e2bdb3134fa0f53c91cbbd338f06919556190e07b255c50a8e.
+Revue manuelle de logique et des différences : Règles pures : égal accepté, inférieur rejeté, paquet différent distinct ; comparaison Long et détection remplacement même code via date. Tests JVM PASS.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+Fichier : app/src/main/java/org/stratoemu/strato/updater/APKInstaller.kt
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique da4a1c214c93545ac1a50565cc3b572395eead77cf4ceb9c63c19ddbc67fa51d.
+Revue manuelle de logique et des différences : Vrai parseur Android conservé ; compatibilité déléguée ; aucun contournement de validation par nom de fichier. Compilation API Android PASS, parseur sur téléphone non testé.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+Fichier : app/src/main/java/org/stratoemu/strato/updater/UpdateViewModel.kt
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique 38d047a603e1d4a8a61f82f0b2e416ca28d4d0de933154c45315a34f1e48b41c.
+Revue manuelle de logique et des différences : Erreurs typées interceptées après annulation et avant exception générique ; nettoyage, mutex et StateFlow conservés. Arguments de message concordent avec chaque cause. Compilation PASS.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+Fichier : app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique 033b790ce60a2775f899001e388989660ae48bef79ef91f6988616a5cbdb2a7f.
+Revue manuelle de logique et des différences : Formatage des messages avec arguments ; remplacement vérifié par snapshot installé. Pas de faux succès sur simple lancement installateur. Ancien Intent accepté avec timestamp absent. Compilation PASS.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+Fichier : app/src/main/java/org/stratoemu/strato/UpdateInstaller.kt
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique fe719e9a452629e7cfd1c72d648b02618407810d83fbccbbd366db16b78ea0f2.
+Revue manuelle de logique et des différences : Un seul snapshot installé fournit version/date à Intent ; capture reste dans try/catch et aucune référence activité prolongée. Compilation PASS.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+Fichier : app/src/main/res/values/updater_strings.xml
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique c507deea16c5d03a624c731dcaf3967b2ef8a5e9517120843ffb404c5c0a0a82.
+Revue manuelle de logique et des différences : XML EN/FR lus et paramètres %1$s/%2$s pour variantes, %1$d/%2$d pour codes cohérents avec les arguments. AAPT/affichage téléphone non exécutés.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+Fichier : app/src/main/res/values-fr/updater_strings.xml
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique 23efb9a9b157896d25c81ed0c79d2f9c1f0c4a789e27743b715aa5c6df55b219.
+Revue manuelle de logique et des différences : XML EN/FR lus et paramètres %1$s/%2$s pour variantes, %1$d/%2$d pour codes cohérents avec les arguments. AAPT/affichage téléphone non exécutés.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+Fichier : tools/updater_tests/ValidationTests.kt
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique fffc431ea5ac781e9711d7dc0baa5730cd8ad4c5aa45421a253e641746e16278.
+Revue manuelle de logique et des différences : Tests du module réel sans imitation de la logique : 7 cas compatibilité et 7 cas remplacement, y compris grandes versions et Intent ancien. PASS ; ce ne sont pas des tests du parseur PackageManager.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+Fichier : tools/updater_tests/validation.py
+Analyse préalable : fiche journal persistée et relue avant édition.
+Relectures 1, 2, 3 : lectures intégrales automatisées UTF8, empreinte finale identique 147c62bc17b8dbb7e703e6236197582afa956c288f2f945b2eda7d943aec53b8.
+Revue manuelle de logique et des différences : Compile les sources de production et test, utilise les jars explicites et sortie temporaire, bornes de temps compilation/exécution. Exécuté avec succès.
+Verdict : correctif revu et validation ciblée réussie ; pas de validation sur téléphone. Les trois lectures automatisées ne sont pas trois audits manuels indépendants.
+
+=== APK persistant — 16 octobre 2026 — verdicts par fichier ===
+Méthode : analyses relues avant modifications ; revue manuelle du flux, des changements, puis trois lectures intégrales automatisées UTF8/SHA256 de chaque version finale. Ces trois lectures automatisées ne sont pas trois audits humains indépendants. Tests Android réels non exécutés.
+
+FICHIER : app/src/main/java/org/stratoemu/strato/updater/APKPayload.kt
+Rôle / modification : Nouveau : détecter APK par manifeste racine, ancien conteneur à un APK, fichier non ZIP ; contrôler CRC et taille de toutes entrées avec plafond et annulation. Préserver octets APK/signature.
+Relectures 1/2/3 : intégralité lue ; 63 lignes ; SHA256 identique 942f490199e393b357128da5131973e57439b395fa7702b0887cd499a2dddca2.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/java/org/stratoemu/strato/updater/UpdateSession.kt
+Rôle / modification : Nouveau : transférer APK intact dans PackageInstaller Session hors UI, callback explicite mutable, session bornée à notre paquet. Conserver code/message Android et ID dans préférences, confirmation affichée seulement activité au premier plan. Abandonner staging en erreur, ignorer callbacks périmés.
+Relectures 1/2/3 : intégralité lue ; 123 lignes ; SHA256 identique 1162e26b95187545913c3ff13c7d74030d7a390b965f9d8181786497764427ba.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/java/org/stratoemu/strato/updater/InstallStatusReceiver.kt
+Rôle / modification : Nouveau : réception explicite du résultat PackageInstaller, sans démarrage activité en arrière-plan. Transmettre au gestionnaire de session.
+Relectures 1/2/3 : intégralité lue ; 12 lignes ; SHA256 identique 4346a347d96501e8b144721511af6aa9741da3a07b9409241942ecd9bc105895.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/java/org/stratoemu/strato/updater/APKInstaller.kt
+Rôle / modification : Analyse précédente relue : getPackageArchiveInfo null devient rejet sans information ; garder comparaison si métadonnées lisibles, déléguer analyse finale à Android si contrôle structure passe et parseur local retourne null. Ne pas modifier signatures.
+Relectures 1/2/3 : intégralité lue ; 47 lignes ; SHA256 identique a00d6ef824c4a61b5fa8b0719d5b7c2b619793576c970f9076c6a6f4fcd7a8f0.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/java/org/stratoemu/strato/updater/APKDownloader.kt
+Rôle / modification : Analyse refonte relue : transfert complet et .part déjà vérifiés ; désactiver cache HTTP pour nouvelles tentatives.
+Relectures 1/2/3 : intégralité lue ; 55 lignes ; SHA256 identique 463c26616b4cb26dc74026afbff63186ded48dd78d473c48db2035b6c4c3c251.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/java/org/stratoemu/strato/updater/UpdateViewModel.kt
+Rôle / modification : Analyses refonte et APK rejeté relues : cache final réutilisé uniquement par URL et rejet supprimant preuve, message trop générique. Chaque nouvelle tentative télécharge à neuf, contenu détecté indépendamment ancien flag ZIP. Garder fichier après échec install et afficher code exact Android. Session staging hors UI et annulation contrôlée.
+Relectures 1/2/3 : intégralité lue ; 204 lignes ; SHA256 identique 34651a02a9b9c631e05d7c1bbba688b962c8dde9f5d1d23203bd3d20ca44fd85.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt
+Rôle / modification : Analyses précédentes relues : ACTION_VIEW ne récupère aucun diagnostic. Lancer préparation session puis confirmation reçue seulement au premier plan. Affichage résultat sélectionnable, bouton retéléchargement même après échec Android.
+Relectures 1/2/3 : intégralité lue ; 170 lignes ; SHA256 identique 9231115acce9bf77210d32b11dcae52357840ade83d88cbc1f3c73c29c07d270.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/AndroidManifest.xml
+Rôle / modification : Analyse précédente et fichier entier relus : ajouter receiver explicite non exporté pour les statuts de notre session, conserver composants existants.
+Relectures 1/2/3 : intégralité lue ; 175 lignes ; SHA256 identique 70d4ed7812b5d11c877a07def28cb247975f0322d710f15dad55cbb1906e06ef.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/res/values/updater_strings.xml
+Rôle / modification : Analyses précédentes relues : chaînes distinctes préparation/installation/refus Android et détail, contrôle local non concluant, retéléchargement.
+Relectures 1/2/3 : intégralité lue ; 34 lignes ; SHA256 identique 27cdc681542616b4b62548f4bf715af360f787b6e6e856e15fe627673b0e99a9.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : app/src/main/res/values-fr/updater_strings.xml
+Rôle / modification : Analyses précédentes relues : mêmes clés/paramètres anglais, message exact sélectionnable et catégories de refus.
+Relectures 1/2/3 : intégralité lue ; 34 lignes ; SHA256 identique e378b7bf2e8d85d6d2b7aca9f94d0118d29adceeffb49df149d3525115959661.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : tools/updater_tests/PayloadTests.kt
+Rôle / modification : Nouveau : tests réels module pur APKPayload, fixtures synthétiques explicitement non installables ; détection direct/conteneur, corruptions, annulation, conservation octets.
+Relectures 1/2/3 : intégralité lue ; 71 lignes ; SHA256 identique 9c4ad22aedc5932fbf8952cfe6010e39930ca4550146ebade893fa7902b2a36f.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : tools/updater_tests/payload.py
+Rôle / modification : Nouveau lanceur JVM modules réels UpdateFiles/APKPayload ; dépendances existantes et timeout.
+Relectures 1/2/3 : intégralité lue ; 23 lignes ; SHA256 identique 5690d96908376c036588730985e041513b830c10ad1138552488aa462ccca9c3.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : .github/workflows/build.yml
+Rôle / modification : Workflow entier et analyse publication directe relus. Ajouter contrôle APK après copie artefact avant upload ; ne pas toucher keystore ni incrément versions.
+Relectures 1/2/3 : intégralité lue ; 126 lignes ; SHA256 identique c201040fccd40dd747bf7dd542f030555e1823b89ca1158d3d1c40dc4f4d5786.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : .github/workflows/release.yml
+Rôle / modification : Workflow entier et analyse publication directe relus. Contrôler à nouveau fichier réellement récupéré avant publication ; pas de ZIP ajouté.
+Relectures 1/2/3 : intégralité lue ; 131 lignes ; SHA256 identique e9a2a8e397a5995a671fd920e6aca6a1b4fc6cc86dead940d51026577e0e3f9a.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : tools/check_release_apk.py
+Rôle / modification : Nouveau : ouvrir ZIP, tester CRC, manifeste racine, présence code natif arm64 ; aapt badging identifiant/SDK/ABI puis apksigner verify sur fichier exact. Échec ferme avant publication ; aucun remplacement de certificat.
+Relectures 1/2/3 : intégralité lue ; 55 lignes ; SHA256 identique efb4bd24a4aad83c49f49c30a96a142a7ae5a114802b7cbe32746647390386ed.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+FICHIER : tools/updater_tests/session_host.py
+Rôle / modification : Tests session Android avec doublures explicites ; aucune installation réelle.
+Relectures 1/2/3 : intégralité lue ; 151 lignes ; SHA256 identique fbb852753cbb0609c74e9c80e93c2d7b0b793d7597db88d4239223361bf882df.
+Verdict : cohérent à la revue statique et aux vérifications décrites dans RAPPORT_MAJ_APK_16OCT.txt. Validation sur téléphone et GitHub Actions encore nécessaire.
+
+
+CORRECTIFS C++ ET LOGGER — 18 OCTOBRE 2026 (LIBREVILLE)
+Autorisation utilisateur : « Vas y », puis « Continue ». Livraison complète demandée ensuite.
+Trois revues distinctes des modifications : logique, limites, compatibilité. Les vérifications hôte ne sont pas une compilation complète du projet. Les limites ci-dessous font partie du verdict.
+
+FICHIER : app/src/main/cpp/skyline/audio.cpp
+Revue 1 — logique : Adaptateurs AudioCore : copie des messages empruntés const, sans en voler la mémoire.
+Revue 2 — cas limites : Argument réellement const et durée de vie asynchrone : la copie est possédée.
+Revue 3 — compatibilité : API des callbacks conservée ; seuil central du logger ; moteur audio Android non exécuté.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 018854c0cf05b3fd1b31561b082933250277656a3e155754e0a15f583b74f030
+
+FICHIER : app/src/main/cpp/skyline/common/circular_queue.h
+Revue 1 — logique : Close réveille les deux côtés, drainage, Pop revalide après concurrence ; notification de tous les producteurs libérés.
+Revue 2 — cas limites : Vide/plein/fermeture, 100 fermetures avec producteur, 3 producteurs/3 consommateurs et Process avec 4 producteurs : PASS. Close verrouille les deux mutex pour éviter une notification perdue.
+Revue 3 — compatibilité : Process peut désormais revenir ; seul scheduler ferme explicitement sa queue. SpinLock remplacé par std::mutex dans les tests.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 157655ff4d81d79e71a0c1dd89c706f175fdbc0e022c5bc84a313dcd5929248d
+
+FICHIER : app/src/main/cpp/skyline/common/diagnostic_crash.cpp
+Revue 1 — logique : Échecs snapshot modules/export enregistrés hors handler ; conversion ssize_t après contrôle positif.
+Revue 2 — cas limites : Test hôte capture synthétique : première écriture de 96 octets seulement ; snapshot ELF exporté.
+Revue 3 — compatibilité : Handler sans nouveau mutex ni logger ; test sans vrai signal fatal ; pas de tombstone/pile symbolisée complète.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : a9df0a8b9485174a8ba5893bead36bfbcde559603379e978c1fb34b276fea7b0
+
+FICHIER : app/src/main/cpp/skyline/common/diagnostic_recorder.cpp
+Revue 1 — logique : Captures mises en queue bornée et écrites par pump ; histograms CPU ; anneaux IPC/SVC séparés ; limites mappings explicites.
+Revue 2 — cas limites : Test artefact vidé à l’arrêt, opération réussie/abandonnée, export JSON et ouverture GPU échouée : PASS. Échec allocation DrainArtifacts intercepté par lecture, non injecté.
+Revue 3 — compatibilité : 8 MiB par queue et au plus 8 MiB en lot de drainage simultané ; budget disque 32 MiB. Quantiles approximatifs de session, fence_wait non alimenté dans ce lot.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 1d68769b0cfbb77fc4867e65182a52873b4bf6d98ca5acc1d828f0e97b39ee01
+
+FICHIER : app/src/main/cpp/skyline/common/diagnostic_recorder.h
+Revue 1 — logique : Operation non copiable : une fin mesurée, échec générique si scope abandonné ; catégories CPU explicites.
+Revue 2 — cas limites : Finish idempotent ; destruction sans exception ; API utilisée par tests réels.
+Revue 3 — compatibilité : Aucune RAII Operation ajoutée au chemin longjmp SVC ; métadonnées cumulatives, pas temps GPU.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 9409c39b5d99a03ffb86bb6ecbbd8289f04af8dc65007f2d921731afa359c58f
+
+FICHIER : app/src/main/cpp/skyline/common/exception.h
+Revue 1 — logique : Exception déjà construite signalée au recorder ; type et propagation inchangés.
+Revue 2 — cas limites : Exception non implémentée comptée avec logger texte désactivé : PASS. GetStackFrames remplacé par fixture vide sur hôte.
+Revue 3 — compatibilité : Header recorder léger ; liaison dans skyline existante ; unwinder AArch64 et réentrance signal non validés.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 8eddf60898c2c9fd203fb1a3bfa0208f25673424ef94322048b4d9e7448e5829
+
+FICHIER : app/src/main/cpp/skyline/common/interval_list.h
+Revue 1 — logique : Bornes demi-ouvertes, Merge avec déplacement et auto-fusion.
+Revue 2 — cas limites : 768 000 comparaisons à un modèle naïf, bornes adjacentes/vides/inversées : PASS. Déplacement hors domaine non accepté par contrat.
+Revue 3 — compatibilité : Appel de coalescence adapté ; autres Merge conservent déplacement nul par défaut.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 35fe70da655c04321e368829cbb389b952423252a206b38a74fe48cab6754576
+
+FICHIER : app/src/main/cpp/skyline/gpu.cpp
+Revue 1 — logique : Décisions de filtre validation et échec callback enregistrés ; contenu brut existant préservé.
+Revue 2 — cas limites : Filtres conditionnels et inconditionnels revus ; callback garde retour existant.
+Revue 3 — compatibilité : Couches de validation non chargées sur cet hôte ; aucune extension activée arbitrairement.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : bcd9e433cba4bddc2a7ec7868501a1799592555c3d9d04d64832f6678dea108b
+
+FICHIER : app/src/main/cpp/skyline/gpu/buffer.cpp
+Revue 1 — logique : Vue de lecture cohérente complétée dans shadow sans écrire le mirror lu par GPU ; retour après une seule copie GPU staged.
+Revue 2 — cas limites : Fonctions extraites du code testées avec environnement mémoire simulé : gaps, fin exclusive, mirror inchangé, callback absent et callback unique : PASS.
+Revue 3 — compatibilité : Signatures conservées ; barrières/fences simulées dans le test, cohérence réelle Adreno non validée.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 95b016adcf91ff5a2804e963ec40f8a26e788e0a2a075c5d9be52313e8c9ea9c
+
+FICHIER : app/src/main/cpp/skyline/gpu/buffer_manager.cpp
+Revue 1 — logique : Lookup arrêté au premier buffer antérieur sans intersection ; plages shadow translatées avec les octets.
+Revue 2 — cas limites : Invariant de mappings triés/disjoints relu dans FindOrCreate/Coalesce ; offsets testés dans IntervalList.
+Revue 3 — compatibilité : Pas de test de fusion avec GPU réel ; verrous/tag existants conservés.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : dda694d4c33dcda25fcf2803243305d7cd9e5d7a4c164bc65d990fa384c7b0f8
+
+FICHIER : app/src/main/cpp/skyline/gpu/command_scheduler.cpp
+Revue 1 — logique : Fermeture de cycleQueue avant join du waiter.
+Revue 2 — cas limites : Cas queue vide couvert par test générique ; cycle déjà bloqué dans Wait non débloqué par Close.
+Revue 3 — compatibilité : Vie des cycles conservée ; arrêt sous perte GPU non validé. T01 traité pour l’attente de queue, pas pour tout arrêt GPU.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 2a471e0f1c10a6d6d3cc7430e16b7a2614cdb043310debee1f18fbae6c48ef62
+
+FICHIER : app/src/main/cpp/skyline/gpu/diagnostic_device_fault.h
+Revue 1 — logique : Conversions explicites après plafonds 256/64 existants.
+Revue 2 — cas limites : Valeurs plafonnées représentables en uint32_t ; pas de nouvelle allocation ni changement de quota.
+Revue 3 — compatibilité : Avertissements ciblés supprimés par lecture ; extension Vulkan non exécutée.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 589d2646951c4f002e2cb79681d32687ba18fc3a5b3db3cec8c3524a93377b4f
+
+FICHIER : app/src/main/cpp/skyline/gpu/diagnostics.cpp
+Revue 1 — logique : Échecs init/capture/open/write/close signalés via Event non levant, sans récursion logger.
+Revue 2 — cas limites : Injection chemin fichier occupé par un dossier : gpu_report_open_failed observé dans JSON.
+Revue 3 — compatibilité : Rapport exceptionnel reste synchrone ; aucune prétention que toutes les E/S GPU deviennent asynchrones.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 2102a75bb4852c10dd4b6eec7a8ed0511b2a5f33b29833fe31adb6c15ac0771d
+
+FICHIER : app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp
+Revue 1 — logique : Création pipeline encadrée par opération, durée et erreur ; contrôle écriture cache avant succès.
+Revue 2 — cas limites : Exceptions relancées ; code std::system_error conservé en entier brut (reconversion signée 64 bits pour les valeurs négatives).
+Revue 3 — compatibilité : Appels Vulkan conservés ; lambda retourne le même type RAII. Pas de compilation ni injection driver ; renderpass créé avant ce scope reste couvert seulement par ses exceptions existantes.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 6d73c5005a438f5d94020b6fce38e315208b4a51446048f32bf4cc510cfe2da4
+
+FICHIER : app/src/main/cpp/skyline/gpu/memory_manager.cpp
+Revue 1 — logique : Transfert des handles puis destruction de l’ancienne destination ; source privée de ses handles.
+Revue 2 — cas limites : Implémentations extraites testées : destruction unique et unmap unique si nécessaire ; ASan/UBSan PASS.
+Revue 3 — compatibilité : Libération VMA remplacée par compteurs dans le test ; pas d’affirmation sur driver Android.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : dfa4599f3a14ca7f084f4ed5467cbc34ae919464e878d001ff90571dc9af7f6d
+
+FICHIER : app/src/main/cpp/skyline/gpu/memory_manager.h
+Revue 1 — logique : Affectations move des propriétaires VMA explicitement déclarées.
+Revue 2 — cas limites : Auto-affectation, destination occupée, image mappée et non mappée testées avec handles simulés : PASS.
+Revue 3 — compatibilité : Constructeurs et champs conservés ; compilation réelle Vulkan/VMA non faite.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : ee0a9e5cb4c5038a971ee7c6ec9bee1bf1512182f091ae9deab2f50a4152b35a
+
+FICHIER : app/src/main/cpp/skyline/gpu/shader_manager.cpp
+Revue 1 — logique : Callbacks copient les chaînes const ; scope compilation SPIR-V/module avec événement erreur et durée.
+Revue 2 — cas limites : Captures IR échouées visibles, échecs SPIR-V/module relancés ; arrêt sans succès produit failed_or_abandoned.
+Revue 3 — compatibilité : Formatage IR toujours sur thread appelant ; écriture artefact déportée. Frontend Parse/Translate non entièrement instrumenté ici.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 83752da0e1dd43356a0309754370a1dbcd272bf7ab9fc8db84ac8a27bb7d5473
+
+FICHIER : app/src/main/cpp/skyline/logger/logger.cpp
+Revue 1 — logique : Propriété partagée du writer ; file bornée try_lock ; arrêt drain/join ; rate limit par site ; sortie fichier possédée par writer.
+Revue 2 — cas limites : 30 cycles init/finalize, doubles arrêts, 80 000 logs concurrents, arrêt avec producteur, seuil direct, ouverture impossible et répétitions : PASS sous ASan/UBSan.
+Revue 3 — compatibilité : Niveaux et quatre colonnes conservés, ajout TID/composant/site ; Finalize(false) attend désormais la vidange. Pas de mesure FPS ni test disque plein.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : cd61b80886411eece78bb69b9d9d4ed8b34b00e249b5663ef8b6f1f7a219bc29
+
+FICHIER : app/src/main/cpp/skyline/logger/logger.h
+Revue 1 — logique : API compatible, seuil avant formatage, signalement des marqueurs unsupported indépendamment du niveau texte, LOGT alias Verbose.
+Revue 2 — cas limites : LOGW stub compté en mode Disabled dans le test ; types de niveau préservés.
+Revue 3 — compatibilité : C++20 __VA_OPT__ compilé par g++ ; appels du projet inspectés ; NDK 26 non exécuté.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 2fd80c48f352f3130f345fbe300ea8c7cf0c97d979b1b763ff1b4cc61aa28a9b
+
+FICHIER : app/src/main/cpp/skyline/nce.cpp
+Revue 1 — logique : Arguments/résultats SVC bruts x0–x5, corrélation et durée ; fin explicite gardée unique avant longjmp.
+Revue 2 — cas limites : SVC absent enregistré ; pas d’allocation fmt pour les arguments ; appel parasite HookHandler retiré à la relecture.
+Revue 3 — compatibilité : SvcContext dispose des six registres ; x0 non systématiquement interprété comme Result. Pas d’exécution AArch64/longjmp dans le test.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : c90dbe71627e6353420b0a161a160e01f177323dcd8fad2820b0defdc05ae734
+
+FICHIER : app/src/main/cpp/skyline/nce/jit_fallback.cpp
+Revue 1 — logique : GetCNTPCT délègue à util::GetTimeTicks, unité invitée 19,2 MHz.
+Revue 2 — cas limites : Fréquence util avec cas particuliers appareils relue ; aucune modification des callbacks mémoire/exclusifs.
+Revue 3 — compatibilité : Alignement d’unité avec NCE/SVC par lecture, pas égalité bit à bit ni test compteur réel ; risque N01 reste ouvert.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 0b054792cd2ec1baa27d4a1a6930981696d4125bbeb8eba59d2a349027583ba5
+
+FICHIER : app/src/main/cpp/skyline/services/base_service.cpp
+Revue 1 — logique : Entrée/sortie IPC, résultat brut, durées, extrait arguments limité et catalogue no-op au dispatch.
+Revue 2 — cas limites : Lecture arguments limitée à 32 octets dans TLS ; exceptions enregistrées ; no-op ne change pas le résultat.
+Revue 3 — compatibilité : Arguments bruts et compte de buffers, pas décodage typé exhaustif ; héritage et dispatch réels non entièrement testés.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : b519cdb365dfb81b72dd7ea4edf36d39207a7fb51d423b938738b26022535e4e
+
+FICHIER : app/src/main/cpp/skyline/services/base_service.h
+Revue 1 — logique : Suppression du set global non borné de commandes déjà loggées ; registre borné et rate limit central.
+Revue 2 — cas limites : Les appels restent comptés ; aucune déduplication permanente entre sessions ; code stub 0xF601 conservé.
+Revue 3 — compatibilité : Macros SERVICE_DECL et signatures inchangées ; cadence de formatage texte à mesurer sur appareil.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 6e61ada2d3cbe702b37a4cd01d7c789472445d29cefbb040ed6a1762b33b65da
+
+FICHIER : app/src/main/cpp/skyline/services/diagnostic_noops.h
+Revue 1 — logique : Catalogue constant trié de 88 corps success-only hors SSL ; recherche binaire sans allocation.
+Revue 2 — cas limites : 88/88 entrées correspondent encore aux corps analysés ; recherche positive de toutes et négative testées : PASS.
+Revue 3 — compatibilité : No-op peut être intentionnel ; maintenir catalogue après implémentation. Couverture des classes dérivées non garantie, aucun service modifié.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 0cd9e0ca6c1eb2a794346074571bb7298a89308bcc0d0fc861ecb340a7f91210
+
+FICHIER : app/src/main/cpp/skyline/services/stub_service.cpp
+Revue 1 — logique : Choix commande TIPC header.type ou HIPC payload.value ; registre par service/commande.
+Revue 2 — cas limites : Vrai corps extrait testé avec payload TIPC nullptr et HIPC valide : PASS sous ASan/UBSan ; résultat 0xF601 inchangé.
+Revue 3 — compatibilité : Pas de faux décodage textuel du Result ; pas de service matériel implémenté par ce correctif.
+Verdict : correction/instrumentation retenue, validation Android encore nécessaire. SHA256 : 9452c12095797e29c2653811e16c28c6ba637cfb7b1aac6c29d6cf36417701cc

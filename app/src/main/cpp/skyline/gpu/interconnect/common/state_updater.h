@@ -225,6 +225,23 @@ namespace skyline::gpu::interconnect {
                 };
             }
 
+            // Buffer coalescing may change backing handles and offsets after
+            // descriptor preparation, so create texel views only at recording.
+            auto &texels{updateInfo->texelBuffers};
+            for (size_t i{}; i < texels.bindings.size(); i++) {
+                const auto &dynamic{texels.bindings[i]};
+                auto binding{dynamic.view.GetBinding(gpu)};
+                if (!binding.buffer || !binding.size || binding.offset % dynamic.alignment)
+                    throw exception("Invalid or unaligned texel buffer binding: offset={} alignment={}", binding.offset, dynamic.alignment);
+                auto &view{texels.lifetime->emplace_back(gpu.vkDevice, vk::BufferViewCreateInfo{
+                    .buffer = binding.buffer,
+                    .format = dynamic.format,
+                    .offset = binding.offset,
+                    .range = binding.size,
+                })};
+                texels.views[i] = *view;
+            }
+
             if constexpr (PushDescriptor) {
                 commandBuffer.pushDescriptorSetKHR(updateInfo->bindPoint, updateInfo->pipelineLayout, updateInfo->descriptorSetIndex, updateInfo->writes);
             } else {

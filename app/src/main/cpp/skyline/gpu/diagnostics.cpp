@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#include <common/diagnostic_recorder.h>
 #include <chrono>
 #include <cerrno>
 #include <deque>
@@ -29,10 +30,13 @@ namespace skyline::gpu::diagnostics {
             reported = false;
             startTime = std::chrono::steady_clock::now();
         } catch (...) {
+            skyline::diagnostics::Event("gpu_report_init_failed");
         }
     }
 
     void Record(std::string_view category, std::string_view message) noexcept {
+        skyline::diagnostics::Event(category, 0, 0, 0, message);
+        skyline::diagnostics::ObserveLog(category, message);
         try {
             std::scoped_lock lock{mutex};
             auto elapsedMs{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count()};
@@ -40,15 +44,20 @@ namespace skyline::gpu::diagnostics {
                 events.pop_front();
             events.push_back(fmt::format("[{:>8}ms] {:<9} {}", elapsedMs, category, message));
         } catch (...) {
-            // In particular, memory pressure while reporting a GPU failure is non-fatal.
+            skyline::diagnostics::Event("gpu_report_event_dropped");
         }
     }
 
     void DumpFaultReport(std::string_view reason) noexcept {
+        skyline::diagnostics::Event("gpu_fault", 0, 0, 0, reason);
+        skyline::diagnostics::RequestCapture();
         try {
             std::scoped_lock lock{mutex};
-            if (reported || path.empty())
+            if (reported) return;
+            if (path.empty()) {
+                skyline::diagnostics::Event("gpu_report_path_missing");
                 return;
+            }
 
             std::string report{fmt::format("===== GPU fault: {} =====\nThe {} most recent GPU events, oldest first:\n", reason, events.size())};
             for (const auto &event : events) {
@@ -69,9 +78,13 @@ namespace skyline::gpu::diagnostics {
                     offset += static_cast<size_t>(count);
                 }
                 reported = offset == report.size();
-                close(fd);
+                if (!reported) skyline::diagnostics::Event("gpu_report_write_failed", 0, offset, report.size());
+                if (close(fd) != 0) skyline::diagnostics::Event("gpu_report_close_failed", 0, static_cast<unsigned>(errno));
+            } else {
+                skyline::diagnostics::Event("gpu_report_open_failed", 0, static_cast<unsigned>(errno));
             }
         } catch (...) {
+            skyline::diagnostics::Event("gpu_report_failed");
         }
     }
 }

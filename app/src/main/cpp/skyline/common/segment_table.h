@@ -30,7 +30,7 @@ namespace skyline {
             SegmentType segment; //!< The segment associated with the entry, this is 0'd out if the entry is unset
         };
 
-        static constexpr size_t L2Size{1 << L2Bits}, L2Entries{util::DivideCeil(Size, L2Size)}, L1inL2Count{L1Size / L2Size};
+        static constexpr size_t L2Size{1 << L2Bits}, L2Entries{util::DivideCeil(Size, L2Size)}, L1inL2Count{L2Size / L1Size};
         span<RangeEntry, L2Entries> level2Table; //!< The second level of the segment table, this is the lowest granularity of the table
 
         template<typename Type, size_t Amount>
@@ -104,7 +104,7 @@ namespace skyline {
                     for (size_t i{l1StartPaddingStart}; i < l1StartPaddingEnd; i++)
                         level1Table[i] = segment;
 
-                    size_t l1L2End{l2AlignedAddress >> L1Bits};
+                    size_t l1L2End{std::min(l2AlignedAddress >> L1Bits, L1Entries)};
                     for (size_t i{l1StartPaddingEnd}; i < l1L2End; i++)
                         level1Table[i] = l2Entry.segment;
                 } else {
@@ -134,7 +134,7 @@ namespace skyline {
                     for (size_t i{l1EndPaddingStart}; i < l1EndPaddingEnd; i++)
                         level1Table[i] = segment;
 
-                    for (size_t i{l1EndPaddingEnd}; i < l1EndPaddingStart + L1inL2Count; i++)
+                    for (size_t i{l1EndPaddingEnd}; i < std::min(l1EndPaddingStart + L1inL2Count, L1Entries); i++)
                         level1Table[i] = l2Entry.segment;
                 } else {
                     for (size_t i{l1EndPaddingStart}; i < l1EndPaddingEnd; i++)

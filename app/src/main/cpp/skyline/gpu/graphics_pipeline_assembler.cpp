@@ -2,6 +2,8 @@
 // Copyright © 2022 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 #include <boost/functional/hash.hpp>
+#include <common/diagnostic_recorder.h>
+#include <system_error>
 #include <fstream>
 #include <filesystem>
 #include <gpu.h>
@@ -87,6 +89,8 @@ namespace skyline::gpu {
         stream.write(reinterpret_cast<char *>(&header), sizeof(PipelineCacheFileDataHeader));
         stream.write(reinterpret_cast<char *>(data.data()), static_cast<std::streamsize>(data.size()));
 
+        stream.flush();
+        if (!stream) { LOGW("Vulkan pipeline cache write failed: {}",path.string()); return; }
         LOGI("Wrote Vulkan pipeline cache to {} (size: 0x{:X} bytes)", path.string(), data.size());
     }
 
@@ -192,23 +196,36 @@ namespace skyline::gpu {
             .pSubpasses = &subpassDescription,
         }};
 
-        auto pipeline{gpu.vkDevice.createGraphicsPipeline(vkPipelineCache, vk::GraphicsPipelineCreateInfo{
-            .pStages = pipelineDescIt->shaderStages.data(),
-            .stageCount = static_cast<u32>(pipelineDescIt->shaderStages.size()),
-            .pVertexInputState = &pipelineDescIt->vertexState.get<vk::PipelineVertexInputStateCreateInfo>(),
-            .pInputAssemblyState = &pipelineDescIt->inputAssemblyState,
-            .pTessellationState = &pipelineDescIt->tessellationState,
-            .pViewportState = &pipelineDescIt->viewportState,
-            .pRasterizationState = &pipelineDescIt->rasterizationState.get<vk::PipelineRasterizationStateCreateInfo>(),
-            .pMultisampleState = &pipelineDescIt->multisampleState,
-            .pDepthStencilState = &pipelineDescIt->depthStencilState,
-            .pColorBlendState = &pipelineDescIt->colorBlendState,
-            .pDynamicState = &pipelineDescIt->dynamicState,
-            .layout = pipelineLayout,
-            .renderPass = *renderPass,
-            .subpass = 0,
-        })};
+        const auto diagnosticId=skyline::diagnostics::NewId();
+        skyline::diagnostics::Operation diagnosticOperation("pipeline_compile", diagnosticId, skyline::diagnostics::Timing::Pipeline);
+        auto pipeline{[&] {
+            try {
+                return gpu.vkDevice.createGraphicsPipeline(vkPipelineCache, vk::GraphicsPipelineCreateInfo{
+                    .pStages = pipelineDescIt->shaderStages.data(),
+                    .stageCount = static_cast<u32>(pipelineDescIt->shaderStages.size()),
+                    .pVertexInputState = &pipelineDescIt->vertexState.get<vk::PipelineVertexInputStateCreateInfo>(),
+                    .pInputAssemblyState = &pipelineDescIt->inputAssemblyState,
+                    .pTessellationState = &pipelineDescIt->tessellationState,
+                    .pViewportState = &pipelineDescIt->viewportState,
+                    .pRasterizationState = &pipelineDescIt->rasterizationState.get<vk::PipelineRasterizationStateCreateInfo>(),
+                    .pMultisampleState = &pipelineDescIt->multisampleState,
+                    .pDepthStencilState = &pipelineDescIt->depthStencilState,
+                    .pColorBlendState = &pipelineDescIt->colorBlendState,
+                    .pDynamicState = &pipelineDescIt->dynamicState,
+                    .layout = pipelineLayout,
+                    .renderPass = *renderPass,
+                    .subpass = 0,
+                });
+            } catch (const std::system_error &error) {
+                skyline::diagnostics::Event("pipeline_create_failed", diagnosticId, static_cast<std::uint64_t>(error.code().value()), 0, error.what());
+                throw;
+            } catch (const std::exception &error) {
+                skyline::diagnostics::Event("pipeline_create_failed", diagnosticId, 0, 0, error.what());
+                throw;
+            }
+        }()};
 
+        diagnosticOperation.Finish(0,"graphics_pipeline_created");
         if (pipelineDescIt->destroyShaderModules)
             for (auto &shaderStage : pipelineDescIt->shaderStages)
                 (*gpu.vkDevice).destroyShaderModule(shaderStage.module, nullptr,  *gpu.vkDevice.getDispatcher());

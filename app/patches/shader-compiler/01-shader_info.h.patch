@@ -1,0 +1,33 @@
+diff --git a/shader_info.h b/shader_info.h
+index 7744514..80d3658 100644
+--- a/shader_info.h
++++ b/shader_info.h
+@@ -78,6 +78,8 @@ struct StorageBufferDescriptor {
+     auto operator<=>(const StorageBufferDescriptor&) const = default;
+ };
+ 
++enum class ImageNumericType : u32 { UnsignedInt, SignedInt, Float };
++
+ struct TextureBufferDescriptor {
+     bool has_secondary;
+     u32 cbuf_index;
+@@ -89,6 +91,9 @@ struct TextureBufferDescriptor {
+     u32 count;
+     u32 size_shift;
+ 
++    // Specialized from the bound TIC before compiling compute shaders.
++    ImageNumericType numeric_type{ImageNumericType::Float};
++
+     auto operator<=>(const TextureBufferDescriptor&) const = default;
+ };
+ using TextureBufferDescriptors = boost::container::small_vector<TextureBufferDescriptor, 6>;
+@@ -102,6 +107,9 @@ struct ImageBufferDescriptor {
+     u32 count;
+     u32 size_shift;
+ 
++    // Selected from the bound TIC for formatless storage buffer accesses.
++    ImageNumericType numeric_type{ImageNumericType::UnsignedInt};
++
+     auto operator<=>(const ImageBufferDescriptor&) const = default;
+ };
+ using ImageBufferDescriptors = boost::container::small_vector<ImageBufferDescriptor, 2>;

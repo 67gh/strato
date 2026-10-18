@@ -1,0 +1,58 @@
+STRATO — PROJET COMPLET AVEC CORRECTIFS C++ / LOGGER
+18 octobre 2026 (Libreville)
+
+CONTENU ET UTILISATION
+Cette archive reprend toute la copie de travail du projet Strato, avec les changements cumulés précédents et ceux de ce lot. Ce n’est plus un ZIP différentiel, conformément à la dernière demande.
+Décompresser dans un nouveau dossier puis utiliser le dossier strato. Les sous-modules absents des sources reçues restent à initialiser selon le workflow du projet ; cette archive n’invente pas leurs fichiers et ne constitue pas un APK compilé.
+Le ZIP joint de référence est inchangé : SHA256 0039e61041590a8111acbb5a2497a114f03ecce156bfe46618cb6016a68099df.
+Le manifeste cumulatif indique les fichiers ajoutés/modifiés/absents par rapport à cette référence. Le manifeste du lot ne couvre que les 25 fichiers modifiés maintenant.
+
+CORRECTIONS RETENUES ET CERTITUDE
+B01/B02 : bornes demi-ouvertes et translation d’intervalles ; contrat testé sur hôte.
+B03 : lecture cohérente shadow/mirror sans écrire mirror utilisé par GPU ; corps réel testé avec GPU simulé.
+B04 : propriété VMA dans les affectations move ; corps réels testés avec destructeurs VMA simulés.
+B05 : un seul callback GPU quand buffer GpuDirty ; testé sur fixture.
+B06 : arrêt du parcours arrière selon invariant de mappings disjoints ; revue du code, pas benchmark.
+H01 : accès TIPC au bon identifiant sans payload ; testé avec payload nul.
+L01–L08 : nouveau writer borné, arrêt drain/join, seuil central, propriété chaînes, quotas/rate limit, TID/composant/site, gestion erreur fichier. Tests hôte réels du logger PASS.
+T01 : protocole de fermeture de queue et réveil du waiter vide. Un waiter déjà bloqué dans une fence peut encore bloquer l’arrêt.
+N02 : compteur fallback ramené à l’unité invitée 19,2 MHz via util::GetTimeTicks. Revue statique seulement ; comportement réel à confirmer.
+D09 : conversions explicites des tailles plafonnées du diagnostic device-fault ; vérifié par lecture.
+
+LOGGER ET DIAGNOSTIC
+- File texte 1024 messages ; 64 places réservées aux avertissements/erreurs ; producteurs n’attendent pas l’espace libre ni les E/S. Un message peut être perdu par contention ou saturation, et les pertes sont comptées.
+- Seuil Disabled appliqué aux appels directs et macros. LOGT correspond à Verbose pour préserver les valeurs des réglages existants.
+- Jusqu’à 8 messages/seconde par site, puis résumé des répétitions ; table limitée à 1024 clés. Les messages variables d’un même site partagent la limite.
+- Horodatage monotone en microsecondes, niveau, nom/TID du thread, composant et fichier:ligne. Vidange périodique, sortie logcat de secours si fichier indisponible.
+- Finalize(false), comme true, attend maintenant la vidange et la fin du writer. Cette attente est volontaire à l’arrêt.
+- Registre unsupported indépendant du filtre texte pour les marqueurs instrumentés ; 88 corps de service success-only recensés. Un succès sans action peut être intentionnel et n’est pas une preuve de panne.
+- IPC : commande, service, taille arguments, code brut, durée ; en Verbose, au plus 32 octets bruts et nombres de buffers. SVC : x0–x5 bruts à l’entrée/sortie en Verbose, terminaison exceptionnelle et durée. Pas de décodage métier exhaustif des arguments.
+- Shaders/pipelines : scopes CPU début/fin/échec, message d’exception, captures d’artefacts sur worker. La traduction frontend n’est pas intégralement couverte.
+- Validation Vulkan : événement brut existant conservé et décision de filtrage enregistrée. Couche/extension effective dépend toujours de l’appareil et des réglages.
+- Captures : au plus 64 éléments / 8 MiB en attente, plus jusqu’à 8 MiB du lot en cours d’écriture. Budget disque 32 MiB, 4 MiB par artefact, 512 fichiers. Les pertes sont signalées.
+- performance_summary.json contient des quantiles approximatifs par histogramme logarithmique, cumulés sur la session, de durées CPU et d’intervalles de présentation. Ce ne sont pas des timestamps GPU. La catégorie fence_wait est réservée, non alimentée dans ce lot.
+- gpu_mappings.json précise la portée et les pertes : observed_updates_complete ne vérifie pas les pages effectives ni les permissions.
+- Erreurs d’export GPU/modules visibles. Le handler de crash reste minimal ; native_crash.bin n’est pas un tombstone complet.
+
+TESTS RÉALISÉS
+G++ C++20, AddressSanitizer et UndefinedBehaviorSanitizer, detect_leaks=0 (LeakSanitizer non utilisable dans cet environnement).
+1. Logger et recorder réels, diagnostic_crash.cpp et gpu/diagnostics.cpp réels : lifecycle, seuils, Disabled, répétitions, 8 producteurs, arrêt concurrent, ouverture fichier impossible, queue artefacts vidée, JSON, catalogue, exception enregistrée, capture brute 96 octets et échec d’export GPU : PASS.
+   Shim Android logcat ; GetStackFrames hôte simulé vide. Ce test ne charge pas Vulkan.
+2. IntervalList et CircularQueue extraits des headers : 768 000 comparaisons de plages, bornes, fusion, vide/plein, drainage, 3 producteurs/3 consommateurs, 100 fermetures avec producteur, Process avec 4 producteurs : PASS.
+   SpinLock remplacé par std::mutex ; pas de test des instructions ARM du verrou.
+3. Fonctions de buffers et propriétaires VMA extraites : handles/libérations et synchronisation GPU simulés ; transfert, auto-affectation, shadow/gaps, copie unique : PASS.
+4. Corps StubFunction extrait : HIPC et TIPC payload nul : PASS.
+5. Catalogue : 88 entrées toujours en accord avec les corps source, recherches positives et négative : PASS.
+Les sources des fixtures, sorties et commandes de reproduction figurent dans verification/. Pas de prétention à un build du projet entier.
+
+CE QUI RESTE À FAIRE / NON VÉRIFIÉ
+- N01 : validité des pages réellement mappées dans le fallback SIGILL, permissions et remapping concurrent ; changer arbitrairement le mapping serait dangereux pour la cohérence de l’émulation.
+- T02 : Wait pouvant lever dans le destructeur FenceCycle ; ne pas simplement avaler l’exception et libérer des ressources potentiellement encore utilisées par le GPU.
+- V01 : NVDEC/VIC ne sont pas devenus des décodeurs/compositeurs fonctionnels. Les cinématiques ne sont donc pas annoncées corrigées.
+- Pas de compilation Android NDK complète (NDK/CMake/Ninja absents ici), ni APK installé, ADB, jeu, driver Turnip/Adreno, couche Vulkan réelle, test disque plein ou benchmark sur téléphone.
+- Pas de preuve que les défauts corrigés expliquent exactement Dragon Ball, Zelda ou Hollow Knight. Il faut de nouveaux diagnostics de la même scène après compilation.
+- Pas de garantie de coût nul : formatage, allocations et copie de captures ont un coût CPU, malgré l’absence d’attente disque dans les producteurs du logger.
+- Audit manuel intégral des 625 fichiers non terminé ; instrumentation typée de tous les services/SVC, tous TODO/returns silencieux et tous verrous non achevée. Les inventaires ne sont pas une liste de bugs confirmés.
+- Le callback de lecture GPU-dirty de conversion des indices de quads et la récupération device-lost demandent encore une revue d’intégration.
+
+Les verdicts détaillés par fichier distinguent logique, cas limites et compatibilité. Les anciens rapports d’audit sont historiques ; le présent bilan et la dernière section des journaux décrivent la livraison actuelle.

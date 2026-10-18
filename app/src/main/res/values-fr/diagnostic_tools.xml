@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="diagnostic_capture_title">Diagnostic</string>
+    <string name="diagnostic_capture_now">Capturer le problème maintenant</string>
+    <string name="diagnostic_capture_gpu">Capturer un lot GPU (RenderDoc requis)</string>
+    <string name="diagnostic_capture_requested">Demande %1$d enregistrée. Attends quelques secondes, puis exporte cette session depuis Diagnostics.</string>
+    <string name="diagnostic_capture_unavailable">Les diagnostics natifs ne sont pas encore actifs.</string>
+    <string name="diagnostic_options_title">Validation — prochain lancement</string>
+    <string name="diagnostic_validation_off">Désactivée (par défaut)</string>
+    <string name="diagnostic_validation_core">Validation Vulkan (couche installée requise)</string>
+    <string name="diagnostic_validation_sync">Vulkan + synchronisation (plus lent)</string>
+    <string name="diagnostic_validation_gpu">Vulkan + assistance GPU (beaucoup plus lent)</string>
+    <string name="diagnostic_shader_options">Options de capture des shaders</string>
+    <string name="diagnostic_save_shaders">Conserver shaders invités, IR et SPIR-V (32 Mio maximum)</string>
+</resources>

@@ -1,0 +1,46 @@
+REFONTE DU SYSTÈME DE MISE À JOUR STRATO — 15 octobre 2026
+
+Installation du correctif
+Extraire cette archive à la racine de votre projet actuel contenant les correctifs précédents. app/ et tools/ fusionnent avec les dossiers existants. Ajouter aussi les nouveaux fichiers à votre commit avant de relancer le workflow Android.
+Cette archive contient uniquement les fichiers nouveaux ou modifiés pour la mise à jour, les comptes rendus et les tests. Elle ne remplace pas le précédent correctif de compilation shader-compiler.
+
+Fonctionnement
+Les recherches de mises à jour automatique et manuelle, le dépôt GitHub configuré et la gestion des pré-releases sont conservés. Le téléchargement commence depuis les boutons existants.
+Un nouvel écran affiche téléchargement, extraction éventuelle du ZIP, vérification de l’APK, puis le bouton Installer la mise à jour. La taille inconnue affiche les Kio reçus avec barre indéterminée. Fermer ou revenir en arrière annule la préparation ; une erreur propose Réessayer.
+La rotation conserve le téléchargement via ViewModel. Un APK complet en cache est récupéré au prochain lancement du même téléchargement. Une préparation interrompue par arrêt du processus redémarre : aucune reprise HTTP au dernier octet ni service persistant en arrière-plan n’est implémenté.
+Au clic Installer, l’autorisation Android est proposée si nécessaire. Le retour autorisé reprend l’installation ; un refus conserve l’APK pour réessayer. L’installateur Android demande la confirmation normale. Son ouverture n’est pas annoncée comme une installation réussie.
+Si Android restaure le parcours après remplacement de Strato, la hausse réelle de la version installée est reconnue et évite de télécharger à nouveau la même release. MY_PACKAGE_REPLACED nettoie le cache des mises à jour après remplacement de cette application uniquement.
+Le fichier doit être un APK lisible, de la même variante/package et d’un versionCode supérieur. Aucun changement keystore, signature ou configuration de sécurité. La publication des futures builds doit donc continuer à augmenter versionCode.
+
+Ce qui change techniquement
+UpdateInstaller.kt devient une façade compatible avec ses deux appelants.
+Nouveaux composants updater/ : APKDownloader, UpdateFiles, APKInstaller, UpdateViewModel, UpdateActivity et AppInstallReceiver.
+Téléchargement HTTP direct avec timeouts, fermeture des flux, annulation et fichier .part. Plus de receiver de fin de DownloadManager ni boucle de polling infinie.
+ZIP lu via son annuaire central, un seul APK exigé, taille et CRC vérifiés, une seule extraction. Buffers de 64 Kio et progression limitée à environ dix notifications par seconde. Plafond de 2 Gio par fichier.
+La préparation des fichiers est sérialisée pour qu’une ancienne tentative annulée ne supprime pas les fichiers de la suivante. Les données temporaires sont dans le cache privé de l’application, exposées à l’installateur par le FileProvider existant.
+Textes de l’écran en français et en anglais, défilement pour petits écrans/grandes polices. Aucune dépendance Gradle ajoutée.
+
+Inspiration fournie
+updater.zip contient APKDownloader.kt, APKInstaller.kt et AppInstallReceiver.kt. Son découpage a servi de référence ; le code livré est une réécriture pour Strato. Le package org.yuzu.yuzu_emu, GlobalScope et le receiver générique de toute installation ne sont pas utilisés.
+Constats sur la référence : division par Content-Length nul/inconnu ; fermeture incomplète des flux en erreur ; client HTTP recréé à chaque appel ; absence d’annulation ; receiver enregistré après lancement ; succès déclenché pour toute application installée ; perte du callback lors du remplacement du processus.
+
+Vérifications effectuées
+- 14 groupes de tests JVM passent sur les vraies classes de transfert/extraction : HTTP normal, longueur inconnue, redirection, 503, vide, tronqué, limite, annulations, APK ZIP imbriqué, aucun/multiples APK, archive cassée et CRC incorrect. Serveur HTTP local ; aucun APK n’est installé par les tests.
+- Les sept classes Kotlin de production concernées compilent avec Kotlin 1.9.22, Java 17, les bibliothèques AndroidX aux versions du projet et les API Android 14 fournies par android-all. R est généré pour cette compilation ciblée à partir des noms des ressources ; ce contrôle n’est pas un build Gradle/AAPT/NDK complet.
+- XML valides ; ressources EN/FR et paramètres de format cohérents ; activité et receiver déclarés une fois ; FileProvider updates et diagnostics conservés.
+- Analyse consignée avant chaque édition et trois lectures intégrales automatisées après chaque écriture ; revue de logique en complément. Les empreintes sont dans le journal de vérification. Ces lectures ne constituent pas trois audits humains indépendants.
+
+Vérifications restant sur téléphone
+Compiler l’APK complet, puis essayer une mise à jour signée normalement depuis une ancienne version de la même variante.
+Pendant téléchargement : rotation, connexion coupée, retour/annulation, réouverture et téléchargement sans taille annoncée.
+Pendant installation : refuser puis accepter l’autorisation, annuler l’installateur puis le rouvrir, terminer la mise à jour, relancer Strato et vérifier le nettoyage du cache.
+Essayer aussi une archive corrompue, un mauvais package et un APK ancien pour vérifier les messages. Aucun test d’installation ou d’interface Android sur appareil n’a été exécuté ici.
+
+Relancer les tests de transfert
+Voir tools/updater_tests/run.py : Java 17 et six JAR Kotlin/outils aux versions documentées dans ce fichier, puis :
+python tools/updater_tests/run.py --dependencies /chemin/vers/les/jars
+
+Références Android consultées
+https://developer.android.com/reference/android/content/pm/PackageManager#canRequestPackageInstalls()
+https://developer.android.com/reference/android/content/Intent#ACTION_MY_PACKAGE_REPLACED
+https://developer.android.com/topic/libraries/architecture/views/viewmodel

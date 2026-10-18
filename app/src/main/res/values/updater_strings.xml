@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="up_title">Strato update</string>
+    <string name="up_close">Close / cancel</string>
+    <string name="up_retry">Try again</string>
+    <string name="up_install">Install update</string>
+    <string name="up_preparing">Preparing update…</string>
+    <string name="up_downloading">Downloading</string>
+    <string name="up_extracting">Extracting APK</string>
+    <string name="up_progress">%1$s — %2$d%%</string>
+    <string name="up_unknown_progress">%1$s — %2$d KiB received</string>
+    <string name="up_validating">Checking the downloaded APK…</string>
+    <string name="up_ready">The update is ready. Tap Install update to continue.</string>
+    <string name="up_installer_opened">Confirm the update in the Android installer. If you cancelled it, you can open it again here.</string>
+    <string name="up_cancelled">Download cancelled. You can try again.</string>
+    <string name="up_permission_needed">Allow Strato to install apps in Android settings, then tap Install update again.</string>
+    <string name="up_download_error">Download failed. Check your connection and free storage, then try again.</string>
+    <string name="up_extract_error">The update archive could not be read. Check free storage and download it again.</string>
+    <string name="up_invalid_apk">Android could not read this APK. The file may be incomplete or the release may contain a ZIP or web page instead of an APK. Download the release APK again.</string>
+    <string name="up_wrong_variant">This APK is for %1$s, but the installed app is %2$s. Download an APK for the same Strato variant.</string>
+    <string name="up_older_apk">The downloaded APK has version code %1$d; the installed app has %2$d. Publish a build with an equal or higher version code.</string>
+    <string name="up_installed">Strato was updated successfully.</string>
+    <string name="up_staging">Preparing the Android installation…</string>
+    <string name="up_download_again">Download a fresh copy</string>
+    <string name="up_payload_error">The downloaded data could not be read as a complete APK. Details below.</string>
+    <string name="up_validation_error">APK metadata check failed. Details below.</string>
+    <string name="up_install_conflict">Android reports a conflict with an installed application (for example, different signing certificates). Details below.</string>
+    <string name="up_install_incompatible">Android reports an incompatible APK for this device. Details below.</string>
+    <string name="up_install_storage">Android could not install because of a storage problem. Details below.</string>
+    <string name="up_install_aborted">Installation was cancelled. You can retry.</string>
+    <string name="up_install_blocked">Android blocked installation. Details below.</string>
+    <string name="up_install_invalid">Android rejected the APK. The system reason is shown below.</string>
+    <string name="up_install_interrupted">Installation preparation was interrupted. Try again.</string>
+</resources>

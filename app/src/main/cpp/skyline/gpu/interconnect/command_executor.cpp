@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
+#include <common/diagnostic_session.h>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -100,6 +102,8 @@ namespace skyline::gpu::interconnect {
     }
 
     void CommandRecordThread::ProcessSlot(Slot *slot) {
+        skyline::diagnostics::Scope diagnosticScope(slot->cycle->diagnosticId);
+        skyline::diagnostics::Event("record_batch_begin", slot->cycle->diagnosticId);
         TRACE_EVENT_FMT("gpu", "ProcessSlot: {}, execution: {}", fmt::ptr(slot), u64{slot->executionTag});
         auto &gpu{*state.gpu};
 
@@ -177,10 +181,15 @@ namespace skyline::gpu::interconnect {
         RENDERDOC_API_1_4_2 *renderDocApi{};
         if (void *mod{dlopen("libVkLayer_GLES_RenderDoc.so", RTLD_NOW | RTLD_NOLOAD)}) {
             auto *pfnGetApi{reinterpret_cast<pRENDERDOC_GetAPI>(dlsym(mod, "RENDERDOC_GetAPI"))};
-            if (int ret{pfnGetApi(eRENDERDOC_API_Version_1_4_2, (void **)&renderDocApi)}; ret != 1)
+            if (int ret{pfnGetApi ? pfnGetApi(eRENDERDOC_API_Version_1_4_2, (void **)&renderDocApi) : 0}; ret != 1)
                 LOGW("Failed to intialise RenderDoc API: {}", ret);
         }
 
+        skyline::diagnostics::Feature("renderdoc", renderDocApi ? "available; captures one executor command batch on request" : "unavailable; launch with RenderDoc injected; no capture produced");
+        if (renderDocApi) {
+            auto capturePath = skyline::diagnostics::OutputPath("frame", {});
+            if (!capturePath.empty()) renderDocApi->SetCaptureFilePathTemplate(capturePath.c_str());
+        }
         outgoing.Push(&slots.emplace_back(gpu));
 
         if (int result{pthread_setname_np(pthread_self(), "Sky-CmdRecord")})
@@ -191,13 +200,24 @@ namespace skyline::gpu::interconnect {
             incoming.Process([this, renderDocApi, &gpu](Slot *slot) {
                 idle = false;
                 VkInstance instance{*gpu.vkInstance};
-                if (renderDocApi && slot->capture)
+                slot->capture = skyline::diagnostics::ConsumeFrameCapture() || slot->capture;
+                bool ownCapture = renderDocApi && slot->capture && !renderDocApi->IsFrameCapturing();
+                if (slot->capture && !renderDocApi)
+                    skyline::diagnostics::Event("renderdoc_unavailable");
+                if (ownCapture)
                     renderDocApi->StartFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(instance), nullptr);
 
-                ProcessSlot(slot);
-
-                if (renderDocApi && slot->capture)
-                    renderDocApi->EndFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(instance), nullptr);
+                ownCapture = ownCapture && renderDocApi->IsFrameCapturing();
+                try { ProcessSlot(slot); } catch (...) {
+                    if (ownCapture) renderDocApi->DiscardFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(instance), nullptr);
+                    throw;
+                }
+                if (ownCapture) {
+                    bool captured = renderDocApi->EndFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(instance), nullptr) == 1;
+                    skyline::diagnostics::Feature("renderdoc", captured ? "command_batch_captured; inspect frame*.rdc" : "capture_failed");
+                    skyline::diagnostics::Event(captured ? "renderdoc_saved" : "renderdoc_failed", slot->cycle->diagnosticId);
+                    skyline::diagnostics::RequestCapture();
+                }
                 slot->capture = false;
 
                 if (slot->didWait && (slots.size() + 1) < (1U << *state.settings->executorSlotCountScale)) {

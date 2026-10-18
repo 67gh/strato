@@ -18,5 +18,7 @@ namespace skyline::soc {
      * @brief The SMMU (System Memory Management Unit) class handles mapping between the host1x peripheral virtual address space and an application's address space
      * @note The SMMU is implemented entirely as a template specialization over FlatMemoryManager
      */
-    using SMMU = FlatMemoryManager<u32, 0, SmmuAddressSpaceBits, SmmuPageSizeBits, SmmuL2PageSizeBits>;
+    // Keep a 32-bit guest address space, but represent its exclusive end (2^32)
+    // and block boundaries in 64 bits. A u32 limit would wrap to zero.
+    using SMMU = FlatMemoryManager<u64, 0, SmmuAddressSpaceBits, SmmuPageSizeBits, SmmuL2PageSizeBits>;
 }

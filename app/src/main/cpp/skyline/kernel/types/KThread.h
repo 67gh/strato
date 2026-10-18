@@ -4,6 +4,7 @@
 #pragma once
 
 #include <csetjmp>
+#include <condition_variable>
 #include <nce/guest.h>
 #include <kernel/scheduler.h>
 #include <common/signal.h>
@@ -46,7 +47,7 @@ namespace skyline {
             u64 entryArgument; //!< An argument to provide with to the thread entry function
             void *stackTop; //!< The top of the guest's stack, this is set to the initial guest stack pointer
 
-            AdaptiveSingleWaiterConditionVariable scheduleCondition; //!< Signalled to wake the thread when it's scheduled or its resident core changes
+            std::condition_variable_any scheduleCondition; //!< Sleep without active polling until scheduled or migrated; supports the core SpinLock
             std::atomic<i8> basePriority; //!< The priority of the thread for the scheduler without any priority-inheritance
             std::atomic<i8> priority; //!< The priority of the thread for the scheduler including priority-inheritance
 

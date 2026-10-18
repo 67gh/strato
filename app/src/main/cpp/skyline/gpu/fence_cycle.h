@@ -3,12 +3,14 @@
 
 #pragma once
 
+#include <common/diagnostic_recorder.h>
 #include <condition_variable>
 #include <vulkan/vulkan_raii.hpp>
 #include <common.h>
 #include <common/spin_lock.h>
 #include <common/atomic_forward_list.h>
 #include "diagnostics.h"
+#include "diagnostic_device_fault.h"
 
 namespace skyline::gpu {
     class CommandScheduler;
@@ -20,6 +22,10 @@ namespace skyline::gpu {
      */
     struct FenceCycle {
       private:
+        std::atomic_flag diagnosticCompleted{};
+        void ReportCompletion() noexcept {
+            if (!diagnosticCompleted.test_and_set()) skyline::diagnostics::Completed(diagnosticId);
+        }
         std::atomic_flag signalled{}; //!< If the underlying fence has been signalled since the creation of this FenceCycle, this doesn't necessarily mean the dependencies have been destroyed
         std::atomic_flag alreadyDestroyed{}; //!< If the cycle's dependencies are already destroyed, this prevents multiple destructions
         const vk::raii::Device &device;
@@ -51,6 +57,7 @@ namespace skyline::gpu {
         }
 
       public:
+        const skyline::diagnostics::Id diagnosticId{skyline::diagnostics::NewId()};
         FenceCycle(const vk::raii::Device &device, vk::Fence fence, vk::Semaphore semaphore, bool signalled = false) : signalled{signalled}, device{device}, fence{fence}, semaphore{semaphore}, nextSemaphoreSubmitWait{!signalled} {
             if (!signalled)
                 device.resetFences(fence);
@@ -68,7 +75,12 @@ namespace skyline::gpu {
          * @brief Signals this fence regardless of if the underlying fence has been signalled or not
          */
         void Cancel() {
-            signalled.test_and_set(std::memory_order_release);
+            skyline::diagnostics::Event("fence_cancelled", diagnosticId);
+            {
+                std::scoped_lock lock{mutex};
+                signalled.test_and_set(std::memory_order_release);
+            }
+            submitCondition.notify_all();
             DestroyDependencies();
         }
 
@@ -123,7 +135,7 @@ namespace skyline::gpu {
             }
             lock.lock();
 
-            submitCondition.wait(lock, [this] { return submitted; });
+            submitCondition.wait(lock, [this] { return submitted || signalled.test(std::memory_order_acquire); });
         }
 
         /**
@@ -148,7 +160,8 @@ namespace skyline::gpu {
 
             std::unique_lock lock{mutex};
 
-            submitCondition.wait(lock, [&] { return submitted; });
+            skyline::diagnostics::Event("fence_wait_begin", diagnosticId);
+            submitCondition.wait(lock, [&] { return submitted || signalled.test(std::memory_order_acquire); });
 
             if (signalled.test(std::memory_order_relaxed)) {
                 if (shouldDestroy)
@@ -166,10 +179,12 @@ namespace skyline::gpu {
                     // eErrorInitializationFailed occurs on Mali GPU drivers due to them using the ppoll() syscall which isn't correctly restarted after a signal, we need to manually retry waiting in that case
                     continue;
 
+                if (waitResult == vk::Result::eErrorDeviceLost) diagnostics::CaptureDeviceFault(static_cast<VkDevice>(*device));
                 diagnostics::DumpFaultReport(fmt::format("waiting for a fence failed: {}", vk::to_string(waitResult)));
                 throw exception("An error occurred while waiting for fence {}: {}", fmt::ptr(static_cast<VkFence>(fence)), vk::to_string(waitResult));
             }
 
+            ReportCompletion();
             if (semaphoreUnsignalCycle)
                 semaphoreUnsignalCycle->Wait();
 
@@ -221,6 +236,7 @@ namespace skyline::gpu {
 
             auto status{(*device).getFenceStatus(fence, *device.getDispatcher())};
             if (status == vk::Result::eSuccess) {
+                ReportCompletion();
                 if (semaphoreUnsignalCycle && !semaphoreUnsignalCycle->Poll())
                     return false;
 
@@ -257,6 +273,7 @@ namespace skyline::gpu {
         void ChainCycle(const std::shared_ptr<FenceCycle> &cycle) {
             if (cycle && !signalled.test(std::memory_order_consume) && cycle.get() != this && !cycle->Poll()) {
                 std::shared_lock lock{chainMutex};
+                skyline::diagnostics::Event("fence_dependency", diagnosticId, cycle->diagnosticId);
                 chainedCycles.Append(cycle); // If the cycle isn't the current cycle or already signalled, we need to chain it
             }
         }
@@ -267,6 +284,7 @@ namespace skyline::gpu {
         void NotifySubmitted() {
             std::scoped_lock lock{mutex};
             submitted = true;
+            skyline::diagnostics::Submitted(diagnosticId);
             submitCondition.notify_all();
         }
     };

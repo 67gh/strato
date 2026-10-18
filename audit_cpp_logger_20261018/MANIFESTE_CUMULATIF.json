@@ -1,0 +1,3402 @@
+{
+  "reference_zip_sha256": "0039e61041590a8111acbb5a2497a114f03ecce156bfe46618cb6016a68099df",
+  "current_file_count": 2539,
+  "added": [
+    {
+      "path": ".git/modules/Shader Compiler/HEAD",
+      "sha256": "b472aa9df4d442db4f1113ea2b8782cb2dd895cf1a857afe6df50b9f7367967f"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/config",
+      "sha256": "8410c7c06df76e271f464c2ee34addd78a851e2f4c9848e11bfb276d08115e99"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/description",
+      "sha256": "85ab6c163d43a17ea9cf7788308bca1466f1b0a8d1cc92e26e9bf63da4062aee"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/applypatch-msg.sample",
+      "sha256": "0223497a0b8b033aa58a3a521b8629869386cf7ab0e2f101963d328aa62193f7"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/commit-msg.sample",
+      "sha256": "1f74d5e9292979b573ebd59741d46cb93ff391acdd083d340b94370753d92437"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/fsmonitor-watchman.sample",
+      "sha256": "e0549964e93897b519bd8e333c037e51fff0f88ba13e086a331592bf801fa1d0"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/post-update.sample",
+      "sha256": "81765af2daef323061dcbc5e61fc16481cb74b3bac9ad8a174b186523586f6c5"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/pre-applypatch.sample",
+      "sha256": "e15c5b469ea3e0a695bea6f2c82bcf8e62821074939ddd85b77e0007ff165475"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/pre-commit.sample",
+      "sha256": "57185b7b9f05239d7ab52db045f5b89eb31348d7b2177eab214f5eb872e1971b"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/pre-merge-commit.sample",
+      "sha256": "d3825a70337940ebbd0a5c072984e13245920cdf8898bd225c8d27a6dfc9cb53"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/pre-push.sample",
+      "sha256": "ecce9c7e04d3f5dd9d8ada81753dd1d549a9634b26770042b58dda00217d086a"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/pre-rebase.sample",
+      "sha256": "4febce867790052338076f4e66cc47efb14879d18097d1d61c8261859eaaa7b3"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/pre-receive.sample",
+      "sha256": "a4c3d2b9c7bb3fd8d1441c31bd4ee71a595d66b44fcf49ddb310252320169989"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/prepare-commit-msg.sample",
+      "sha256": "e9ddcaa4189fddd25ed97fc8c789eca7b6ca16390b2392ae3276f0c8e1aa4619"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/push-to-checkout.sample",
+      "sha256": "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/sendemail-validate.sample",
+      "sha256": "44ebfc923dc5466bc009602f0ecf067b9c65459abfe8868ddc49b78e6ced7a92"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/hooks/update.sample",
+      "sha256": "8d5f2fa83e103cf08b57eaa67521df9194f45cbdbcb37da52ad586097a14d106"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/index",
+      "sha256": "aac09d113e6de253f5db97b9d0fad8919fa699b0694f2819c1540d598b96ad62"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/info/exclude",
+      "sha256": "6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/logs/HEAD",
+      "sha256": "063d2e32b81ee2b35e70acec8b49bda4b656b6f1ab35bf83c8cefebbf7497305"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/logs/refs/heads/master",
+      "sha256": "2af5c4eeca00f244b254b1c3098a1275b06c8b45ede22b7a24628305496e9070"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/logs/refs/remotes/origin/HEAD",
+      "sha256": "2af5c4eeca00f244b254b1c3098a1275b06c8b45ede22b7a24628305496e9070"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/objects/pack/pack-d8f1924417efae41fbebd60b5e91845f6d834c6b.idx",
+      "sha256": "d1d2f4ac5d2dc2a1ed90713bee13ad8cc12ed1f18bd9893dd974032629df9402"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/objects/pack/pack-d8f1924417efae41fbebd60b5e91845f6d834c6b.pack",
+      "sha256": "53bb9967a1fcb5d3ac79e38b6ed403b545fce9ab0eb125a7ca5ff5c249205dde"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/objects/pack/pack-d8f1924417efae41fbebd60b5e91845f6d834c6b.rev",
+      "sha256": "960854b43ea0a737e562e5890bd3ff29a6ad14975f5eb9132900288f41c98fef"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/packed-refs",
+      "sha256": "8e88f73a6d095ac7987526636c08cb39a879d1e66c38f853b47b6bf1c10fe3de"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/refs/heads/master",
+      "sha256": "b472aa9df4d442db4f1113ea2b8782cb2dd895cf1a857afe6df50b9f7367967f"
+    },
+    {
+      "path": ".git/modules/Shader Compiler/refs/remotes/origin/HEAD",
+      "sha256": "cdc65e67690c4c6475174e5ec662b70655246a2f3924354778835ab3be70aa76"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/HEAD",
+      "sha256": "551375efb0b9cb197868ba91f714ab09271d8b1e3f774709bae320fcf14ef5a8"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/config",
+      "sha256": "0edb8d716a22cfd071d4e850e2188c6dac71fbc6aba7bd5fc584e817c2fb4754"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/description",
+      "sha256": "85ab6c163d43a17ea9cf7788308bca1466f1b0a8d1cc92e26e9bf63da4062aee"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/applypatch-msg.sample",
+      "sha256": "0223497a0b8b033aa58a3a521b8629869386cf7ab0e2f101963d328aa62193f7"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/commit-msg.sample",
+      "sha256": "1f74d5e9292979b573ebd59741d46cb93ff391acdd083d340b94370753d92437"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/fsmonitor-watchman.sample",
+      "sha256": "e0549964e93897b519bd8e333c037e51fff0f88ba13e086a331592bf801fa1d0"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/post-update.sample",
+      "sha256": "81765af2daef323061dcbc5e61fc16481cb74b3bac9ad8a174b186523586f6c5"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/pre-applypatch.sample",
+      "sha256": "e15c5b469ea3e0a695bea6f2c82bcf8e62821074939ddd85b77e0007ff165475"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/pre-commit.sample",
+      "sha256": "57185b7b9f05239d7ab52db045f5b89eb31348d7b2177eab214f5eb872e1971b"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/pre-merge-commit.sample",
+      "sha256": "d3825a70337940ebbd0a5c072984e13245920cdf8898bd225c8d27a6dfc9cb53"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/pre-push.sample",
+      "sha256": "ecce9c7e04d3f5dd9d8ada81753dd1d549a9634b26770042b58dda00217d086a"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/pre-rebase.sample",
+      "sha256": "4febce867790052338076f4e66cc47efb14879d18097d1d61c8261859eaaa7b3"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/pre-receive.sample",
+      "sha256": "a4c3d2b9c7bb3fd8d1441c31bd4ee71a595d66b44fcf49ddb310252320169989"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/prepare-commit-msg.sample",
+      "sha256": "e9ddcaa4189fddd25ed97fc8c789eca7b6ca16390b2392ae3276f0c8e1aa4619"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/push-to-checkout.sample",
+      "sha256": "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/sendemail-validate.sample",
+      "sha256": "44ebfc923dc5466bc009602f0ecf067b9c65459abfe8868ddc49b78e6ced7a92"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/hooks/update.sample",
+      "sha256": "8d5f2fa83e103cf08b57eaa67521df9194f45cbdbcb37da52ad586097a14d106"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/index",
+      "sha256": "3bf3e86fba0a87750fc553c37985b41df0eb2cc3c07a2376f668ac8cec8706e7"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/info/exclude",
+      "sha256": "6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/logs/HEAD",
+      "sha256": "263efa35772514f1824cf2af2b2ebe24c1bf2d9b351a01a7d9d97a675e2854dc"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/logs/refs/heads/main",
+      "sha256": "764819d5843c62d29a2ff09210bac0c08f9a751c7cb586473ad1b6141e4f1df4"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/logs/refs/remotes/origin/HEAD",
+      "sha256": "764819d5843c62d29a2ff09210bac0c08f9a751c7cb586473ad1b6141e4f1df4"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/HEAD",
+      "sha256": "74bb96900b99559c5816c32fcb502d342fb966c928a6cd231035d142de249ce6"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/config",
+      "sha256": "900b25665ab91913776559c67a8f8b5727b377351f6602ba6a467172eb7adea3"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/description",
+      "sha256": "85ab6c163d43a17ea9cf7788308bca1466f1b0a8d1cc92e26e9bf63da4062aee"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/applypatch-msg.sample",
+      "sha256": "0223497a0b8b033aa58a3a521b8629869386cf7ab0e2f101963d328aa62193f7"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/commit-msg.sample",
+      "sha256": "1f74d5e9292979b573ebd59741d46cb93ff391acdd083d340b94370753d92437"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/fsmonitor-watchman.sample",
+      "sha256": "e0549964e93897b519bd8e333c037e51fff0f88ba13e086a331592bf801fa1d0"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/post-update.sample",
+      "sha256": "81765af2daef323061dcbc5e61fc16481cb74b3bac9ad8a174b186523586f6c5"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/pre-applypatch.sample",
+      "sha256": "e15c5b469ea3e0a695bea6f2c82bcf8e62821074939ddd85b77e0007ff165475"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/pre-commit.sample",
+      "sha256": "57185b7b9f05239d7ab52db045f5b89eb31348d7b2177eab214f5eb872e1971b"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/pre-merge-commit.sample",
+      "sha256": "d3825a70337940ebbd0a5c072984e13245920cdf8898bd225c8d27a6dfc9cb53"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/pre-push.sample",
+      "sha256": "ecce9c7e04d3f5dd9d8ada81753dd1d549a9634b26770042b58dda00217d086a"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/pre-rebase.sample",
+      "sha256": "4febce867790052338076f4e66cc47efb14879d18097d1d61c8261859eaaa7b3"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/pre-receive.sample",
+      "sha256": "a4c3d2b9c7bb3fd8d1441c31bd4ee71a595d66b44fcf49ddb310252320169989"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/prepare-commit-msg.sample",
+      "sha256": "e9ddcaa4189fddd25ed97fc8c789eca7b6ca16390b2392ae3276f0c8e1aa4619"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/push-to-checkout.sample",
+      "sha256": "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/sendemail-validate.sample",
+      "sha256": "44ebfc923dc5466bc009602f0ecf067b9c65459abfe8868ddc49b78e6ced7a92"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/hooks/update.sample",
+      "sha256": "8d5f2fa83e103cf08b57eaa67521df9194f45cbdbcb37da52ad586097a14d106"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/index",
+      "sha256": "2eea2522efdd8ca454a1458be342b3139cf13487999ed42834fb9f7b763302d4"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/info/exclude",
+      "sha256": "6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/logs/HEAD",
+      "sha256": "677fa3250e6c1210c4048a1ee4c34f66a1dd357979b93fd64611489ed6c301a6"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/logs/refs/heads/main",
+      "sha256": "8f54f49e3650cca18442b54a9ddd586adf6f9faf1cedde9f34dba964d232aa7a"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/logs/refs/remotes/origin/HEAD",
+      "sha256": "8f54f49e3650cca18442b54a9ddd586adf6f9faf1cedde9f34dba964d232aa7a"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/objects/pack/pack-58c36ad3feef91ec7cdb31d9514e7fda38484a2a.idx",
+      "sha256": "53a4a42e9076848e6f27366cfb6dd77d379ffe004bfd4062a66b61f8dae7f564"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/objects/pack/pack-58c36ad3feef91ec7cdb31d9514e7fda38484a2a.pack",
+      "sha256": "95830ce19ed021e6308ef5df77ecd5a79645c3d4e40d369afc8bf82fba02cab7"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/objects/pack/pack-58c36ad3feef91ec7cdb31d9514e7fda38484a2a.rev",
+      "sha256": "a8ff7601d673ba75d8bb71518836418027fa9bd28b49b3317208c58cd61dd90e"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/packed-refs",
+      "sha256": "45161a4e5da0f200ec17153a6a766d93b67df1055ed663b8d5558b28ddffa606"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/refs/heads/main",
+      "sha256": "42dbfec76b7105160571842b79e16e546a1a8353b131d7ecdc3fe778a48b4844"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/modules/Vulkan-Headers/refs/remotes/origin/HEAD",
+      "sha256": "2bb6a24aa0fc6c484100f5d51a29bbad841cd2c755f5d93faa204e5dbb4eb2b4"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/objects/pack/pack-ab488a686dc4f30145df472c89bf1f5abbf9528f.idx",
+      "sha256": "841142a8f325bef6b45adab711ee646e18880cb6fe25de92d8c5922ff9400cd6"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/objects/pack/pack-ab488a686dc4f30145df472c89bf1f5abbf9528f.pack",
+      "sha256": "afc4e3821b05129c68a973da8a0e3d2786946b6cc31da682d49a96b94dbe1092"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/objects/pack/pack-ab488a686dc4f30145df472c89bf1f5abbf9528f.rev",
+      "sha256": "8c7ad9b25a2e192eca27cbe62328a5beb9a653e9702349b8d7181af51bca27d5"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/packed-refs",
+      "sha256": "31d246e0b977a6b162c82a068d5e514744990ce95e10fb26e7a9e5c1652ed095"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/refs/heads/main",
+      "sha256": "22ee7bbf64e9508ef027eef06e26767439bb36dd87b6ca358dd399aa74aa66dc"
+    },
+    {
+      "path": ".git/modules/Vulkan-Hpp/refs/remotes/origin/HEAD",
+      "sha256": "2bb6a24aa0fc6c484100f5d51a29bbad841cd2c755f5d93faa204e5dbb4eb2b4"
+    },
+    {
+      "path": "LIRE_AVANT_COPIE.txt",
+      "sha256": "1a98b081cb9d64725165cf4076a39cdbb4da09df13fab5e398b456cc4590df75"
+    },
+    {
+      "path": "LIRE_CORRECTIF_COMPILATION_SHADERS.txt",
+      "sha256": "e9575d46963d927baaccf6dffd3e626a680956d180020dd8ae5547ad2a33270c"
+    },
+    {
+      "path": "LIRE_REFONTE_MISE_A_JOUR.txt",
+      "sha256": "37a9a18bf80df7af801ba3986f827c7c88525d35e71e60cfb2be276f64d278e4"
+    },
+    {
+      "path": "app/cmake/ApplyShaderCompilerPatches.cmake",
+      "sha256": "ce8111ff5398377e6122efaaddbe63142f3727219269eff93f9d7d6d838fe2aa"
+    },
+    {
+      "path": "app/libraries/shader-compiler/.git",
+      "sha256": "ca6e20be4918ab3477d397d7529c72f8c672587304386f1d8e85eed33fbd8eac"
+    },
+    {
+      "path": "app/libraries/shader-compiler/CMakeLists.txt",
+      "sha256": "5514505dbcdb9efbc763411d64611cef6835915865518190759c25b006b08a6d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/LICENSE.md",
+      "sha256": "64b7244f3febb7e29114bde77c670011aa67a17bc98802b61974fb61b7cf17e5"
+    },
+    {
+      "path": "app/libraries/shader-compiler/README.md",
+      "sha256": "516883702426f618480ccf04c58ca071f78c6c671c6bf59f44f5db51e498cbcd"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/bindings.h",
+      "sha256": "5e075254a1282df447565d248341f8165671ae3c75295ba889f12723188b76cf"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm.cpp",
+      "sha256": "8f90a3f05192b19b8acfdc87b4141a19244325729d6c86aaa8748a97bd1191f8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm.h",
+      "sha256": "0a939031d765ef7ef197d8d0418dda20a137270b4e58654f7fae8316a9b5c55d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_barriers.cpp",
+      "sha256": "a9a6c023e1522dded402c689dbd29bebb7be1fb77a7a055853bcd8ed55f80fc7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_bitwise_conversion.cpp",
+      "sha256": "1aad2197f1ecc3aca148a9734cdc7bd1299ada7a4991d35163149dec9f8479e9"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_composite.cpp",
+      "sha256": "294dad2cd9af87aece276791da305bbd6b706efbcd68139cf1f2728282b48c58"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_context_get_set.cpp",
+      "sha256": "073f7963d53bcfa8efa6941880583abaf64ea36e6aefa6c0c08b9e0eef6f8662"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_control_flow.cpp",
+      "sha256": "95ec89ca643dd652c2bcdd10b2f17c2958b09b97bb1e7b4e4a31991b9e6048de"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_convert.cpp",
+      "sha256": "4f84de222a603076403eef937ee244835385672df252b2498852d98aca317782"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_floating_point.cpp",
+      "sha256": "9e5580b11379cebf7f07d17a55bcbd247c9bb9feeea213c5bee8eaebd112dd66"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_image.cpp",
+      "sha256": "db0782f114b31f30944ea248349e3b2c01a4b4595b42c97963e01d0c15cf5e0c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_instructions.h",
+      "sha256": "fc5fcd47c6d20a3be2ff1366f9f30b57f5661f3f42435498e0074e6064d20ac7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_integer.cpp",
+      "sha256": "ee756057a3ee84fadde1177dbdb35d318cfd8bf7d8b5ff4fa34bf40f74a635dc"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_logical.cpp",
+      "sha256": "c8d4a5118902af35661ad66ab6be166014b6ebb17259b576ac1f2370842c132a"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_memory.cpp",
+      "sha256": "213605ec29813588f562835ebaaa742ccb61cdaf581b29befe15350b8af21428"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_not_implemented.cpp",
+      "sha256": "13d3ca9d5deb544300282223efc526b395d5707223139641f8eefb8a1035fce8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_select.cpp",
+      "sha256": "f430215c7936cd8d261ebd088816ceb8a2a9f1192c59584ce506c7557be8880b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_shared_memory.cpp",
+      "sha256": "6e465c1ee706e9b4cf8e8dcc7c847ba65286cbd3048f4655843d67b878c75d9e"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_special.cpp",
+      "sha256": "0b63fd13dbe0576ea2a42bb68581221a7613eff634d896146264fb01c139d48f"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_undefined.cpp",
+      "sha256": "b7fac7ec4069fe4374e5617bdaa05e8219af263811f920c5cbce18fa57c52b76"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/emit_glasm_warp.cpp",
+      "sha256": "4dd69d6bcd176e3baf992b02bdf24b6378c699a709d2a94694383373282f32b7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/glasm_emit_context.cpp",
+      "sha256": "98e69b046ba920d5ce9402a2650db79e1ce30cf2af578f74837c8c4b34753ea9"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/glasm_emit_context.h",
+      "sha256": "8966c8a16d9e59a15480daf0e21014313465209b41c22263db58d930619144c2"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/reg_alloc.cpp",
+      "sha256": "8fc6392d74c86bff1589b4ec0727d1cb39044431487d1f5f5b9e6c2b6b311a9c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glasm/reg_alloc.h",
+      "sha256": "70b04ac649e4c5fd956c49aa57a7a29394009473d147bc8ba9b3bd2d4b7cb968"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl.cpp",
+      "sha256": "b74ef40578644b084ab675032b34705336a0d675a4ad90b58eb6cfbb6d9436e1"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl.h",
+      "sha256": "8c2045d9a653c1e67519b8c1ab2c8f93fd0816389e6f65a7b227b3c579f5491b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_atomic.cpp",
+      "sha256": "3501c8b407ae2d10b7cf0da1a36b85c6bb6fbe5577ff895fcc12ade17fe5b91f"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_barriers.cpp",
+      "sha256": "3f0dc00d58b89a6aeed51305070b9e3bd7a302083103ac27adb7cbf0a2542d2b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_bitwise_conversion.cpp",
+      "sha256": "8e8ddf8e7939f54b632456b3829e8f796add26c6bb633f9e0aff7aa61c030ace"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_composite.cpp",
+      "sha256": "78e54bf81b13be6025e8c94df80aeb1f817217a9f08993f79019ba915ac10321"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_context_get_set.cpp",
+      "sha256": "63347a069ff79ab4b77f781a9bdff898e3c233d2ecbe9f08d1429fd8bc3e404d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_control_flow.cpp",
+      "sha256": "dd9a2d250242d2caf89e7d1b5c550d07b339167ded7fffa69315fdac90fa7de8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_convert.cpp",
+      "sha256": "ef48c653335e48a825a92c8ac6e45a2c273ca580d9d238faa46df3441d188589"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_floating_point.cpp",
+      "sha256": "3a1ff8e319829d41c136fdf918bb8a01f89fd7efe478df0de44a84bfcd2ef155"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_image.cpp",
+      "sha256": "0c7d1b5da65d240a8f79eb57a168b8787199d5d5b271d9f353858b22904423c5"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_instructions.h",
+      "sha256": "3a694eeec15058c54d1b2ad93fcfa10e368a79281c5a2d5b4e959ef071d36cd7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_integer.cpp",
+      "sha256": "8a27aa58abdd75d2c438485d5ad8dab7162efc9ef1bd82e28bc4c26f972fb612"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_logical.cpp",
+      "sha256": "aea68aa1b9ca249f5093f73da94ab9071b5d66a8299f8f41242ad9cbd52f7e8a"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_memory.cpp",
+      "sha256": "fc31e93cd61d1ea752660475ffa648d8059932db340617d9fd2223bae6ecbed3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_not_implemented.cpp",
+      "sha256": "8c4c44dcb8fcba201ecfeebd2835963d1a42bc03046a062129340b10d9f30127"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_select.cpp",
+      "sha256": "2ba10cdcd5ea952c0eb56165dc6a60ca0e59b2a0cd1ae014287f4826ea8c26de"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_shared_memory.cpp",
+      "sha256": "598d13e8897a3a2c954c87bf9a21367e0405fba0c148f69ebf587a1665be7220"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_special.cpp",
+      "sha256": "04adef41b00d975c15d1eb8e703842d3aa0ebe45b8163d28d5a9c21e687385e8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_undefined.cpp",
+      "sha256": "0d65282ea0f7ba22303c970f77722256d17f826f66227aa3a3fc1015ec295f15"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/emit_glsl_warp.cpp",
+      "sha256": "28691ab4056c822ff10f9485a81cfef04c19adace256aed6ae07f229f6f3aed4"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/glsl_emit_context.cpp",
+      "sha256": "beeb807b56b5c51912bed12b5f6aa056cdb98c708bacb49fc1177b5fabe188b3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/glsl_emit_context.h",
+      "sha256": "6d06849568d24495e7c78941fca57382c547f8831142dd71d534ce582bb31d30"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/var_alloc.cpp",
+      "sha256": "dd3d045d348b28f7e9492d5bb964985105e64168c780e5edd49cf9c6f5654f8e"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/glsl/var_alloc.h",
+      "sha256": "06d59b4c952fba7956f401d82e1841a908ded22388371c7e90cd52e206a2badf"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv.cpp",
+      "sha256": "059218c43f2ff77c24626e083ebb6aa7edd019be17e43c8db836fb20a25c6f72"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv.h",
+      "sha256": "0a6f385709ed0d4a0dc2b58823fe8a932f93f836daba6c7653d0cc7f0da1f2ba"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_atomic.cpp",
+      "sha256": "192a6cd79652fecb5fea0beb3e333ca6fd37025f5f23367c57b089d92a4d3cc7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_barriers.cpp",
+      "sha256": "218e1d87a0e4c697b083dd45fcad697c14865c487f292ee5e0fe173c1c307d26"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_bitwise_conversion.cpp",
+      "sha256": "15b7b5d4a40f07d88396eefd2fb6d3c76646f4824f749f4e7e24e46bb9c2f77b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_composite.cpp",
+      "sha256": "bd2d0f82fc600e4e58d870b0ce19a82cc7f981324a1e3219c4e03246ead722ab"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_context_get_set.cpp",
+      "sha256": "4a305e54bc0573d6144dc1ec3fee12ecc008fda621081eeedc1702c44f7e2e89"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_control_flow.cpp",
+      "sha256": "e678edaec7842d4b341e96f3ffb7c6a8c47c40adcaf00cb185a1262a280dcbee"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_convert.cpp",
+      "sha256": "5f17459c2a69542393a1972995c37aeb47361d57a7c53d265f6e3520012378a3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_floating_point.cpp",
+      "sha256": "0f428fc3d870653cb8209fc82a218b97f73ff398308ca3842973ce86e70cad03"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp",
+      "sha256": "8daac97191479ac2881ab9738d924dba0535c2f22fc69bc7a0ac7439f35ff03a"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_image_atomic.cpp",
+      "sha256": "a4c05a80b9927472185f216e9f528f585dcfc37f4ad21f79ad2e2c5a4327e692"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_instructions.h",
+      "sha256": "b5a67fcde34f32472093c8a055364d0e26b01fb7bda4e3c008acd4317b506fe8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_integer.cpp",
+      "sha256": "c83000ddf355abc13c68b284cffbbe7376a4e168d782739bb78b06ac98b1208b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_logical.cpp",
+      "sha256": "a15d70c02ca7f0766cc62cf41abcb8f2fdb1cb9b39c107f51ce6013b7253952e"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_memory.cpp",
+      "sha256": "9a2b049c1082cf543f14def92f857d51bb2fcc320e84f5a2a7ddafdbf8907086"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_select.cpp",
+      "sha256": "0ab7440f70cfcdcceea32e6c0d3ab37f2ed78d3e6fd15c015dff12dbeeb66170"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_shared_memory.cpp",
+      "sha256": "c23982dd2bff343b098edd73fbefced1117af13c57af3fb47004e54a5e56eff7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_special.cpp",
+      "sha256": "429522ead26e2aa9d918e1907df114d2034492ad8234b30b7e0d0e4922e5be77"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_undefined.cpp",
+      "sha256": "726628b221bfa453ecc60868f39f36ed3d99b92ce1fe4541dadf1862c62e4b2d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/emit_spirv_warp.cpp",
+      "sha256": "690fd868e6a74404682094017524e81ec83980f051f6aaa415a09522276569b8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/spirv_emit_context.cpp",
+      "sha256": "fd7d022083e444b7918b5fa362e0d4ce88338c79877c8569fe739d50f418fd62"
+    },
+    {
+      "path": "app/libraries/shader-compiler/backend/spirv/spirv_emit_context.h",
+      "sha256": "677a1a5a3e46a8ab8be122130dfb9fb2011564c87a9e5d21f04cd7dbe153113c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/README.md",
+      "sha256": "5241a57fba3cb5f3860fefdf63ed4b9ca43b9424f8f2bf98c3e9958356feeac2"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/alignment.h",
+      "sha256": "85b5ba7fb9617af886e0f57217032d70072df93e2a856498f3a1896d262e7b68"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/assert.h",
+      "sha256": "830d1f69e0e344aa6984fad4818121a0e01a14d53ab0bf71ac881486167b05f1"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/bit_cast.h",
+      "sha256": "5dc51714b6394ff9808f42cb18b13b1381d6f5ce5e1ca789d693d893ac7da644"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/bit_field.h",
+      "sha256": "7dbd9b48518fae0f9f52cc270318a5d1e6b9d48612d5b59b3456467095633bce"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/bit_util.h",
+      "sha256": "13af8f386ca531897707bd284f4b0a538b537eba029fa4b922630046ac689596"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/common_funcs.h",
+      "sha256": "1c7ccc18497eeebf36b5deafd739d84c13a7784c1286c513bab89618635ecda6"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/common_types.h",
+      "sha256": "53936655f5b399db831214a23427f25007cecc3c002a8978c23b0dd70d36ce69"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/div_ceil.h",
+      "sha256": "5568acd2ea12fa7d0713d93c5213f25f7f531040c7ee770f2389e036984c8573"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/log.h",
+      "sha256": "a81800caf41cd60df251160a587bd427eb70112ceb78a77b6d1e27f29a149104"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/logging/formatter.h",
+      "sha256": "92d23d20e362dc239431a976ebdeb32b867c98d7275be08381357485933638e8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/common/settings.h",
+      "sha256": "9be50243f7e3a0e3d6c4d0d7624927f3177a3bc8b9db8ccdd19a6d872ba53667"
+    },
+    {
+      "path": "app/libraries/shader-compiler/environment.h",
+      "sha256": "cb634be2d371bf78f8913635a06cc01f6bc688ff2c0bb9a7070a2fe5efc0140c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/exception.h",
+      "sha256": "578fc9e1502d2eba32835b92b8770833999d99a1b6b6a65b3dcfe611d8cc55b3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/abstract_syntax_list.h",
+      "sha256": "3900d426934605cbdab104d4b2c97bf0077133d9b76f145177944d765bb294af"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/attribute.cpp",
+      "sha256": "434ac1f0e703657f1ef18f600e5e0dca69b62bf060c2e53193e919e75de43590"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/attribute.h",
+      "sha256": "ad3794cab2f116fb2d878f32306efb2d35bed247f8566e69eac0e0fbd36d2d50"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/basic_block.cpp",
+      "sha256": "50f252f9c0a980511a13fd14959f0e13663959dc70a4216751f5022effd0c990"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/basic_block.h",
+      "sha256": "7016a160fb78e1d0bae1c57848382042f96b44900aea9f7e573f7b0bc7989453"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/breadth_first_search.h",
+      "sha256": "353112b2f2b2dbb5fe527ba254c6b439b2da20abf55f4f454c117776f3521cd1"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/condition.cpp",
+      "sha256": "2fc4aef666a17122e6a9cfbb8ca906e0b6a7d7f6423e3fb69809c90953c0729e"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/condition.h",
+      "sha256": "f00ba6d1172adec68e65d2c419918eb1f543cd5ce92dc107f0794f007953d13e"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/flow_test.cpp",
+      "sha256": "c0ce54e9cca519b20d76f315af8097dd9f55f4b364d8e6c235a07e6262e31275"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/flow_test.h",
+      "sha256": "7562f55abd22c9f8aceed1fa9eca515e1f54b209787180c1eb71b1bb76910a1e"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/ir_emitter.cpp",
+      "sha256": "7601458946dc771c070fd188ae1f22c7b7aadd6ca2481fde99902e2adf5169cf"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/ir_emitter.h",
+      "sha256": "b894d69bb692212258f0c7c84c943afa7492a4a3253cb725897124c85a0c9112"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/microinstruction.cpp",
+      "sha256": "00016e4fddca7f176086ff70808b7204e5a3247be0e7c88ffc2d6e944cc18066"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/modifiers.h",
+      "sha256": "d73ae06adba0c06656045c51db1ca3f27e945147a815ecefb45d3fa0528c624d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/opcodes.cpp",
+      "sha256": "fd8d72f3abae6f328d90e58240dac0aeb82610f3e24669bd7ffcac60cc2ed6f3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/opcodes.h",
+      "sha256": "79dbfa25e86b804da398799a561266c47f0078d04fc6402cecc65521ca7b3a76"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/opcodes.inc",
+      "sha256": "e175a9ec10914291910a90364c3d06f6de6b04bdba34f4bf9baaae15d29a0ea7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/patch.cpp",
+      "sha256": "318470b82b0e34f73f39c34bc3312585085896fe25ddc94caeac73b1236af0dd"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/patch.h",
+      "sha256": "4e04b75520064c7cf961719ef1c13224856e641d570158cd79290e85eadb4b2a"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/post_order.cpp",
+      "sha256": "165da2fd2f158e6120719e040208389883eb152a2248b012f0434d0cd013b5b5"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/post_order.h",
+      "sha256": "dccd84d0624138726b29ffb0349433fabbd417a44d3a403b4e5a65a90f15f09d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/pred.h",
+      "sha256": "08c8d95ac9882c5465a587007a850154b71e826cfa2518818cf2ef7ea72affe1"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/program.cpp",
+      "sha256": "77793ffd5041658b67ef7e8b84b8064c833eb31b9b058835767a04d8ce5e318a"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/program.h",
+      "sha256": "8bcee21e31cb2ff4000bb4493c9f3b2a844ccb1ea4bd5668bab60c4611782507"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/reg.h",
+      "sha256": "950a6277e4d3c6eeb762ea7c6dc384a0fd0efe016378df5d89eac229d295caf5"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/type.cpp",
+      "sha256": "4935dc8c945e5b0fe0871cd304eef947e2103a064e79182d99e4dc84a744dec7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/type.h",
+      "sha256": "67f93607bb9615021048c566b837dcdafdfe875cff7949b9e9a4dd2e9c74fe52"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/value.cpp",
+      "sha256": "00ff1fff2693a92736804b863e3e65e41591bc68ee27960da93aca9f23637e74"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/ir/value.h",
+      "sha256": "a720dd1de2b2ac7a26795b3a7ee84340d1633ca97a26bf4a5cd7c6f7aed42d3d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/control_flow.cpp",
+      "sha256": "b60114dc177a4d22fceabc38d10e3c9161a22264fcd6c0d5276d7b99d5dd048f"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/control_flow.h",
+      "sha256": "df9977aa1806a51e75f7a31d5f9a9d3c74f2e20a9e71d0837127e19ff4dfa1d0"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/decode.cpp",
+      "sha256": "aed22c7a845480def21ab877c34379fb93f4b8e1ca655970dc852729c065ffa3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/decode.h",
+      "sha256": "9c706ca73da7e8263b10bedbef7fe91247d4b2ddf4a2e11ba898d687a9ceef0e"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/indirect_branch_table_track.cpp",
+      "sha256": "3411c44659d663b5cc0eb184c2e00a818379c79f1bcee47956e795ce4d073c22"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/indirect_branch_table_track.h",
+      "sha256": "4734f020151e0573ba9d57772e3b1c1df9f77114febf83f337223688711e540b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/instruction.h",
+      "sha256": "01d4ac0a629dc4d956795f3a2a1d68451d70c4aa30528a209a1453fd3bf76af2"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/location.h",
+      "sha256": "a1d7f4307b991ca02520a11951973552a28538b067cadf0bec14b78676329bb3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/maxwell.inc",
+      "sha256": "9123dc2d2a8597a3593f0e7709906d0d2334f15515981188856e4a6e28fdc500"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/opcodes.cpp",
+      "sha256": "3c0a171f1cc2b762e8ced255e591fa8f0f1ea3bbc6f25168d891a139d03624f5"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/opcodes.h",
+      "sha256": "1d56d52f293d2d94e2eb1e65afeacf9eb68c50a8374ae2764d06d5ba4d65ebda"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/structured_control_flow.cpp",
+      "sha256": "d255059ce2cefaf1c0d8143e9f77569d3444a45ab0d00c2a0d002d27ad6c0e75"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/structured_control_flow.h",
+      "sha256": "64cb2730c8a736b8463b2d1982e45dbefc3616ac63eddde400845ccf32808f2f"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/atomic_operations_global_memory.cpp",
+      "sha256": "1dfe4004fd3ea8075269b25f7cc2c7a613cc03b0bd121b4890db60024f987738"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/atomic_operations_shared_memory.cpp",
+      "sha256": "c0f0f2c5c0fb5c9ddea056d19d8b36a3edc7e338aa39861f56dd7f160751c495"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/attribute_memory_to_physical.cpp",
+      "sha256": "a97ce20d7bdc0bc2dae88aff56bcab2a1ec85d13351e4e74e796ba004f9bdedd"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/barrier_operations.cpp",
+      "sha256": "2f3672eabe44cc84d6b958dc8732ad18f3cf01ce28c6653c1821276e9f394abe"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/bitfield_extract.cpp",
+      "sha256": "51933d4bb36beb7b5ba9a89a86194c5be0a4d1c437f499fdd2c3a9839f402e48"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/bitfield_insert.cpp",
+      "sha256": "2791fd9143f90252ae9ec73c82f598c9a976220c90e948eee9dc9aa64bb9ce57"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/branch_indirect.cpp",
+      "sha256": "3b2c441f4c82a7755b475af91225218c37419745f990b1f5024ce41a24a2c1e5"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/common_encoding.h",
+      "sha256": "381d1f54ad6ecba637c21258f29a51fcec03b1fac8fec880ead0b2850c3124ca"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/common_funcs.cpp",
+      "sha256": "7cd6c86aa8b26f27a4f9df6b6a0f85aa493736d7ceb466b3bfca5c244b2de202"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/common_funcs.h",
+      "sha256": "8c4e4e34ec954f8d5d13847b79d50e37ab450e1116680472f91c668c3d0da88c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/condition_code_set.cpp",
+      "sha256": "1c3a5e512d2ae0d506a71b5808ce7739b9c60862e7c98cac048722246677dceb"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/double_add.cpp",
+      "sha256": "8a04cca0dca6a66200a38b447f66dd891a6fa61cb8477d7cec8616642ee0ad50"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/double_compare_and_set.cpp",
+      "sha256": "59ae079613380005437bf4497a232e73f98cc49313cff61c7d7f1fab0caef611"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/double_fused_multiply_add.cpp",
+      "sha256": "d40e8cfd1aa2792e9ec57f8f45a2710ccb88d5c441dca3d736fb659bf8a75d38"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/double_min_max.cpp",
+      "sha256": "dccb1e45a985a36daf337e7b94d61e595d455b1360c93310323f70bf0e29540b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/double_multiply.cpp",
+      "sha256": "82fa477968160f3616e0adfac1b15eed4c53a74569d70affd35dfcf98ef79dca"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/double_set_predicate.cpp",
+      "sha256": "bba59bccc5f0d7884edb14ad1bd4626acb3c6b80a3fea6af517f3d8278e1cd1c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/exit_program.cpp",
+      "sha256": "52c35e7c9f3f9e31c94055f36cdd50775cc2bccf72c0c1cf1cd1e16d16d8e2ba"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/find_leading_one.cpp",
+      "sha256": "e993f8ee3ed7b3db28f23754e4b305e1d002dee97a34f5943f728b9fc346defd"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_add.cpp",
+      "sha256": "d1e335f0419b48a9dec0a5920a9de5cbdbbc743ad305e9612427c8072f13c0e1"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_compare.cpp",
+      "sha256": "430c5469daf08d43ba1e65e8a59d1b461d5b18aab93a3cdfe000655febc71238"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_compare_and_set.cpp",
+      "sha256": "090b10838f830f8dec608f87487f33a27f614a33bb1c2dad7fdab493ceab18a0"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_conversion_floating_point.cpp",
+      "sha256": "16d189a4a121a95d5d371db030bf48e2d7ee15816e0a4b7f2e858d949d7a62e2"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_conversion_integer.cpp",
+      "sha256": "6223e953c2de4b9ce85dc4a89a34c754efcc18ab76c72ce554426b0c5275c892"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_fused_multiply_add.cpp",
+      "sha256": "9bdec6362a3a52adb6ff5ff8bc5bd8cbbbed6fcba87b1dd95219cb6e3a1946db"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_min_max.cpp",
+      "sha256": "f2067ee009ad5b88b348774bfe5fb09869a4f85458e8a72ca215238d251c1255"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_multi_function.cpp",
+      "sha256": "9859228031b34a6c608087b23f1dbf7194a9dafd614bf3f597041bc79f111a3f"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_multiply.cpp",
+      "sha256": "176057726788e9b7621cb926b25ed6ea16ce56315aae13326b0934a7b67cf0fc"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_range_reduction.cpp",
+      "sha256": "40e9fececa216519335ac56653a70541d7bb9da8333a6738ff4c0f46b24a1d4d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_set_predicate.cpp",
+      "sha256": "1a3fb3e66dab87208139f0b9d38ff34ff2c6443c1bfd6df988c5a8634e9c55a0"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/floating_point_swizzled_add.cpp",
+      "sha256": "a7ceffe59f7b326c19a475c72617260fd484014786815e7eee040cdcbf0531f5"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/half_floating_point_add.cpp",
+      "sha256": "c73dde49af89a668878213028c273bc716d4e66a46c4db11d43afdc1b4ed7998"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/half_floating_point_fused_multiply_add.cpp",
+      "sha256": "d1b01b01754a79b224dc6807785a888797b32e1cfc7ef04a9b63e8aaeafd56a4"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/half_floating_point_helper.cpp",
+      "sha256": "9ba0711e6060a39530fb6d0d12f514e36d70f2cf15bb8ef03fc99c598564280f"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/half_floating_point_helper.h",
+      "sha256": "01807d5739d9a1ecf12ce9048ecdece013245624fa55e241d925c03397033f29"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/half_floating_point_multiply.cpp",
+      "sha256": "b774e47a4767714bd62b9f7ed7f94986ca6cd9a67b06913804f6197382619735"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/half_floating_point_set.cpp",
+      "sha256": "48db8b6a31aa79a4157387653dd8b10375cf91c04e4ba877f8d2c1e8196f591c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/half_floating_point_set_predicate.cpp",
+      "sha256": "917e78e8986eaa105e6c946c9eca00939f7313e9c5043086e83e56b81c166728"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/impl.cpp",
+      "sha256": "3e976d3dfb54d9e630eb98bb6ba40954e131f1ef30fcdcf86429fc769762fc12"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/impl.h",
+      "sha256": "4458db5d93e0724953cfc1cc9f93b11aba46de78526dbac0d7ba7807738238c4"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_add.cpp",
+      "sha256": "2b4d418a78a7d00c1960d738ee43bb4071c28765418e6f372398ae85e8ff42a0"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_add_three_input.cpp",
+      "sha256": "fc5cfbd60222363d6180c872ae33b4e3d9a77596db8bbdd52181590449d6bcad"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_compare.cpp",
+      "sha256": "1a903ce9873045a686a60f6192c58c34b5e39e26fde3bb4d30ada29e7a2e6a9d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_compare_and_set.cpp",
+      "sha256": "0e85b64e198d80ed036cc7b9f694547c96ddbf05cdc52cb8fe903302f395a3ac"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_floating_point_conversion.cpp",
+      "sha256": "abab6ca692fbbb4c52893602aad86b02764435d10234426f8cafb1aa2c277e25"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_funnel_shift.cpp",
+      "sha256": "4ddbe766923993c03345e553e0eea320eb3f4f0d634c585dcd45b30a834e5972"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_minimum_maximum.cpp",
+      "sha256": "01d87276cebcafff361e777334aae62bd82d94a56c5631b4e502d55bc6324b24"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_popcount.cpp",
+      "sha256": "901d3e0bd7689c510ac618aa5ac369007df33961363b6bb6c181ec77563ba8e6"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_scaled_add.cpp",
+      "sha256": "eef6568cc67440cb1e5f87ee1fed726810f9196c379895a681fd9865985ea465"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_set_predicate.cpp",
+      "sha256": "017ae3144b1a18635f7a11eaa4fd9754d179e3a2b6afa428d058720f12442f0b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_shift_left.cpp",
+      "sha256": "99a41cae4618252d0f3a460612019120170a9ce4f376a9038346462b541e804c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_shift_right.cpp",
+      "sha256": "2165aadc67f93aaf288003b891740aab74ecf7ac8f823f267dcebed70b340c86"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_short_multiply_add.cpp",
+      "sha256": "dd610bee69056de9b8e4e3d22b3bd23e900d00366e5403b1e70f7fd8ba469765"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/integer_to_integer_conversion.cpp",
+      "sha256": "63ba3cfc3bf1f77ab0cddc1790fb7395ec7a7d01431fee4eade76f35bf1c7f1c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/internal_stage_buffer_entry_read.cpp",
+      "sha256": "30607660291b4ae71e1a2b19d56e971903910aec811df1b7bec696747321a234"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/load_constant.cpp",
+      "sha256": "42ce28d0ef84c374d844e474b99842240a087ae81ae7502a58ee987f537846c7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/load_constant.h",
+      "sha256": "864ac2ae760bccabb2dd5040ca3922db79aef683fab0399fbec9f6129763793b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/load_effective_address.cpp",
+      "sha256": "5367a7c05bfbd74569bd71614c77d46b9a576fc76262e4fa05c503623115ac47"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/load_store_attribute.cpp",
+      "sha256": "c23d863d646d306a30b730ae07cd51a0f9960481eeffc882e49b89bd13914a26"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/load_store_local_shared.cpp",
+      "sha256": "f4d7a497bbef100dff4e96dc925ca8c9feabffb06cf981bbd064505aca815fa6"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/load_store_memory.cpp",
+      "sha256": "878092ebde92f93ad69bb10ace36955c2379660388336b6eb4c51a0dadb46fa3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/logic_operation.cpp",
+      "sha256": "ec3dba9b5541e7d431cc172588d7a47f66594b1085c5745c0c5ed31e4dc89e69"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/logic_operation_three_input.cpp",
+      "sha256": "8b69a39ddf68820d55dcc25536072fe09db540a3117312ddff11f5ab8fa7c73b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/logic_operation_three_input_lut3.py",
+      "sha256": "1e267e1f629dd4e2a03248c427917ef88fd1c0dc6d3307ab2236262bc936f5b1"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/move_predicate_to_register.cpp",
+      "sha256": "bcad8dce7f5dd71a1dc87ca6ca3e658b4fc5f97f3b1cac9ba5e7fdd1e1f258c3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/move_register.cpp",
+      "sha256": "527c23810f131ddabb72f2e3d5991086f8a9a7a0b100aa48d62380105c4fae07"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/move_register_to_predicate.cpp",
+      "sha256": "c33545373378c4e62c7fa5227a9507379ff4128555b87b81b4f4d8aa00780446"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/move_special_register.cpp",
+      "sha256": "ddfc47958a9f7c523516fb9b42f052c079e283b3ff24c27b1a66be31b5fb3e30"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/not_implemented.cpp",
+      "sha256": "fbfe718c4a5c66730ef7f5ef39326b3928d5b02f2e0b2e12a84cf9fc20db8696"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/output_geometry.cpp",
+      "sha256": "df2d13b6ead20ee4a58fa76f5dba10e88eeea6bf824d69f229c01656220c07da"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/pixel_load.cpp",
+      "sha256": "1eb87f3b1f446ac990d4fa143e9021f210f5dfa684cd5239501a04189ed98f63"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/predicate_set_predicate.cpp",
+      "sha256": "d86a636b4c40b997443bc72ab645bdedc27879fb51ae018c74b4baa99a6a357d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/predicate_set_register.cpp",
+      "sha256": "99ee4591ed8b47a0de55f6c9cffa4d806169c7e0d174d36a6bf77db75222f3bc"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/select_source_with_predicate.cpp",
+      "sha256": "5eafed06515c64b3655fe4846f10af6e3c2a39e84965e6cbe2d4c322d87750ec"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/surface_atomic_operations.cpp",
+      "sha256": "fb15b1fc3d17c7a8ee1ab3bd40764e7792e615d5f3a1c489649ce5c487b80c77"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/surface_load_store.cpp",
+      "sha256": "d2674580196273b5c19ee16cca97f49fbde6a0cc846accaceeb966ccb5d54b5e"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_fetch.cpp",
+      "sha256": "402663348aee36fdc6bceabc26497489867afb6d2300f314cac56df5c6ef724b"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_fetch_swizzled.cpp",
+      "sha256": "2fd2a7c8a6a4c6ec7b2622fec4075d864b7983e681f271998bda6f47aacd2aa3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_gather.cpp",
+      "sha256": "6c8a6d47a6a0a006a654bda84b69c900673106ec58273e19277a065c64142bdc"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_gather_swizzled.cpp",
+      "sha256": "86adb315a82830b0afc8fc3e3fa71bcf86a94828e8cb970847ba70d5e866af56"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_gradient.cpp",
+      "sha256": "a056e3151ccb0cd6bc4b152ca3cf841588cc0892f8a850fbd20262b828641065"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_load.cpp",
+      "sha256": "7b0f11cde265298dc36ddc1de5edfd29489b88051c0e4092f356740e5ff948e7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_load_swizzled.cpp",
+      "sha256": "9a1cf60904b82013d490f2cfa9c657cb219193fb63dd1eaf7ceb3a2797609d40"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_mipmap_level.cpp",
+      "sha256": "f1ad7b54941a7c8f3a631e10cadfafa530cdacb54f14dec51495752b3344a000"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/texture_query.cpp",
+      "sha256": "e011dc671ca7da7fcf0486add3d7688a208f9c6759da54b8915cd32efd8228ed"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/video_helper.cpp",
+      "sha256": "d1643cddc78c385ad937287ab8afc7d18eac92934e71d481e639e3115a801cc2"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/video_helper.h",
+      "sha256": "e6129029d6fa9f96f0044605ee15968a74bae59906c4ff0b7873b5d92caeb987"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/video_minimum_maximum.cpp",
+      "sha256": "d240235ae78d9a96b2691a5370a0d196245e03918ff084087e8843bb1e2f50e8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/video_multiply_add.cpp",
+      "sha256": "491262dbffa094c4d45189aa53196231f611d44f095567a1f23036eb80534de3"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/video_set_predicate.cpp",
+      "sha256": "2374403c33b08345fcb3127bb6200263eef3c23aa5d8f2995534aa198aef477d"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/vote.cpp",
+      "sha256": "9dd4d6370353d23bf4e967be550ec2b6e1e34f42a7a492c7203ef6d7d5770c00"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/impl/warp_shuffle.cpp",
+      "sha256": "f4be528dcb1844aad714743dbc0d760698cc462bb444213a6fd188fabefac2c8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/translate.cpp",
+      "sha256": "9c28cc3a798a01312ea43b05641d287429705f43320702b159404e43d4cfe088"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate/translate.h",
+      "sha256": "772db2ecc933150253ced4014e021893c9e6acf0346902f975b464e75b4d353c"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate_program.cpp",
+      "sha256": "db9266849e31875c9d4a01cdcbfcc9171e54b8f27914dd38eefe44f884435d90"
+    },
+    {
+      "path": "app/libraries/shader-compiler/frontend/maxwell/translate_program.h",
+      "sha256": "a3300bde3a877e84e9e460b56d8dc41a1900415aa9675d62e085c6e44b17ef54"
+    },
+    {
+      "path": "app/libraries/shader-compiler/host_translate_info.h",
+      "sha256": "8435a4651813336dfeaeeddc374c3e8a13bfb691a4be5c6f70732fbd945cdd66"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/collect_shader_info_pass.cpp",
+      "sha256": "4e9715e70320fc61d601ec38b46a9a33b4c9ee87d0d3acdc32656cd348ca7469"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/constant_propagation_pass.cpp",
+      "sha256": "c09af1ee28e6f3a70ebe5eef275e62d80df6e490e84047e3f23188c4acc95b01"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/dead_code_elimination_pass.cpp",
+      "sha256": "ebe50f38cfc4cff9ff987b094208f93a91b7220247aca18d6927df556b95b3f8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/dual_vertex_pass.cpp",
+      "sha256": "3e6d7cd677162438fcca0a5ae1e51abae0995fb1d97e567e441449b08c996004"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/global_memory_to_storage_buffer_pass.cpp",
+      "sha256": "94591511606f9bc30ec55cdd6e0c7a11ef3e9f6f1e2307cfba438599a7086bb8"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/identity_removal_pass.cpp",
+      "sha256": "bf8d97135e4b1748d5bcf4bf261317b8f98cd0856bf4fea2d6c28bb78efaf644"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/layer_pass.cpp",
+      "sha256": "622f80fd53cefd669d146beb532e33f888c2ee0e0709ff7bb026e37ed5d04d88"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/lower_fp16_to_fp32.cpp",
+      "sha256": "c0f78fb65d0397936d689284d76a9826753dbe0bd7316db5d752c49af516cb73"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/lower_int64_to_int32.cpp",
+      "sha256": "43b52fde028bacdf5cb1733c69a4746f371c4f265bf856b5d5edcd5e9b5cf34a"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/passes.h",
+      "sha256": "9a578173fb378a1cd723ab90a408978a79c300f08da75dc00ecf010fbbc42187"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/position_pass.cpp",
+      "sha256": "d86d9d0d6066f320b56f9824f1e3a2e51e250391d329861574774d5549843e13"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/rescaling_pass.cpp",
+      "sha256": "14c26ac6570b1215bf7465340784991d86035e09e1daca0dfa315a6858f772cd"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/ssa_rewrite_pass.cpp",
+      "sha256": "f34765ef6865976e10e81bbbe058dca8bf3ec36033addca0ab74850b7c4978d4"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/texture_pass.cpp",
+      "sha256": "33777f26ce069193058bfb8b0b52235e4f3809fb83e724652d43287d11a1aeef"
+    },
+    {
+      "path": "app/libraries/shader-compiler/ir_opt/verification_pass.cpp",
+      "sha256": "0df96d44d6ddc2660bd21cedcb1ea2add96d1fe641ff94b077248ba27f01e784"
+    },
+    {
+      "path": "app/libraries/shader-compiler/object_pool.h",
+      "sha256": "61da0ef5a714cecea03ede7eb4cd2e5d4d861029683027cef0ad5115ca878cde"
+    },
+    {
+      "path": "app/libraries/shader-compiler/precompiled_headers.h",
+      "sha256": "7ebe782194f3061c54298ff98d977cc3d6de8cca78fcc8b36e0c732af346f4a7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/profile.h",
+      "sha256": "0a2c98faed03cfa2ef50bb9224b29760aaf2ba71e688046cf7b64c7d0dc2807a"
+    },
+    {
+      "path": "app/libraries/shader-compiler/program_header.h",
+      "sha256": "16b31bfb83e2675743774b69a2425d6565d25b04bddafa74c966c8109365cb65"
+    },
+    {
+      "path": "app/libraries/shader-compiler/runtime_info.h",
+      "sha256": "4914bc5783b48fc2e67ddf41ccf3a2f6aeccd7e8ceef942fc61726867582eacc"
+    },
+    {
+      "path": "app/libraries/shader-compiler/shader_info.h",
+      "sha256": "ddbd68c8c3872cf336fdecab3afd51a722a658a8e7c7403a25576bac68b304c7"
+    },
+    {
+      "path": "app/libraries/shader-compiler/stage.h",
+      "sha256": "64a0a5256ade1191121c27f132f441fc40820f821dbeec0159db7b6fe650a96f"
+    },
+    {
+      "path": "app/libraries/shader-compiler/varying_state.h",
+      "sha256": "025d33663a73e76b92dac2b3fcf93f8a316eb425011730ae4ab5904b82d7d932"
+    },
+    {
+      "path": "app/libraries/vkhpp/.clang-format_11",
+      "sha256": "b93c99538d83fa49b0829f527fbfd61e96932857b8d88250cc4a829d8d340f08"
+    },
+    {
+      "path": "app/libraries/vkhpp/.clang-format_7",
+      "sha256": "e52e9eee0c961708287067af2d9da65095d02f199ef0159984b409377340c2bf"
+    },
+    {
+      "path": "app/libraries/vkhpp/.git",
+      "sha256": "8f3e044e0c79d3e72fd553524ca4d34b17eb3a8159717d1df7d5be8eca5dd9c2"
+    },
+    {
+      "path": "app/libraries/vkhpp/.github/workflows/ci-ubuntu.yml",
+      "sha256": "93618ebbcabec36a258b009c6227e12796d2ce63d155ee0d5c81ed53b72cbb1d"
+    },
+    {
+      "path": "app/libraries/vkhpp/.github/workflows/ci-windows.yml",
+      "sha256": "036c69af80a69829f92b9db667e353d08e92fccc4d3ad1184e4d12c97d6d5b58"
+    },
+    {
+      "path": "app/libraries/vkhpp/.github/workflows/set-version-tag.yml",
+      "sha256": "08ed9d4462bd50a4711e4135b9a9e0d592104e5324367cac033189a93487fd48"
+    },
+    {
+      "path": "app/libraries/vkhpp/.github/workflows/update-header-pr.yml",
+      "sha256": "23fcf8a457277c134db74d7b64d2431a26e3587e97e954eb9186243f780a2f6e"
+    },
+    {
+      "path": "app/libraries/vkhpp/.gitmodules",
+      "sha256": "5a3888ce25471e646ef09d8607b3ecbe49a6d5e8eda1f0ca7c306dab39324aff"
+    },
+    {
+      "path": "app/libraries/vkhpp/CMakeLists.txt",
+      "sha256": "483eaf0a2e47bf82734b57bef5f3e1353f6eeb4b674aaff00fa3e088187c5472"
+    },
+    {
+      "path": "app/libraries/vkhpp/CODE_OF_CONDUCT.md",
+      "sha256": "a25e58cd66a9543e1500db9a5c3c027e874893ad1a264530bf26eb10918b5d80"
+    },
+    {
+      "path": "app/libraries/vkhpp/LICENSE.txt",
+      "sha256": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/01_InitInstance/01_InitInstance.cpp",
+      "sha256": "6459c98ec8e8e7891fbb8c6c124f39db4de20391f81ff6c45847f0ac8c203815"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/01_InitInstance/CMakeLists.txt",
+      "sha256": "bcb5a3e45bfe54c4397d6448c1fd24d344d041e993d3cf51735fa48c369bc43b"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/02_EnumerateDevices/02_EnumerateDevices.cpp",
+      "sha256": "6bc95ed368335cb921a268fa233cb2dbed05ca1e40ebf09dd9a9a222c223e4da"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/02_EnumerateDevices/CMakeLists.txt",
+      "sha256": "1e49bf665f7568569639f2018f32c053c6e0b398be887d642b4fbfbf767f8c6e"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/03_InitDevice/03_InitDevice.cpp",
+      "sha256": "a8065eb02b8b74c3a7829ec23cb2c6cec89795c0e64d5c82dbad6fb391abb7fc"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/03_InitDevice/CMakeLists.txt",
+      "sha256": "b1e793bf2e4bd72ebdd59f4968034c5d568c4fe7efcb0f37f8f9ab1992d6effa"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/04_InitCommandBuffer/04_InitCommandBuffer.cpp",
+      "sha256": "37a7c1cf3e3db9a615e61813ff36a6616fbe95c30a89e7ea840f2453d449c1c0"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/04_InitCommandBuffer/CMakeLists.txt",
+      "sha256": "878e72ee0c2c625c88d22fe67514e3bb82a0c4caebd90cbe98f53bbb55b79646"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp",
+      "sha256": "0700b60a241a527c6fd8b2d37b2f3bc7884e01d5290f3b2b4c67cf2e89a5a27d"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/05_InitSwapchain/CMakeLists.txt",
+      "sha256": "4aad3fca5f4f20c27061bcbd132f5553067984d19eaa00d653702f684e1a7cd1"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/06_InitDepthBuffer/06_InitDepthBuffer.cpp",
+      "sha256": "f9afbf02c57c9217475de4010221f95df7fcb68462d45176af979b3b69001401"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/06_InitDepthBuffer/CMakeLists.txt",
+      "sha256": "5c4339fd0af87e8e9084ff29402ebb489ddf070fed412e6bd14db2b5d1bb95a5"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/07_InitUniformBuffer/07_InitUniformBuffer.cpp",
+      "sha256": "6a76135aa29e081c410e89e6833a21d30d9c8bfc2b2af3ecb6d03578cb88d5cb"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/07_InitUniformBuffer/CMakeLists.txt",
+      "sha256": "0c83a778871c5229537b1221142602ca746de4a80daf2fbee19a5c400e8732ac"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/08_InitPipelineLayout/08_InitPipelineLayout.cpp",
+      "sha256": "fe238c5423515724f0c6a08edd3830f8743d130c105e429e3a5fc4c5cb66026b"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/08_InitPipelineLayout/CMakeLists.txt",
+      "sha256": "56d117e3061ce3654d2c0f1f5fdf05691fc1c502fa4e6d1ebcbfffe5f00da81e"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/09_InitDescriptorSet/09_InitDescriptorSet.cpp",
+      "sha256": "9401157e8dc58b1bb6dc73188204e8fb849e79f16323a313b3fa7b717ac14aef"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/09_InitDescriptorSet/CMakeLists.txt",
+      "sha256": "beb57ce75a4abf09c2d1f1a1b30da92b2ef6820a5fb4c00b735e8cca8c85a461"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/10_InitRenderPass/10_InitRenderPass.cpp",
+      "sha256": "d6d6f18b8b3539f12a5b72e800ebc2d5d3e6326dbf5c06a6f12cbefcb2ce9a90"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/10_InitRenderPass/CMakeLists.txt",
+      "sha256": "58e31396153b35086abbbe48a31216ac11e7adce79ed69896f6ba2383c6088d5"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/11_InitShaders/11_InitShaders.cpp",
+      "sha256": "161979c4f8afac1d5eadb87b55c20840628d1fb6efb9f3899d75074885be7385"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/11_InitShaders/CMakeLists.txt",
+      "sha256": "7a993c707d88ea9eb6c9639a22cc883f5f81ce9ab47f19e25161cc5fda0e545d"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/12_InitFrameBuffers/12_InitFrameBuffers.cpp",
+      "sha256": "b4c40dfd5b82578dbfb3b727bc4f6d3412fe59466ee2097028bba4220d090c5a"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/12_InitFrameBuffers/CMakeLists.txt",
+      "sha256": "974696bf8945afeb6d44122f853e53ad6598757b01c80cb228e6229adee66b9e"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/13_InitVertexBuffer/13_InitVertexBuffer.cpp",
+      "sha256": "3d8f906f168aef3304c7aaa6a34e9cbaec1fc2e8d62a47a1326eb5bb97a926b6"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/13_InitVertexBuffer/CMakeLists.txt",
+      "sha256": "86f7984008a2bf6d3b201820044b7ec963715bb94f79bb02d085f6d69aba8a82"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/14_InitPipeline/14_InitPipeline.cpp",
+      "sha256": "7e70de46990be3669d3dac090004544ba57fc8007d4c61fbdb08893704f37f91"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/14_InitPipeline/CMakeLists.txt",
+      "sha256": "6059737203b2590225876c267a3799a5e08a36151f0acd9d1235e182ee3c164e"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/15_DrawCube/15_DrawCube.cpp",
+      "sha256": "089ba3ce2b8aa3474cfc7656edb6b45f6e259b7df8223fe6ea9e69b89655d6c0"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/15_DrawCube/CMakeLists.txt",
+      "sha256": "ea4f63724c0537d430e03c3ea0d1bdd32c2ee445022dd4db99d31c77569294f7"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/16_Vulkan_1_1/16_Vulkan_1_1.cpp",
+      "sha256": "d5d17cac4f2665345e6bc07a29ff20176b0c23f163d4d804d0c751cc1c0e76f0"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/16_Vulkan_1_1/CMakeLists.txt",
+      "sha256": "f1e83315d032ca4a6e7c48190610b74d3002f6f7abe84bcf11a6011b3d0e0933"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/CMakeLists.txt",
+      "sha256": "c6c7585b7c940048518cd12eb0f6115523e4eab09dba70783953807134e4a245"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/CopyBlitImage/CMakeLists.txt",
+      "sha256": "80a4d5d187067b1afffb310d8ba4db012b4487f72e71c30db4db47a997a616c9"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/CopyBlitImage/CopyBlitImage.cpp",
+      "sha256": "9c9aeb10918472e8951854c4ec1a8cff963d1ddd5a9da41cea2d3ddad1ff79db"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/CreateDebugUtilsMessenger/CMakeLists.txt",
+      "sha256": "d0fce1cab01a00b3f6e544e9e4d246b4e0bf36efe3a1788bf262952f8bc95158"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/CreateDebugUtilsMessenger/CreateDebugUtilsMessenger.cpp",
+      "sha256": "b8534dca1ab2824cf410295f1847b654c4ac9e82efc0576dbf85d872e82fab67"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/DebugUtilsObjectName/CMakeLists.txt",
+      "sha256": "2d1a31380482e499ada4611570ecd4423cb739f7f9b352d968b55020e114268c"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/DebugUtilsObjectName/DebugUtilsObjectName.cpp",
+      "sha256": "4aa8c55ed7c64c03d7be2635ddc94eb65438f7f53e651944af7bd94f459e862f"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/DrawTexturedCube/CMakeLists.txt",
+      "sha256": "b3db18f68bb2273243fb278b1c9eb15089ee10304f3235d5c5c026ce3d3d7e41"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/DrawTexturedCube/DrawTexturedCube.cpp",
+      "sha256": "0e92befe0b1de7089857ac70603620c6f08b453b44b4762af2d3ce33a58e5b05"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/DynamicUniform/CMakeLists.txt",
+      "sha256": "f189c8c361f0c3344eac59126ffc63f3073101761cb4807dbc69385fcb38da82"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/DynamicUniform/DynamicUniform.cpp",
+      "sha256": "5aff414b652a892ca9ed71915cd2b05df1c3615de285925990d98ada02a11ea8"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/EnableValidationWithCallback/CMakeLists.txt",
+      "sha256": "38b27583a8d090439964215d98f02a2b0c5a4307bbc3f1c32b535166767beb53"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/EnableValidationWithCallback/EnableValidationWithCallback.cpp",
+      "sha256": "7971fcf810de385487db5d235b96199b65515b5f696c30ff2449f0d0ec738d63"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/EnumerateDevicesAdvanced/CMakeLists.txt",
+      "sha256": "1a7f69de46838953dfb16e36fc930b9d0f6b253eeac08efed2fbfd59b310e71f"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/EnumerateDevicesAdvanced/EnumerateDevicesAdvanced.cpp",
+      "sha256": "3efdcd458060cb9c04ac734d1fc0baf95407b420c3527a81ffefd1fac9a884b1"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/Events/CMakeLists.txt",
+      "sha256": "b83a088c532cc3ca95dbea14bded73c07ff34a56fbf2453f7551bc8f870499c1"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/Events/Events.cpp",
+      "sha256": "364a83a5465cbe8167cb93505c27c6821f986bf8974c04f46648df1cdf07a050"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/ImmutableSampler/CMakeLists.txt",
+      "sha256": "1ec9598ab0b648e640ecf0db1f4d9a15f27c96b9dbd36e45de3e9c2a564d81cb"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/ImmutableSampler/ImmutableSampler.cpp",
+      "sha256": "47454f31d9f0c5ae9cd0d7383e2153d79786387732851fcfa86dddb6e7844c30"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InitTexture/CMakeLists.txt",
+      "sha256": "788ce8d9d61de03cfd606401917d65d77c936d2aa6b416acb19ed66a198ae0cd"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InitTexture/InitTexture.cpp",
+      "sha256": "16dba87b4c3e112fd84b62864fac97c9b6b40136738cfb4e9411cd22d2863808"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InputAttachment/CMakeLists.txt",
+      "sha256": "655be65eb66f98c315b2dfdafe5da86cd964ccd38f19e5d326cd945268bbaedf"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InputAttachment/InputAttachment.cpp",
+      "sha256": "58987e47674a21515a1a2d035ed37f74dad485fe6f8f7ace1ab3f5c4dd76008c"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InstanceExtensionProperties/CMakeLists.txt",
+      "sha256": "bbc4211c59027c2ba293d59437fd896a7f6b2ce89c41b4d10979b472b2cb835f"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InstanceExtensionProperties/InstanceExtensionProperties.cpp",
+      "sha256": "cfbad5ad8fba669fdd70c531e5f8ec1eb57006ecd5900c7bd0e6585bc82f4484"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InstanceLayerExtensionProperties/CMakeLists.txt",
+      "sha256": "216db258e8ef601ead101d6860e8281a96ff234b25d85f9784b8f043ba5755b0"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InstanceLayerExtensionProperties/InstanceLayerExtensionProperties.cpp",
+      "sha256": "3662330c9425bd3f06996d1d2a5462304d150dfb98f198b5068ddf41cb2076f4"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InstanceLayerProperties/CMakeLists.txt",
+      "sha256": "08778718d2ed615b8be61ac1cba2a9255c700f129214162eaf968d87201af148"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InstanceLayerProperties/InstanceLayerProperties.cpp",
+      "sha256": "3c02a8a12ebd010d310ac428fc3e14457e31c9da01e40c4f2feecbe08a631292"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InstanceVersion/CMakeLists.txt",
+      "sha256": "91c85ef598845ea4207d64c785004d5e0ffc7876e7c056371aa4b2949a2a3774"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/InstanceVersion/InstanceVersion.cpp",
+      "sha256": "29c7a6ac816ee5d26800c314c758cd85c7a6db801564b2ee43750746fa5ba4e6"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/MultipleSets/CMakeLists.txt",
+      "sha256": "e76cac597ab389967c9586f10799eb4be1572f084af7c4bcae9d0c3ebea13f6e"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/MultipleSets/MultipleSets.cpp",
+      "sha256": "865339aebdc7f2a35611c17eaee4644f69fdf641424dc49c5e180606a0672797"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/OcclusionQuery/CMakeLists.txt",
+      "sha256": "1f3fd004f5efefd5e388471d3e9b834cdbfbc5ac98a20bfae1ae910fc1003f5b"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/OcclusionQuery/OcclusionQuery.cpp",
+      "sha256": "ed53906e688943c0012277b7c9c970bee612ca2dc62e6fdf8718954e362139f6"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceExtensions/CMakeLists.txt",
+      "sha256": "27fe665d6738bab0451b6b9c0db94897919b51a245b427b4a67232102547a4c5"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceExtensions/PhysicalDeviceExtensions.cpp",
+      "sha256": "4b199e03e948f7d40e6f910c02efbc2e727de62511b0a49fa3c85e7e9536373b"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceFeatures/CMakeLists.txt",
+      "sha256": "e84f0c15254bb459158c721fe4f0722b9728a53328f63e0e292fab427c519889"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceFeatures/PhysicalDeviceFeatures.cpp",
+      "sha256": "0890198389e0269af0df2fdabea456c4cbdfb8e8df6a9e5b4de18a70b4c47c38"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceGroups/CMakeLists.txt",
+      "sha256": "0a23992a4de934bee15bfac0b9c089494ea230f3cbcd715def35a0e72867db31"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceGroups/PhysicalDeviceGroups.cpp",
+      "sha256": "eda52e5387f4cd087abc32d5fac194ce3d3929d9d5db380861503724e1f2beab"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceMemoryProperties/CMakeLists.txt",
+      "sha256": "970ad65ed97d3aa18628e9da2e8de904136c8469d37eb13ea9463fa94f42bcfb"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceMemoryProperties/PhysicalDeviceMemoryProperties.cpp",
+      "sha256": "1749fc46473e48ec0153e1ae17a59a54416d07192c7c20f6b540ed8767e4bdfc"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceProperties/CMakeLists.txt",
+      "sha256": "373fea6e69ad793f74b442bd41ca59d3d806c9f3201627bb77b5316785762c13"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceProperties/PhysicalDeviceProperties.cpp",
+      "sha256": "27b10db6c275c1270efae8b529d43440a41a0302b34e118f230389bf3765ea2b"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceQueueFamilyProperties/CMakeLists.txt",
+      "sha256": "b89f81f330fd7f02f462af35b19e2c99f6b5b7bcba39dcb77417960ca09642cd"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PhysicalDeviceQueueFamilyProperties/PhysicalDeviceQueueFamilyProperties.cpp",
+      "sha256": "f8020d44db07af58026953b2cbb761eaa73e476513f0a2a2d298ee56584b3134"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PipelineCache/CMakeLists.txt",
+      "sha256": "fc5a58c52855ada929096dd346c8a9a32a4978986d190778639ba3e3776d72ac"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PipelineCache/PipelineCache.cpp",
+      "sha256": "05e71505bcdf998686d91e7015c054fde3d7604a45728deed139540e22f31ebb"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PipelineDerivative/CMakeLists.txt",
+      "sha256": "22fb24cc5adc3cf057f4061966115b1c583333c5835f776993fbc214b3694791"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PipelineDerivative/PipelineDerivative.cpp",
+      "sha256": "3a19958e72a463720aca30385babe1bdf439ca05185bcf733f7a2e8aefed2ade"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PushConstants/CMakeLists.txt",
+      "sha256": "113796f3eab15744658e12bbc3c9e8533c4f8721b67ca6c4b2f0302346a2bfd4"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PushConstants/PushConstants.cpp",
+      "sha256": "452921ceed07326a9103d4075d2b64417fdff992b27ad17d245626f291da862a"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PushDescriptors/CMakeLists.txt",
+      "sha256": "d3ec3c94863a12e2d328c5f0b0b5139395d337c191116addd3d42df6ecbef2d7"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/PushDescriptors/PushDescriptors.cpp",
+      "sha256": "671fc8cc67f3fa54d0f344028a16eec53c978ebc331fe91aceae94a584222a43"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/RayTracing/CMakeLists.txt",
+      "sha256": "b8bdd327ff3e0c07485027eb057472b4356d3542540c6292fb805202377b2a57"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/RayTracing/CameraManipulator.cpp",
+      "sha256": "f6288d133e838f78540f7b9725ee53caa8d1e272776fe705ef61b8b2f04efc9e"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/RayTracing/CameraManipulator.hpp",
+      "sha256": "9a551997e2174af5909403abdb0a4e9e66b8010d73a8ba55c484aa4eec3e9f37"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/RayTracing/RayTracing.cpp",
+      "sha256": "2cccc51d31d708a46d1dbc4defd63c8054f44f18dc92d1c0e5e5ecde49c10da1"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/SecondaryCommandBuffer/CMakeLists.txt",
+      "sha256": "3eb724ed08decccb5b12b87431ccec3aaf83504ff224317ff8b27afd9b6af617"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/SecondaryCommandBuffer/SecondaryCommandBuffer.cpp",
+      "sha256": "f63d9c8af5108764f688eb0578583cb70557dd7f08a6f879ff06ab9ba2eec982"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/SeparateImageSampler/CMakeLists.txt",
+      "sha256": "e575c390c57afc09964b3aea91fa23bf51b3549cdf00f94422b7ebadd5272747"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/SeparateImageSampler/SeparateImageSampler.cpp",
+      "sha256": "5465499a6076886c951e17e6e84b3615b55cb54c09599bd957ba72a190d97725"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/SurfaceCapabilities/CMakeLists.txt",
+      "sha256": "734d8b28a1a4d48ca4bd611a97bc62ab5b0a1e722b5e351562e387ff4780dd6d"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/SurfaceCapabilities/SurfaceCapabilities.cpp",
+      "sha256": "1429da4956d1850508f2c7d19e88394152d4774a4b315815f8012a0ad06cbbb6"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/SurfaceFormats/CMakeLists.txt",
+      "sha256": "31784a32450a742aa425f6461a989d10baf5e978acea96a5b252ae565962a841"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/SurfaceFormats/SurfaceFormats.cpp",
+      "sha256": "fc142e39c78f050d87e82242de2fce4d46436408db4c43dedd967597788171bf"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/Template/CMakeLists.txt",
+      "sha256": "58f0c1dc70027d335b59cad979470ef536ad74e9100a4ec8a370f1cd7ae652eb"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/Template/Template.cpp",
+      "sha256": "2be7e1d076619fc945298f72bb4ade33e832a66422aa8395da07590e4ff9b48a"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/TexelBuffer/CMakeLists.txt",
+      "sha256": "fb8eaa655a8435583624f4ce922f4bcc02cce9d86d013f33563e52f7c7ad8d93"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/TexelBuffer/TexelBuffer.cpp",
+      "sha256": "9842e840ba7be1eae9e454b761fe1e66667e64da3b175deb926ad1bfb9e2f2f0"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/utils/CMakeLists.txt",
+      "sha256": "30ca876d713eee3ee3f36208ec653fcdad4f7723baf9e8c1c52a12e2fd610925"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/utils/shaders.hpp",
+      "sha256": "209a9602310a80ecd6b32d718cbeb085c2e326ee7c32a4dac4d0bc0802638c80"
+    },
+    {
+      "path": "app/libraries/vkhpp/RAII_Samples/utils/utils.hpp",
+      "sha256": "d134af4d427a4a8e274cded7d36bd3dde62922222350bf0ee044f383c014ee89"
+    },
+    {
+      "path": "app/libraries/vkhpp/README.md",
+      "sha256": "7e416893959f5a6a2d917c38f1810f22b1dd576be4b44aa77fa02941fd89e204"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/.cmake-format.py",
+      "sha256": "71942b5c5941c6a85352cd1679a174c5cff6fe4ee665c0b6f136a61d73d8019b"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/.git",
+      "sha256": "580417aeaafa8ba4997f2a6a4cc0dd9132dfbcd32ca123a71713d9125e65c085"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/.gitattributes",
+      "sha256": "aa961c0f2b8901cdafa06a73ea227fb42c142d031b45940387f421794e38206b"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/.gitignore",
+      "sha256": "be2888aac95510c083aca1e2f72d902c5a3b0d0560445f848ea2ec037186f4f9"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/BUILD.gn",
+      "sha256": "56dc89854494bc106eabf6189725817f004b4d197c6053a0992e46cc52b3622e"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/BUILD.md",
+      "sha256": "998a026c9cad88e62e50f4c42b6ce6a22ceef80210628c0a44a808108c1326ae"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/CMakeLists.txt",
+      "sha256": "e9b333c9fb15285104c07b36195bdbba0f36cc9f14a19c4b0c060a88c0513d35"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/CODE_OF_CONDUCT.md",
+      "sha256": "a25e58cd66a9543e1500db9a5c3c027e874893ad1a264530bf26eb10918b5d80"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/LICENSE.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/README.md",
+      "sha256": "c213e8eb0bcd10e76a4f9a65768d9b93d02c1b4661296ad2740e72b869873f55"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/cmake/Copyright_cmake.txt",
+      "sha256": "915a9c27cb1a44addcca4c8776931ca9418989290d73447fc5789be5d98698a2"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/cmake/cmake_uninstall.cmake.in",
+      "sha256": "c055b321246df1435a71a38b4ca432556fca3e2a77e3b39b913a94bae3282101"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vk_video/vulkan_video_codec_h264std.h",
+      "sha256": "1d456d1a43474edc7636514873db7be1b1239abe2ccb4dc8c2eb1c356bd6be27"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vk_video/vulkan_video_codec_h264std_decode.h",
+      "sha256": "d3e9dea7c9067a80d72f5977e4c71e21ab282e15fc88247314b5e0caaaf3d6d5"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vk_video/vulkan_video_codec_h264std_encode.h",
+      "sha256": "3768faa0091caa4f7b3967c35f9e08264ca58a0b6aa4e0e7d461aa1ed6cbaf32"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vk_video/vulkan_video_codec_h265std.h",
+      "sha256": "9dd4133d4393bd672212470c1d0f5ca8a07aabd626635d8ef969152c686cbbd1"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vk_video/vulkan_video_codec_h265std_decode.h",
+      "sha256": "475c047db95c51d56c75e30e84ea71f6be5a0af52540a14fff93a4395813893c"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vk_video/vulkan_video_codec_h265std_encode.h",
+      "sha256": "f52593f0c921d58a96491ea529b28f0147e3ab2ebaece1467e64924652b5a577"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vk_video/vulkan_video_codecs_common.h",
+      "sha256": "d21822a0e543de023b9566622093dcf34064d66e816d4e62c121280e00b0946b"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vk_icd.h",
+      "sha256": "63000862162527b85a2c8b339e469d46725b40f8ca2e09c853643a27322752dc"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vk_layer.h",
+      "sha256": "5cb6ca5adb5ed3f260d01a1320580962371b768c61fc625dd69e3922949a5299"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vk_platform.h",
+      "sha256": "5a26441f281f760911b9ed0f706336e72f6bc8b8e3c6c305ab7147e8780e6ab4"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vk_sdk_platform.h",
+      "sha256": "a4fce20b4c86dedc9e2c5f1796c42b9ee5a1f29b528a6b481cb60ae7a523db31"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan.h",
+      "sha256": "d8432ffbc254efe46ddf12fa9ccd42f89f8cb9a95be2b3bb9c052f0ca2271678"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan.hpp",
+      "sha256": "e9e810c6a0ae3c85384c6e3c34a86464a00f29146b6db2b3508a32221d1ee675"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_android.h",
+      "sha256": "8a5c916a18710fd567463f803fe24e662806e62e7d9df79de8a27c1264081bec"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_beta.h",
+      "sha256": "d446b5cf010745dfe8defc781127465797dfa134407f67f2a144f9683488a17b"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_core.h",
+      "sha256": "56bc798fc3103e0d705a53c80a2ea4f04e15ca80fc21a3567f604f68d64ffd54"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_directfb.h",
+      "sha256": "b55e1e2d49560db71f64847930b9ace15547604ded012b45381d02c35c219eaf"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_enums.hpp",
+      "sha256": "2c96f7e20e8dd189441fc6e19c72bf0a27b9b6620c9b2fc0c05940521fd68800"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_fuchsia.h",
+      "sha256": "82e964e789fa9e62a4f112c5e9bded86c0c10eae0dc0cf6d41ac3fecdb57e9b8"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_funcs.hpp",
+      "sha256": "f19118d7cf93b4750969b6dc9d2930f4a9b6693ee044d1ce0f4daace8f0b87e0"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_ggp.h",
+      "sha256": "6a02acea6db947f174f4d07f37a1645e2b7c52cc9dcd2cc190eea985554d9f6a"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_handles.hpp",
+      "sha256": "9c1fef8136efbbd534f45b891892dac7973a33edb8fae7837ac7855f17948f65"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_ios.h",
+      "sha256": "35d1a0ae4e4655abeb0f1dc057bd9d28b0c89b06923906563870d2dab84f0007"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_macos.h",
+      "sha256": "d2802ebaa27ae2b070ae7fcda3049d094a8cb3b10a3cfaf9ddf47eb029bfc7fd"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_metal.h",
+      "sha256": "6aa53fa054927bb9f807c27311de17f3bedfeab0aea50748daba39a3bbfa76ff"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_raii.hpp",
+      "sha256": "4f1da8ee1966402d7b31c80e0c2e506f3bd2ac716be764ccd67074f6de642346"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_screen.h",
+      "sha256": "47182622719ed006364663117f7ae7396d75b85f74f7ea5e7842dd9516a8546d"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_structs.hpp",
+      "sha256": "4e4bf7c6f0c8e39f444f44c56e39473b85625f18a8e22dd642b701c3d7137511"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_vi.h",
+      "sha256": "ca9e0763f0dac3ffd298952a53f934a3bfb695aaefd5ab3629036ae60b498aa9"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_wayland.h",
+      "sha256": "17a516e1f0df9b4853bc6cf884cca9ef97c8371084b12c0db2c5fcdd47eb3018"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_win32.h",
+      "sha256": "428652600e7245708ead75bfadf2d9ff4f6c1da8e063479ad33d3d09230e699d"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_xcb.h",
+      "sha256": "537870dcd8fed2a6191760ba38cb0009e15e8baeb3788391e4c172d389145971"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_xlib.h",
+      "sha256": "d95e8829be236202890a6a8277f8bb35a9b22ad680f8393e8006ea6b168e0a67"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/include/vulkan/vulkan_xlib_xrandr.h",
+      "sha256": "f4a715e20ce1f9bd5156d0a5566ece7b58170c3503a16beebe85cc77a7bc50d4"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/apiconventions.py",
+      "sha256": "7981ac93723b1baa9d453da245fa388321e41a9f38bff0dfd29609ea9b0965b4"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/cgenerator.py",
+      "sha256": "241042b20917618d07f7b863f6290c0ca6b268c16ae863111266162d949c5200"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/conventions.py",
+      "sha256": "3d1885835e8fd44a713308a92afc6a5daa68b5135a9fd35dfb0eb9763696593b"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/generator.py",
+      "sha256": "ab2ed52f5657b732a76f046d417a8cae39bc0e3dcf5106317513008bb15c6775"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/genvk.py",
+      "sha256": "aa07e8ee0f6e47781a22a1549b87dc2ce0425b3cf5909c47dbe60682be6938c8"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/reg.py",
+      "sha256": "8baec794daf2467b6dceef9b39c511865f7ac63003ece56cfdc1e07f4290edd7"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/spec_tools/util.py",
+      "sha256": "637c855d29a6930743d54c0a233dfd58c9421232cbd3b4da60cd0858a7c22786"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/validusage.json",
+      "sha256": "9f6d2be603b4c2bf3944737c06e2f323381d61c7bfd35e6de029009052428ef6"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/vk.xml",
+      "sha256": "a4713d375674105dee6909081bcc403bfc455532339ca554c593e04c9a8b3cda"
+    },
+    {
+      "path": "app/libraries/vkhpp/Vulkan-Headers/registry/vkconventions.py",
+      "sha256": "d330abc7890a5fa5d5eb0d18804f8f3decdcb138ab70f7d2cc32cbba492134bf"
+    },
+    {
+      "path": "app/libraries/vkhpp/VulkanHppGenerator.cpp",
+      "sha256": "d6a0551bb56cd024fd38efb893edebac746aa6466c8485a8f428f666bfc08206"
+    },
+    {
+      "path": "app/libraries/vkhpp/VulkanHppGenerator.hpp",
+      "sha256": "6ff02bec2fbbf82cd013051b2cb9a6500653aa3795f365335692fe8c9dea481e"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/01_InitInstance/01_InitInstance.cpp",
+      "sha256": "30c2809cc6766226ae22cee2c3e462430be15950abce676dbc2b26d317a2ab70"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/01_InitInstance/CMakeLists.txt",
+      "sha256": "bad880baf7b22fccd14b20c51a50580b2004bbb7d4657af54f6de5f938280098"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/02_EnumerateDevices/02_EnumerateDevices.cpp",
+      "sha256": "7b9e5baf94c64d06fc2149684520b1a396bf9d8b2fb5ff93c59b8fa0b3db73f2"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/02_EnumerateDevices/CMakeLists.txt",
+      "sha256": "60913c94723ab9836f592591395a983035748f5d709cb29e37414ac877721c90"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/03_InitDevice/03_InitDevice.cpp",
+      "sha256": "33dbad4dc29db257cd83e3bc7c46713a83e5a5949f5b0b2f336bd1656a16483e"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/03_InitDevice/CMakeLists.txt",
+      "sha256": "d8132402102f637300eafe9b4e98d63b6439a2a00bd1837503af517ba3a2191e"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/04_InitCommandBuffer/04_InitCommandBuffer.cpp",
+      "sha256": "ed4f11e31b2c16f4f29c83d0e7e75746bd317880a5776192ac698769e682adf9"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/04_InitCommandBuffer/CMakeLists.txt",
+      "sha256": "4532523918066f89f336e7cc85f5780c9c85816469833a670cfff5a0396bf0c7"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/05_InitSwapchain/05_InitSwapchain.cpp",
+      "sha256": "c594e32715efdce935e3079d04de68197f4da048bfae32b5a7396048bef06b89"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/05_InitSwapchain/CMakeLists.txt",
+      "sha256": "0deb21485ee5629c0e18c82c297d3fbfa1f7d87512d3929e5cb5feabd33ad70f"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/06_InitDepthBuffer/06_InitDepthBuffer.cpp",
+      "sha256": "05d6932d8b177acd87b8130360b205e0d037eb3d3614e4f6d5a984c92435aac0"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/06_InitDepthBuffer/CMakeLists.txt",
+      "sha256": "20fdd12fb1c53f6919825bf0b4ef81ae4515acd68d83c07d3f3aa20756b1df90"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/07_InitUniformBuffer/07_InitUniformBuffer.cpp",
+      "sha256": "9fe43b0b4f6747495452055f9f96471352723bb683fa6226e07fba1175673e1d"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/07_InitUniformBuffer/CMakeLists.txt",
+      "sha256": "4073e78b1e49a25bf4589f050e0c3900a272edcf7e639873870a0c8b70bd298c"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/08_InitPipelineLayout/08_InitPipelineLayout.cpp",
+      "sha256": "2f3e171101a14ac81c54d992bcb1032a9f24967a8d1b7219124ed36dcdcd9766"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/08_InitPipelineLayout/CMakeLists.txt",
+      "sha256": "96837894d9caa939a15ed4d0879ca60010ee8c9b484caf074783d7a7aa354fe1"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/09_InitDescriptorSet/09_InitDescriptorSet.cpp",
+      "sha256": "a77c7d1cbaa3c5b5d4cd5bfe14b84aefe7a909c81f84fa5e5e5d4b268c755904"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/09_InitDescriptorSet/CMakeLists.txt",
+      "sha256": "9b1d527abf740730e0da1b48fb8abce06ff6a244ea66f4b3d377dc47b6bb5973"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/10_InitRenderPass/10_InitRenderPass.cpp",
+      "sha256": "4cdbbfd5c8522bbce3d85926883e5bc7bbdadcecc2d6db3185ecc6c721cd104d"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/10_InitRenderPass/CMakeLists.txt",
+      "sha256": "9fc6bc5aefbb86476abb5150c96d24a4100c79b326d51791682644fa73dd64b0"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/11_InitShaders/11_InitShaders.cpp",
+      "sha256": "3c77b1e8c987c3a15c1f6e66051da772efbd937ddf2f6659a81d20654c06ce65"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/11_InitShaders/CMakeLists.txt",
+      "sha256": "55ee1a98d97514c06c0803827e05c74a5138ad53e4e1f7a56d614cbb026e0592"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/12_InitFrameBuffers/12_InitFrameBuffers.cpp",
+      "sha256": "3a3c12586ab285bd68a9d2e35afa3dccab0a6833bc440feb8b47d39bf4c207a5"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/12_InitFrameBuffers/CMakeLists.txt",
+      "sha256": "21592d4c938180b183addfb1c48ead6aab5595cbf5f8e6a671e1fe617f689131"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/13_InitVertexBuffer/13_InitVertexBuffer.cpp",
+      "sha256": "9ef5f3e94f37ca8c23fa15ae93da13cdd0064b5db936e9091de23ee7ca5a3a15"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/13_InitVertexBuffer/CMakeLists.txt",
+      "sha256": "221adbcb245f6368c0550966fcce9f083d50f4ee7172c97d13944be2b9bfb11a"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/14_InitPipeline/14_InitPipeline.cpp",
+      "sha256": "64c4b044531196e252878e5d5a27dde60333fde8b5baf23477e85e0d859afdc8"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/14_InitPipeline/CMakeLists.txt",
+      "sha256": "e51d2b2df2330688caa3d4fa693fcd0dce1e6ddd8d93b546f422e28747dc5df6"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/15_DrawCube/15_DrawCube.cpp",
+      "sha256": "9d41d2f6c1ccb9d73bf5bc3606f5da7955ab2230ec28d0b38ee4a38f539b0763"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/15_DrawCube/CMakeLists.txt",
+      "sha256": "2163154bcd7aabad033b3dc7b189d2926d2f8bc1cf08793727f19f50be64a452"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/16_Vulkan_1_1/16_Vulkan_1_1.cpp",
+      "sha256": "1c4427fcb2c5720dd503b38875c02fecc8777213b245afe7a52482c78cc50555"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/16_Vulkan_1_1/CMakeLists.txt",
+      "sha256": "bb09422c7e26bb0c7b20a763a19a10805c2f2aacdccd906e315128d628b9541d"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/CMakeLists.txt",
+      "sha256": "000e8515f13dc75148b29e1010ebeacc07c5236af6ffc8318eff969ba2aa1e47"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/CopyBlitImage/CMakeLists.txt",
+      "sha256": "4460c8968ae4baa9bf695ec323794b3b87b324252a91ddb6a39c68fb215a29c0"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/CopyBlitImage/CopyBlitImage.cpp",
+      "sha256": "b3603d403ea8df0e5de2695e1f349631b60f979e4a698e77f6c1b480023af71a"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/CreateDebugUtilsMessenger/CMakeLists.txt",
+      "sha256": "8c51bf493f10bf1366ad468b45af046ee49bee0daa3d1c084a7128f9803a74fc"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/CreateDebugUtilsMessenger/CreateDebugUtilsMessenger.cpp",
+      "sha256": "65fd9b1cc79f114337db537330c5beecd7fb523f8c9f853633caca0b8fe50337"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/DebugUtilsObjectName/CMakeLists.txt",
+      "sha256": "47314b6a83e1c7627bb6044643c997a4669785965db193662cb3c2fbdb2e64c6"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/DebugUtilsObjectName/DebugUtilsObjectName.cpp",
+      "sha256": "a2b17e155e2046fe100c1e10871dab6584f1bf9cb521e4b427c63d1698e5e2e9"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/DrawTexturedCube/CMakeLists.txt",
+      "sha256": "7c4235b2b3bcd08b160c876a76bff9ce6d02da9a95bc49e2b6265987fec3b509"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/DrawTexturedCube/DrawTexturedCube.cpp",
+      "sha256": "eafcce3e6a7880106ff5b62df568c18dac07e496a17c3c36998f7d895604b550"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/DynamicUniform/CMakeLists.txt",
+      "sha256": "2baf4bf6ea777fae6a6b6c1308f3ed9a445ebd5b2a655f2df9e9f59c4a38f37a"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/DynamicUniform/DynamicUniform.cpp",
+      "sha256": "4abc6d7aed259ac48e67379950946749e34e87d2cb0283a3366062ad81afec65"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/EnableValidationWithCallback/CMakeLists.txt",
+      "sha256": "cbdf53822e64be3e6c39976fcfcffc37a43f60da77344dfe717c8b610279b4f3"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/EnableValidationWithCallback/EnableValidationWithCallback.cpp",
+      "sha256": "ef348e15fbf7f91054bef952dc732c764346db34985ff8cd100a14b349d49c59"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/EnumerateDevicesAdvanced/CMakeLists.txt",
+      "sha256": "63e6934e4337522dd9789d7783d3bc7a13c0a12155e6b99465c91db761953ee5"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/EnumerateDevicesAdvanced/EnumerateDevicesAdvanced.cpp",
+      "sha256": "3af62820451dd91dcb7ff1c37ffe05cd0802002295feef8376e1d869c438db33"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/Events/CMakeLists.txt",
+      "sha256": "7a6c0ae9df92fe3a757e982a699ae56f9168f8d0aa7e48d82f0a52d13ac1cfb4"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/Events/Events.cpp",
+      "sha256": "54f5d7cc95ce0518d9873b3836fce7e48fa49d664ec3f58a9a099d7b1c1e6589"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/ImmutableSampler/CMakeLists.txt",
+      "sha256": "cc21ee3602c95c91ac81f8a9d5a3163e4437a83399f02e2b2820952fc7f50b76"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/ImmutableSampler/ImmutableSampler.cpp",
+      "sha256": "68e461e19d878089b77f617d0610bea8c9d58da09d1d1181de3bb957b0408818"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InitTexture/CMakeLists.txt",
+      "sha256": "4197ba1a631f2ac7d3b463c7e67cb74cec5823122bf932d9d870a48c05e0f7bd"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InitTexture/InitTexture.cpp",
+      "sha256": "845ed72acdc9ff52fe536c92c8fa726156307015529868925e3f3061faa72e29"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InputAttachment/CMakeLists.txt",
+      "sha256": "d0e6b8f407d9bce4626effc2d75f85317825593dc3a1041230ae6a1bbcd348cb"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InputAttachment/InputAttachment.cpp",
+      "sha256": "12bbc0a049c4ba85bd1fcab51c25743cec1c21cf6ead0d49fe56672c7cb7aa4a"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InstanceExtensionProperties/CMakeLists.txt",
+      "sha256": "a343d9fc0814fb6678039bcef1119d1306b5ea46d6736162c6189b06d49f274c"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InstanceExtensionProperties/InstanceExtensionProperties.cpp",
+      "sha256": "122732f84d62b62cdb9d82dcca4a06452bccd93fdfd2995554bb200469bd1bc1"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InstanceLayerExtensionProperties/CMakeLists.txt",
+      "sha256": "11f3a801db5e0c0b6eb7ca2c065d86afdf633d00c22cbfbd2968120343855d5b"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InstanceLayerExtensionProperties/InstanceLayerExtensionProperties.cpp",
+      "sha256": "33d23d60453bfb0601c6b1183afef033297c91e145b3dec8ba394ad1a676fe62"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InstanceLayerProperties/CMakeLists.txt",
+      "sha256": "4175ad761adb7448aab0643cc243119a6520218f397b2f103ae289b46321c62f"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InstanceLayerProperties/InstanceLayerProperties.cpp",
+      "sha256": "8ec58b836da0d7ec6883d68e5a09adeea5d285dfa45cd50a2746726941ff4211"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InstanceVersion/CMakeLists.txt",
+      "sha256": "5da77aa35960f56233c4a0a0edcca61cf13437351e832ecef013894f43066325"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/InstanceVersion/InstanceVersion.cpp",
+      "sha256": "54b0c337466e28960c63b28a97f3b2478fb679e7f7de8beb2523e7a0751a82ab"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/MultipleSets/CMakeLists.txt",
+      "sha256": "07c5005e9c2056f49270061767cb1fadec0f153c4d4cecc9a253beb2a6878eb7"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/MultipleSets/MultipleSets.cpp",
+      "sha256": "f2c84c96615d38f267475bb40b70ad27f63984b48e5d350bb00edafb3362715e"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/OcclusionQuery/CMakeLists.txt",
+      "sha256": "bbe9b786fa0636fbce29938103f5ab7fa893ec1b4fcb3a6d91d0dbd1d7ebd415"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/OcclusionQuery/OcclusionQuery.cpp",
+      "sha256": "b72456104153eabe4ca025b6ae48743feb6872226879aa071fbb5ecf9eea0565"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceExtensions/CMakeLists.txt",
+      "sha256": "8617964e77d04f51a16d58bedec61ef5b3b379f729d8d3a741ba551e06103e13"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceExtensions/PhysicalDeviceExtensions.cpp",
+      "sha256": "f5e3b2d6df74894ce22de4342047d230d53c267a6a57e502de1ab6b200bc6ba3"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceFeatures/CMakeLists.txt",
+      "sha256": "a0ef51c305dfa30e6b8b0e73bcf35d1c90990d2170507c3909ab941ae43329ad"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceFeatures/PhysicalDeviceFeatures.cpp",
+      "sha256": "d4c678ca7a4c4c1c46020353e6ceaca3af37a8745644916b992066f19e424ac9"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceGroups/CMakeLists.txt",
+      "sha256": "83cca68df90239c81f79d78b71dbae69ab2376936f42c556da4c2758133a6f9d"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceGroups/PhysicalDeviceGroups.cpp",
+      "sha256": "92fcc7eb0fddf982c75b313d2f1ad26c5a1fe83c9a367b50566da47b9f022b52"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceMemoryProperties/CMakeLists.txt",
+      "sha256": "5ce949ae91d37d34a2ebc1df26e8224f6f61a07b2a1b793ae2ff034d2abd429a"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceMemoryProperties/PhysicalDeviceMemoryProperties.cpp",
+      "sha256": "2c0f961fa1dbb7ecf2294452c4ba0e4b38491db34f683adb66cb52d377fa64e7"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceProperties/CMakeLists.txt",
+      "sha256": "506655080735c52548983df140754bafb408ee4129779027550ba5f77b0662af"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceProperties/PhysicalDeviceProperties.cpp",
+      "sha256": "e3d0d25941f997660e47b2af09dcaaf2430263d6851cb520e249fc03ba61cf96"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceQueueFamilyProperties/CMakeLists.txt",
+      "sha256": "4e2e0c31ee83eae6bbf2d13505eba83cb6ba8f547dc328a96f23a3a4a0829395"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PhysicalDeviceQueueFamilyProperties/PhysicalDeviceQueueFamilyProperties.cpp",
+      "sha256": "1a04370c72a0f4e2632ee916e926d8fd83fab8256ab4aeec212db58a8733de39"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PipelineCache/CMakeLists.txt",
+      "sha256": "ae3a1d4ddda827974ff94267bacb63802eebb47a25508c536396df9a79379ceb"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PipelineCache/PipelineCache.cpp",
+      "sha256": "3dc5f5decb95acf1fefa21a5dbe06c665a8182e7a275c2fd507afad4ba49d79d"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PipelineDerivative/CMakeLists.txt",
+      "sha256": "954855c48e0759d94eb9db1299e0e7327648beb46fc6d80d6c9ed1e9a1b0969c"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PipelineDerivative/PipelineDerivative.cpp",
+      "sha256": "f7629febacb568310981d5dcc1cef410dc64813fee47f928586aee36eb2ead61"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PushConstants/CMakeLists.txt",
+      "sha256": "bffb6551e9950528ff12d8461860ea74403e072ce52adc26a8f4ba9933906f63"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PushConstants/PushConstants.cpp",
+      "sha256": "328461a460bf7060868f5a0630d506b8fa50b273c21828935f33930700d95d8f"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PushDescriptors/CMakeLists.txt",
+      "sha256": "49949d76e0486cbe25a0a4c5bc5fbc483ff14d67dfe304fe188e34fcdc4f83cf"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/PushDescriptors/PushDescriptors.cpp",
+      "sha256": "199983fe8dce3e2622a2ee6ee6e87e3a7f2af9761b7aa3f068eca6f9d9190aa0"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/RayTracing/CMakeLists.txt",
+      "sha256": "9edda7c942e945dececf09fa123208e5bf62e45d959af0bb2f920fcdd79500bb"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/RayTracing/CameraManipulator.cpp",
+      "sha256": "f6288d133e838f78540f7b9725ee53caa8d1e272776fe705ef61b8b2f04efc9e"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/RayTracing/CameraManipulator.hpp",
+      "sha256": "6de2e72f3c04b38decda5a746375781a7e070338b0af580c96b0d0bb2adce45c"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/RayTracing/RayTracing.cpp",
+      "sha256": "113fed1d594239f57626a78d5a45669385f9747c16c317d3f5015e06da745292"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/SecondaryCommandBuffer/CMakeLists.txt",
+      "sha256": "343bb2406b691d4f17b6a538bc5263fbd4a83de9fed666c7bbf528c35abf6cba"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/SecondaryCommandBuffer/SecondaryCommandBuffer.cpp",
+      "sha256": "a8e1c7d631424e6d2b97fdd07f99c714d2690c3a9ddbeb336654dcca31f8aaec"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/SeparateImageSampler/CMakeLists.txt",
+      "sha256": "dae322b33cfa9d15539495d667de4b342ed03ef4e06a51872b8def151a11f01b"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/SeparateImageSampler/SeparateImageSampler.cpp",
+      "sha256": "f1a5e2f50bfe35dcef18f5884a039dc381f1861a355dea1a09d71b6113353b46"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/SurfaceCapabilities/CMakeLists.txt",
+      "sha256": "1554bb168ef7890bc97c5ba0e0d48d110c40232ed0f8f7eae9e37c47557d7b37"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/SurfaceCapabilities/SurfaceCapabilities.cpp",
+      "sha256": "98a8b156298cd70440d3bc1b48abb9f1f4c9c6d18f84e121b6dcd97a90981307"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/SurfaceFormats/CMakeLists.txt",
+      "sha256": "267efaad6ad9ad50f699a0183e49c54322b9d41db57b858b07627466a082a974"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/SurfaceFormats/SurfaceFormats.cpp",
+      "sha256": "e135f858b9b312792f024b825b10fb5a2bf92cca847751fea44d5b7ebff4a30f"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/Template/CMakeLists.txt",
+      "sha256": "72b0bd030b55bca901df50b3d611c5a3c3aa64b57840698caf987a48a5a44a25"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/Template/Template.cpp",
+      "sha256": "067c9f69a37f169b01c8e051c06f30fc0aa701f331aa8cabb32a04cd093ad542"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/TexelBuffer/CMakeLists.txt",
+      "sha256": "26623598908606759c3d4f11ecc49c14f65620879ebf3a5da4eef5d80a353bfd"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/TexelBuffer/TexelBuffer.cpp",
+      "sha256": "b10c621280aa51b1686d1685b262337f713c5a34dc863129315ebb0f623e548c"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/utils/CMakeLists.txt",
+      "sha256": "18be41048933aa0abd36468054340e2596b4b87d184e07a873db74aa71752691"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/utils/geometries.hpp",
+      "sha256": "93452537e85387a5118ad255cefedcc95b8759403950b86cfd42fdd739b33c09"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/utils/math.cpp",
+      "sha256": "b6d069c96a211ce1562004ff1c39cc5d9644dbcc9ba2678e6688cf943423e1d9"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/utils/math.hpp",
+      "sha256": "bd7cd2345946dae867b68b8a913a77fcd056bf7135b51b4226f526c453a857f9"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/utils/shaders.cpp",
+      "sha256": "ea0bb95107526eabee5d4611471624fbc9fc30cdbcfb062880862c69daadd6ab"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/utils/shaders.hpp",
+      "sha256": "87f1c5c2d947650d7c0e485cb5999c891380ee18554eaf427f60e34a04ff6a0b"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/utils/utils.cpp",
+      "sha256": "9130769a5b673f7c5a255018b01bf147247510d8c7209c622c37d2554a219e1c"
+    },
+    {
+      "path": "app/libraries/vkhpp/samples/utils/utils.hpp",
+      "sha256": "611d4260d0ab0408eb5e2046af1e8d064da239a4503d95f43ab5211cc85c8ef4"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/ArrayProxy/ArrayProxy.cpp",
+      "sha256": "03963c0fb0a5098ddfb46d90494a7a67ec28473ba745cae34a37aa09ff382faa"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/ArrayProxy/CMakeLists.txt",
+      "sha256": "0fdeeefc5e7abf3fa30125ab366e128c63ffa9d6ebf61b6a7a52cf4a6579205b"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/ArrayProxyNoTemporaries/ArrayProxyNoTemporaries.cpp",
+      "sha256": "a99fd7e8a372320029a34808a887e37d23cfb04a69c41eae50b1f2993a1371b1"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/ArrayProxyNoTemporaries/CMakeLists.txt",
+      "sha256": "b6223c97e343a9bd82c57b187a02c29d664a7eb2a78b8008c7d2dc61fdd0470d"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/CMakeLists.txt",
+      "sha256": "b28c19d670f097e74926e7319eff019ad2d2e42e3bd3c47dc50477ee4f2e45ec"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DesignatedInitializers/CMakeLists.txt",
+      "sha256": "2ffa226d003a6514d03a81030364d78bba59e7fed2dff14545b58fb5b3b47448"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DesignatedInitializers/DesignatedInitializers.cpp",
+      "sha256": "9b4ececd80773a068313b69b293471e54b6345df8d6681444731542ee9312233"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DeviceFunctions/CMakeLists.txt",
+      "sha256": "576f13d9d3de9b080e9ee4778e2380bfd9c13483dcde7add8e91530e4515fb91"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DeviceFunctions/DeviceFunctions.cpp",
+      "sha256": "b81a5a9eb9ac77b6e84fd7164fe2398013db595d1b07b938a4a98bab173c5529"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DispatchLoaderDynamic/CMakeLists.txt",
+      "sha256": "81ba4ddb3783f848f874cdef0ac3c06851bf608fb1049b3c66b73333720a694b"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DispatchLoaderDynamic/DispatchLoaderDynamic.cpp",
+      "sha256": "813b2aa118327827eb4c9a714995b70617362208b8987b9ffcd0e3b5de2d60fc"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DispatchLoaderDynamicSharedLibrary/CMakeLists.txt",
+      "sha256": "f9de7ef2219361a8ed522dbefcf170b5c81241db598bb02523545a75b353f81c"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DispatchLoaderDynamicSharedLibrary/DispatchLoaderDynamicSharedLibrary.cpp",
+      "sha256": "d27bd9e4b266e9808dfc315222c4a80e2107ade22dcdf974b1ded9c7626813ec"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DispatchLoaderDynamicSharedLibraryClient/CMakeLists.txt",
+      "sha256": "58e8f1b18b6c69033e81d884b93ac833e7229b11952a73d988c4daecf92d7a7d"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DispatchLoaderDynamicSharedLibraryClient/DispatchLoaderDynamicSharedLibraryClient.cpp",
+      "sha256": "55990fe28737f0854e510633ea1a1fe3dce8f6755b9d075da1a6e6611ab19dba"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DispatchLoaderStatic/CMakeLists.txt",
+      "sha256": "36b87451b96c8c1c14be93b779b94bb819c2fcb2b766bfa529f7bf484feab810"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/DispatchLoaderStatic/DispatchLoaderStatic.cpp",
+      "sha256": "3295396bc140c96e974b02497a011ab8fb55facd48ba2144907282b145093495"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/Hash/CMakeLists.txt",
+      "sha256": "e510825e71c559d98b52e0f633e58bc2fb019600a127d8965f7398c8e124761b"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/Hash/Hash.cpp",
+      "sha256": "264489ea782dfd630d89aaa114ec463ca49ed4cbdc39b785189fd121d3c0d9c6"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/NoExceptions/CMakeLists.txt",
+      "sha256": "bedf527cda6442893f9681581c77554ae6bec4e0f87f957b0e738e873e72825a"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/NoExceptions/NoExceptions.cpp",
+      "sha256": "561452756be8b738699158758a0542448d69c1fe4ebe0472ff8fd271d82fd5fc"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/StructureChain/CMakeLists.txt",
+      "sha256": "1e564d9becb502589ba55c03d3d579f93852a0c447e3828964461841a0626683"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/StructureChain/StructureChain.cpp",
+      "sha256": "0a82682d62c5234935ed74c69c6359294f46e612811afd98dd9bfc8d862ef92c"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/UniqueHandleDefaultArguments/CMakeLists.txt",
+      "sha256": "8b8dc6b58f37c6e77e38aa16f34ee39f9d559b9e4fdf6f1a6aa8f9c21ebb2332"
+    },
+    {
+      "path": "app/libraries/vkhpp/tests/UniqueHandleDefaultArguments/UniqueHandleDefaultArguments.cpp",
+      "sha256": "f50a58478afcb0345b5d026ef12c4af74b84c844f9f04e6715fe417b99b651d9"
+    },
+    {
+      "path": "app/libraries/vkhpp/vk_raii_ProgrammingGuide.md",
+      "sha256": "1968bdc6c15ec0b58c352af5f5a35259f3955a15349be05dad9d74b6d80469d2"
+    },
+    {
+      "path": "app/libraries/vkhpp/vulkan/vulkan.hpp",
+      "sha256": "e9e810c6a0ae3c85384c6e3c34a86464a00f29146b6db2b3508a32221d1ee675"
+    },
+    {
+      "path": "app/libraries/vkhpp/vulkan/vulkan_enums.hpp",
+      "sha256": "2c96f7e20e8dd189441fc6e19c72bf0a27b9b6620c9b2fc0c05940521fd68800"
+    },
+    {
+      "path": "app/libraries/vkhpp/vulkan/vulkan_funcs.hpp",
+      "sha256": "f19118d7cf93b4750969b6dc9d2930f4a9b6693ee044d1ce0f4daace8f0b87e0"
+    },
+    {
+      "path": "app/libraries/vkhpp/vulkan/vulkan_handles.hpp",
+      "sha256": "9c1fef8136efbbd534f45b891892dac7973a33edb8fae7837ac7855f17948f65"
+    },
+    {
+      "path": "app/libraries/vkhpp/vulkan/vulkan_raii.hpp",
+      "sha256": "4f1da8ee1966402d7b31c80e0c2e506f3bd2ac716be764ccd67074f6de642346"
+    },
+    {
+      "path": "app/libraries/vkhpp/vulkan/vulkan_structs.hpp",
+      "sha256": "ac41e7c72413b6bd2a0dbe630989ee628c29a12d2bede9f0a004b21540d53cff"
+    },
+    {
+      "path": "app/patches/shader-compiler/01-shader_info.h.patch",
+      "sha256": "29136bef9d53c9a6ac98c7b50a13f1b8504ca2e4458ea4539a54be5ce9830607"
+    },
+    {
+      "path": "app/patches/shader-compiler/02-spirv_emit_context.h.patch",
+      "sha256": "b24ce07accc526d0cbe29adaf4ee6ac45fe60c743bf14987f852bba266017eca"
+    },
+    {
+      "path": "app/patches/shader-compiler/03-spirv_emit_context.cpp.patch",
+      "sha256": "cee4af18e94e8c08a76d4a00642b43b02bae66068736e385a3cc89059bfc26df"
+    },
+    {
+      "path": "app/patches/shader-compiler/04-emit_spirv_image.cpp.patch",
+      "sha256": "6dfec1fd9e6a9d3c26610b7f7242defe2ba294186acd233763b6278739727699"
+    },
+    {
+      "path": "app/patches/shader-compiler/05-emit_spirv_image_atomic.cpp.patch",
+      "sha256": "037b782bc1ff665352601c08d424c54c0f599e26aa0219ad5259e5d7bc952a10"
+    },
+    {
+      "path": "app/patches/shader-compiler/upgrades/01-shader_info.h.patch",
+      "sha256": "1beebd6d3781de3bfcd477c80e38cf7a9eaad42c35da577254d14b5fc9148e45"
+    },
+    {
+      "path": "app/patches/shader-compiler/upgrades/02-spirv_emit_context.h.patch",
+      "sha256": "8877e883acb82ee695925fb42d130a0c79cf1e49a34cc286d7f20dc2813ddd08"
+    },
+    {
+      "path": "app/patches/shader-compiler/upgrades/03-spirv_emit_context.cpp.patch",
+      "sha256": "7da0ea731c63c96e6c4fa27a5d329f7b4ffaf2b35ba9c2d18c97bc4e1af30cfc"
+    },
+    {
+      "path": "app/patches/shader-compiler/upgrades/04-emit_spirv_image.cpp.patch",
+      "sha256": "a7249b985588f075607e077ff8519a80b2c4e47e92fa7ca971769e6e0c5f8180"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/diagnostic_crash.cpp",
+      "sha256": "a9df0a8b9485174a8ba5893bead36bfbcde559603379e978c1fb34b276fea7b0"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/diagnostic_crash.h",
+      "sha256": "b25066fd8e44c4092faa3b4b97761e758b3a8b409dde1c1756f57040f806e2d3"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/diagnostic_recorder.cpp",
+      "sha256": "1d68769b0cfbb77fc4867e65182a52873b4bf6d98ca5acc1d828f0e97b39ee01"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/diagnostic_recorder.h",
+      "sha256": "9409c39b5d99a03ffb86bb6ecbbd8289f04af8dc65007f2d921731afa359c58f"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/diagnostic_device_fault.h",
+      "sha256": "589d2646951c4f002e2cb79681d32687ba18fc3a5b3db3cec8c3524a93377b4f"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/diagnostic_fault_compat.h",
+      "sha256": "c76df27069c5ade7acf18b648f29f64ff8518578b4948f4cdba286837060369c"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/kernel/scheduler_timing.h",
+      "sha256": "7a4082316088518df68531c5346c8b0ceccea541398188c228abf7bf9eb693a9"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/services/diagnostic_noops.h",
+      "sha256": "0cd9e0ca6c1eb2a794346074571bb7298a89308bcc0d0fc861ecb340a7f91210"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/host1x/video_capture.h",
+      "sha256": "051b35106e60c54d20c2412a8e1618c5cb9493584e5fee48abaa29c51d9fc30a"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/APKDownloader.kt",
+      "sha256": "463c26616b4cb26dc74026afbff63186ded48dd78d473c48db2035b6c4c3c251"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/APKInstaller.kt",
+      "sha256": "a00d6ef824c4a61b5fa8b0719d5b7c2b619793576c970f9076c6a6f4fcd7a8f0"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/APKPayload.kt",
+      "sha256": "942f490199e393b357128da5131973e57439b395fa7702b0887cd499a2dddca2"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/APKValidation.kt",
+      "sha256": "d315df6200aed0e2bdb3134fa0f53c91cbbd338f06919556190e07b255c50a8e"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/AppInstallReceiver.kt",
+      "sha256": "760aa71f4ef2b24a51de8c8dbbe72a7a8253f74dad602556c2e60906d711c369"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/InstallStatusReceiver.kt",
+      "sha256": "4346a347d96501e8b144721511af6aa9741da3a07b9409241942ecd9bc105895"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/UpdateActivity.kt",
+      "sha256": "9231115acce9bf77210d32b11dcae52357840ade83d88cbc1f3c73c29c07d270"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/UpdateFiles.kt",
+      "sha256": "6c22c51865b18c6ea83a21ca88898cca4d0e8d0d32335316bf3a3805f4f7825a"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/UpdateSession.kt",
+      "sha256": "1162e26b95187545913c3ff13c7d74030d7a390b965f9d8181786497764427ba"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/updater/UpdateViewModel.kt",
+      "sha256": "34651a02a9b9c631e05d7c1bbba688b962c8dde9f5d1d23203bd3d20ca44fd85"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/utils/DirectoryReplacement.kt",
+      "sha256": "2c112c2e8c852a09de7956131fb13224c7902591487e4bdd23e2071fda81e4e0"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/utils/ShaderCacheFiles.java",
+      "sha256": "52858d0aadc45a84028c7272e5ac199b0890fc6a820a03a3802eac126614765b"
+    },
+    {
+      "path": "app/src/main/res/values-fr/diagnostic_tools.xml",
+      "sha256": "34a6026b477d2bf56fff4c5cbe408d8ac21401410f865a50d52805e518996935"
+    },
+    {
+      "path": "app/src/main/res/values-fr/shader_cache_strings.xml",
+      "sha256": "7efe4cac4b4f7e2fc7a1e30af323881ab2454d6edbdae458eccb31227c3d834c"
+    },
+    {
+      "path": "app/src/main/res/values-fr/updater_strings.xml",
+      "sha256": "e378b7bf2e8d85d6d2b7aca9f94d0118d29adceeffb49df149d3525115959661"
+    },
+    {
+      "path": "app/src/main/res/values/diagnostic_tools.xml",
+      "sha256": "e35be14a6c2d7c80d727849e567621a3dc0a82cbbc7b2b54b2b0d18cabd0ea42"
+    },
+    {
+      "path": "app/src/main/res/values/shader_cache_strings.xml",
+      "sha256": "56ec157eab445b80554655fb48bac895cb68097cf45e96aa7a946e6202e81670"
+    },
+    {
+      "path": "app/src/main/res/values/updater_strings.xml",
+      "sha256": "27cdc681542616b4b62548f4bf715af360f787b6e6e856e15fe627673b0e99a9"
+    },
+    {
+      "path": "tools/__pycache__/check_release_apk.cpython-312.pyc",
+      "sha256": "3620e2c6051a7acf3b7d20f28e8a0b64dd2265747a2e81d892b56545075bc6d9"
+    },
+    {
+      "path": "tools/__pycache__/inspect_video_capture.cpython-312.pyc",
+      "sha256": "25d496b0ab458fe7ca20381e94800cb5a0879d1e1c430fca5559951787f670d9"
+    },
+    {
+      "path": "tools/check_release_apk.py",
+      "sha256": "efb4bd24a4aad83c49f49c30a96a142a7ae5a114802b7cbe32746647390386ed"
+    },
+    {
+      "path": "tools/diagnostics_tests/host_test.cpp",
+      "sha256": "a839c1fc44244fd78ffd467f069609dcde8678b024c319e79332510e133b2bb7"
+    },
+    {
+      "path": "tools/diagnostics_tests/run.py",
+      "sha256": "c3c5ddff00e6222d0f90fb5703122682fce39e72cec0e54762101c335e30aec5"
+    },
+    {
+      "path": "tools/diagnostics_tests/vulkan_api_test.cpp",
+      "sha256": "d13c15d0b2c9565b1c9602f04bfd4319cc69f1be006ce1fbf587bc31d1a9dddd"
+    },
+    {
+      "path": "tools/diagnostics_tests/watchdog.py",
+      "sha256": "5707efd8d7ce3ee1a5d114dd05566429b467c9fe2b57ba00e1ee908ebf46d72a"
+    },
+    {
+      "path": "tools/inspect_diagnostic.py",
+      "sha256": "5051c87837710cc0a348089b39ecb3fe732f36bc09774577a3a4b3eaf8bd8b0d"
+    },
+    {
+      "path": "tools/inspect_video_capture.py",
+      "sha256": "ea715038d809fd851ccdbd98206a472706ab28ed10fbc564b33e3bb9320e4aac"
+    },
+    {
+      "path": "tools/render_tests/__pycache__/shaders.cpython-312.pyc",
+      "sha256": "e28cb9fdcea0d5b23ef63c9d9c892730573f73f5083252c6ffac515950d9bdc4"
+    },
+    {
+      "path": "tools/render_tests/run.py",
+      "sha256": "35b4b9842c9db6ebf16b4d744d5e66436b345b60b581f49168e61db6e605a00c"
+    },
+    {
+      "path": "tools/render_tests/shaders.cpp",
+      "sha256": "93208d0963879b5820a6fc5b1f35c5ca8ea7fdf22a0db0f37f957f4d23b78056"
+    },
+    {
+      "path": "tools/render_tests/shaders.py",
+      "sha256": "12774386ddf9743c37d8c65282fd4b8a39b571406d92979a9e27b3cb0a1fe8a7"
+    },
+    {
+      "path": "tools/render_tests/texel.py",
+      "sha256": "117dacc39332e601e2a3090eb756db17f25180e02f930b4692ad764056ba855f"
+    },
+    {
+      "path": "tools/render_tests/video.py",
+      "sha256": "afb29abf0850ca1f67ca4a7ca3434608c871204c35b89901c0c6d2c2d91e20b5"
+    },
+    {
+      "path": "tools/scheduler_tests/__pycache__/run.cpython-312.pyc",
+      "sha256": "52d7f6c2bce2b9b2af280e81df5861f9abf6257445b504be4bcac80333c97ff1"
+    },
+    {
+      "path": "tools/scheduler_tests/run.py",
+      "sha256": "5f2355a54ad03f51b0d9334260b0bc18d1415299fc1a6da0712df61c02a96ff4"
+    },
+    {
+      "path": "tools/scheduler_tests/scheduler_host.cpp",
+      "sha256": "602acf98d1301670acb9b2af3180450b8ef04263668de3e678f63f6c95f6100f"
+    },
+    {
+      "path": "tools/smmu_tests/run.py",
+      "sha256": "ecc47a69bffb9b7815bb837f977d81d9ef4e511168709b956dd7a70c0d53567b"
+    },
+    {
+      "path": "tools/symbolize_diagnostic.py",
+      "sha256": "0d1db2f682b08ee5697f38e0eaa8bbb0f817ec8b44b3ceb2cbbc01f45dd94f15"
+    },
+    {
+      "path": "tools/test_shader_compiler_patches.py",
+      "sha256": "effe5090d04820d76bcd0cbd70a5c19a8bd0b97975f39c4402a8e67e55cadeac"
+    },
+    {
+      "path": "tools/updater_tests/PayloadTests.kt",
+      "sha256": "9c4ad22aedc5932fbf8952cfe6010e39930ca4550146ebade893fa7902b2a36f"
+    },
+    {
+      "path": "tools/updater_tests/ReleaseSelectionTests.kt",
+      "sha256": "1c297dfbb9abc7bd74eb1fd856142d0261db9a0cdefcdbe6929ab606230fa659"
+    },
+    {
+      "path": "tools/updater_tests/UpdaterTests.kt",
+      "sha256": "2ed1520c24073f38e55ec99a39d771e02cb35f2ba515abaa7bd44ea25fc02207"
+    },
+    {
+      "path": "tools/updater_tests/ValidationTests.kt",
+      "sha256": "fffc431ea5ac781e9711d7dc0baa5730cd8ad4c5aa45421a253e641746e16278"
+    },
+    {
+      "path": "tools/updater_tests/check_releases.py",
+      "sha256": "da25f9e973b81ae13345019c6685aa5722c2e93d7d801f7db74d0a9fb06ffab2"
+    },
+    {
+      "path": "tools/updater_tests/payload.py",
+      "sha256": "5690d96908376c036588730985e041513b830c10ad1138552488aa462ccca9c3"
+    },
+    {
+      "path": "tools/updater_tests/publication.py",
+      "sha256": "6bbbfd6b2ffb171dafef34d7773be2b8ccf76cd75311fb1e0dbc268d1cabe12e"
+    },
+    {
+      "path": "tools/updater_tests/run.py",
+      "sha256": "6fed49e481c78904b6d72ea3b10f819b9b388b019e05d7906a7f319159be0e40"
+    },
+    {
+      "path": "tools/updater_tests/session_host.py",
+      "sha256": "fbb852753cbb0609c74e9c80e93c2d7b0b793d7597db88d4239223361bf882df"
+    },
+    {
+      "path": "tools/updater_tests/validation.py",
+      "sha256": "147c62bc17b8dbb7e703e6236197582afa956c288f2f945b2eda7d943aec53b8"
+    }
+  ],
+  "modified": [
+    {
+      "path": ".git/config",
+      "before_sha256": "3e78f7f4ab343feae663804c5adaaec5e81eab0efb53a36e10616e4f4e01caed",
+      "after_sha256": "b61e1328801133fb08b3c90a40a000ddcffd7bb81610e5ba77f2735ce32b8501"
+    },
+    {
+      "path": ".git/index",
+      "before_sha256": "749ea21f358723ddb0c4ea43bcddb993dc0ed24d3d1cd4a967a6428613eee530",
+      "after_sha256": "f5f36a90d64d2bc1284c54981270e4c4444b7e960f71b67c18b8494b35fdd86e"
+    },
+    {
+      "path": ".github/workflows/build.yml",
+      "before_sha256": "bb3ba9c8a20eb0e9abcf517169da5ea96380c23ea3678de68e99832bf9f3f88f",
+      "after_sha256": "c201040fccd40dd747bf7dd542f030555e1823b89ca1158d3d1c40dc4f4d5786"
+    },
+    {
+      "path": ".github/workflows/pr_build.yml",
+      "before_sha256": "19b16b4f97436f3eefe2351379bedbccb029e9c4ec673d6f7b3c94b06abd11f2",
+      "after_sha256": "6b4607cd99878e20307f47e09a999682a1ba4b7f4c7dd84f2ee75b4bec5f66bb"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "before_sha256": "793da89f94056ada0e6b0506a6bc31de6bd06e51a954b90796500f7d970fe48e",
+      "after_sha256": "e9a2a8e397a5995a671fd920e6aca6a1b4fc6cc86dead940d51026577e0e3f9a"
+    },
+    {
+      "path": "app/CMakeLists.txt",
+      "before_sha256": "67342a15b92bc75e12460f13e98acb1b5299a3244d10af29d29db747446daf0c",
+      "after_sha256": "6c685fb82e0a52ae18394e0b11f807db8d8278c431417ac09d406d969eb3278f"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "before_sha256": "017192dd6da7b2050f0dc3e58184197d0d11bad35026c8b068c12e4241693e66",
+      "after_sha256": "70d4ed7812b5d11c877a07def28cb247975f0322d710f15dad55cbb1906e06ef"
+    },
+    {
+      "path": "app/src/main/cpp/emu_jni.cpp",
+      "before_sha256": "8f55ea755efd2a01460e2282011de6c366b8601d368e694691589acbd9882804",
+      "after_sha256": "daced8441d0b5ec2799ca4dec070c4dcef7894e05550fc7b1df99a00b1074d4e"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/audio.cpp",
+      "before_sha256": "056165d52d6f723d02d672a6808c96a75c22956efeda8cbed1c22175cf723cd7",
+      "after_sha256": "018854c0cf05b3fd1b31561b082933250277656a3e155754e0a15f583b74f030"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/address_space.h",
+      "before_sha256": "0a363b6f2dfeb92bbc0835c40cc4c2ff5c83646b2f022cc9f392ea9070c7a149",
+      "after_sha256": "536c22fc3c2bc8b497f1b7c51600b6c02ad72bd9c76dcd88a6ed34555954566d"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/address_space.inc",
+      "before_sha256": "0ab506f74583dba8dc75ca2223e8532774d744ad9b18484f71cfeb3144338c47",
+      "after_sha256": "9724a158f9e3b6fa5e63f07b95568429d317bc4b4cf2917c3e910264f404cb0c"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/circular_queue.h",
+      "before_sha256": "6e1d69accc3a321c5ad84de9705a9ff786423b512d2a50a61320b6c3bb2821c5",
+      "after_sha256": "157655ff4d81d79e71a0c1dd89c706f175fdbc0e022c5bc84a313dcd5929248d"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/exception.h",
+      "before_sha256": "7845840f5973e1bd699986b4324baf194c4e2f81d93ed3fc6291abe7fe156062",
+      "after_sha256": "8eddf60898c2c9fd203fb1a3bfa0208f25673424ef94322048b4d9e7448e5829"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/interval_list.h",
+      "before_sha256": "53609eedb0445460fe2180e467721a607dc98b233c773f1b920d937b023a87d0",
+      "after_sha256": "35fe70da655c04321e368829cbb389b952423252a206b38a74fe48cab6754576"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/segment_table.h",
+      "before_sha256": "527011c8d3f53a747c89ad8817598d7d69aa1c265041258c434d6e425d466756",
+      "after_sha256": "13af1e815f485568a27a5d4b0b3b26a55146c112e7e728b57617050bdff96aaf"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/signal.cpp",
+      "before_sha256": "7e3bacc5b8b20eb6d60ecc11ebcab992f4614378ed64876f45779f35f33e01bd",
+      "after_sha256": "24623893e4fc1c323e7d9b8b221d496e479988695c8f17797c156a1814addccd"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/common/spin_lock.h",
+      "before_sha256": "8547bb5c0d140f709ca7205459fc0e360637590ae0415fdeaaf93cc7880f7106",
+      "after_sha256": "d3e2fffdc2f7ac0b50585985efa8e614fcde2d76dc2767077fa958f2e55f2858"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu.cpp",
+      "before_sha256": "031bf17345f3d261e7ec3f0ae0126a64644e7e238dde9a4dde113202a96e85a1",
+      "after_sha256": "bcd9e433cba4bddc2a7ec7868501a1799592555c3d9d04d64832f6678dea108b"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/buffer.cpp",
+      "before_sha256": "c4d876c6bbc352f5a1664479b6ae076e5831fe040de10871822f18a921eb3255",
+      "after_sha256": "95b016adcf91ff5a2804e963ec40f8a26e788e0a2a075c5d9be52313e8c9ea9c"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/buffer_manager.cpp",
+      "before_sha256": "83556b8536e7def2d1ab8d88799663861c36438ba19f6b97af85fe5fadb41a6b",
+      "after_sha256": "dda694d4c33dcda25fcf2803243305d7cd9e5d7a4c164bc65d990fa384c7b0f8"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/command_scheduler.cpp",
+      "before_sha256": "e5adbb6814b62e400853a176f155dd0286f2f218974a241dee5dd8b2f06e5ddb",
+      "after_sha256": "2a471e0f1c10a6d6d3cc7430e16b7a2614cdb043310debee1f18fbae6c48ef62"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/command_scheduler.h",
+      "before_sha256": "b92321afba1d7675afb9e8d46e5c112d70340f30e8d788f973cdd0dd224fac19",
+      "after_sha256": "461576639a7fb950a7d296e38af241ab695c5c8742d6fb2bc7a887d0a06de17e"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/descriptor_allocator.cpp",
+      "before_sha256": "f4f892d7d3fdca040dbc7d471e9e89707b23191bdd10c0b9769501a05704a458",
+      "after_sha256": "b2d71d11afd40aab3b95c87044f541f648b7f42757931b8796dcc7bca4436707"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/diagnostics.cpp",
+      "before_sha256": "2af36713d13b5ed3ab8499dec12655aea72d7c85c5b3264c36a841a767bdb731",
+      "after_sha256": "2102a75bb4852c10dd4b6eec7a8ed0511b2a5f33b29833fe31adb6c15ac0771d"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/fence_cycle.h",
+      "before_sha256": "134e4027f28297a0e0161d4210b2ff5f3a2dce1ba581f98d2b47a1a86a731d68",
+      "after_sha256": "1caaad9edcf3405245995c61e84b5a29605a3dc63551bf06d78da2043c866277"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/frame_generation/frame_generator.cpp",
+      "before_sha256": "4071131610572c13e9667c6baac0f560a8e45a8a452ec4793621aa17dcb3afdf",
+      "after_sha256": "1947f05c49e6c38a28ede18721dddf89eb4867d5ecea7a0fbcaa63f5eef370c9"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/frame_generation/frame_generator.h",
+      "before_sha256": "451d337e25f2a6e2af8fe6ee856f1f3b48e0cde7f27cb8a73633b32ff027c36f",
+      "after_sha256": "5e47db30cfb8b1a130439e84b847ff0adb8b08ee6ca65d8aa183d90a01a61e02"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp",
+      "before_sha256": "69a8ddc7eb645935db8b4d317742977d43d5ee36c94ef020409a8d38bed3969f",
+      "after_sha256": "6d73c5005a438f5d94020b6fce38e315208b4a51446048f32bf4cc510cfe2da4"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp",
+      "before_sha256": "16fd6f43f3a60897279607a92ef43ee3c39ad88bf70c32173a8b5f464d5ba771",
+      "after_sha256": "7aa7024b4a09c7bfa132dcfd8901b44ea36d4819e3f7681a4b4fda09d58d956a"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp",
+      "before_sha256": "3912b8e6b7993ea60c3ae20f193aafdf356d8d143f17adabb8ef7c005a3f1cdc",
+      "after_sha256": "0701e654c8fd088db66123baa1d878065d1527383d44ca052895bf78bb0020bc"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/common.h",
+      "before_sha256": "872be570510d07491bb8dad1fb39550bdd1bcd8e5aafd7515c405001ff02d146",
+      "after_sha256": "abdedfd3110aa996335d1d5df4e48b1e1f09266126a72208007d6d3e20ee1b80"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc",
+      "before_sha256": "340431d017be3ba4695cb7351269c6ce3e7e5810e65988af9c8f9c182427d906",
+      "after_sha256": "12c177c1b6ae4be077180db9cdd891c93c088cca9856b42b0368fb7b6d2818fb"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/shader_cache.cpp",
+      "before_sha256": "8593ea4bcd88103e662afa6be67ae3eae916d6c719b6949a90f74aa02b5bc883",
+      "after_sha256": "6dacbff0a625c5e364c63abe45666af39944991a3af2b261914f99fff1d4818f"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/shader_cache.h",
+      "before_sha256": "edc11dca56aacd493cefd6d2d5f79b64d7754f39813c77c1047ef3c3fee5f27b",
+      "after_sha256": "06d0609194094555f8e47d857630fb51a6187e8aba48dab3a4def570df52ee8a"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/state_updater.h",
+      "before_sha256": "8beb50e26bf7be592b74ba0239bf849b7be1b7cd3c63356c5e32510766cd961e",
+      "after_sha256": "4c3b8a402e664056b57eeab252369e92267988b389057b36d192a9a865797a53"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp",
+      "before_sha256": "330a6ca653dbe40cd8148aa718e8214309f9b51caa09c587fbc6d6237afe5cc3",
+      "after_sha256": "58ff7c2fd1ffc5101e18443d14029aea255c19a98fb0991cbc8025c01e130e1c"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/textures.h",
+      "before_sha256": "dbcf336f6c0d085694e26f2e757a70b856a37f47540e51aa7c22044ea2629630",
+      "after_sha256": "0986de4624877e84a93a2195fe9a9992f63e4e156032b090130d4a4e2d8326ac"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/kepler_compute.cpp",
+      "before_sha256": "f98a4222d2874c62e6777d87893143f96bfb32b0f195644e51f894614bcd34f7",
+      "after_sha256": "58a232b9b7d3703690f824cd01b39c456e8312e9821a24f9fd9feb4318ceb770"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.cpp",
+      "before_sha256": "f673e2c928a0ab0999f625c2b0586fb34581bc6065bca09fd70dd4e3fa0ebe94",
+      "after_sha256": "ef4786885865c3d8f10469b1051f690a732274fb4a21b0a6901fa44923fa1415"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/pipeline_manager.h",
+      "before_sha256": "f00626ce00180793bbe1b4f19cab167c150e15259b36b20452eb320ffe00c611",
+      "after_sha256": "8e490bb2ff6d6bce7ee61ed9c1128871d85dcb56f7f53b866b6e03ac94716f38"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp",
+      "before_sha256": "6c831ff9863d7824225118555f2bbf52be86250ee99ebc5ffddd0e062e85e205",
+      "after_sha256": "39696d7a719f49e2de806d6e4d9c60a02f6dccf609ba1b54e153f4927a1fba9b"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp",
+      "before_sha256": "f950abc966c9491fd784cc72525086f2da29f380e601cedf3be3c68f73dd908c",
+      "after_sha256": "e093f79c3977f98c7a05bded04896de1893db1d1dbb7abd1eda778d6da4dfcf2"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h",
+      "before_sha256": "4b229edbd298db0e136c87245e6d6dd08393504c3c0595a13c7a9be881bc85cc",
+      "after_sha256": "782eed551d8970bb479cc11c280e0783a45807c8acbad6f5a80b54f96b618adc"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/memory_manager.cpp",
+      "before_sha256": "30222f2702d4dd02135638ae7c9c500eebef5ba80d42778c3ba41b7ece5e54f3",
+      "after_sha256": "dfa4599f3a14ca7f084f4ed5467cbc34ae919464e878d001ff90571dc9af7f6d"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/memory_manager.h",
+      "before_sha256": "06b717848c5ae8116759045c470463d49e4a4018128c2cb1563353cd3d861433",
+      "after_sha256": "ee0a9e5cb4c5038a971ee7c6ec9bee1bf1512182f091ae9deab2f50a4152b35a"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/presentation_engine.cpp",
+      "before_sha256": "df434883e362df59a6f91946ab317e90629d0cddfd7804779ea077fe575bf29f",
+      "after_sha256": "e45ec7d20737d59bda728b36f987fe6648082266842a8f4eb1f3907beba9ff52"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/shader_manager.cpp",
+      "before_sha256": "11526409188043cc4299250a21d41ddd51a365df60af95dc8345c1f98505e9ac",
+      "after_sha256": "83752da0e1dd43356a0309754370a1dbcd272bf7ab9fc8db84ac8a27bb7d5473"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/kernel/scheduler.cpp",
+      "before_sha256": "1f6dba747bcdec80f7fb4b0df09faf2d81afe46d92f93deb8867e7572735275c",
+      "after_sha256": "8d976707213567d4e53d17ccd7acb8bac2aaa7cdfadde1074aafa5bd52c8af3d"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/kernel/types/KThread.cpp",
+      "before_sha256": "aaeaede85c17db395aa0914510fce3ce25da51be9dc0e4c73647d634342f9c22",
+      "after_sha256": "bb588d9de37d90d3cc4cd22eb3581e9db635c578dacd4a09b843edb781c11ae8"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/kernel/types/KThread.h",
+      "before_sha256": "9276f4837d5d21db9844fa142284e578581333d5de2db29371eeea4e94200c7d",
+      "after_sha256": "3541892d3877735132393020c00fbd39f4ecf816687f866f64a3a973461a8869"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/loader/nso.cpp",
+      "before_sha256": "770d039c6eee2d21070f6d5c9ac619c98549d2da8d5d12accc7789f406d9d70d",
+      "after_sha256": "462aeb941980c60e53345008e488c1e347e6530b67bbc54eb3d7e97302ae57c7"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/logger/logger.cpp",
+      "before_sha256": "c8b099752ac488bd0645dd44f7b128dabd1a8bb25d12f61174bbd5a19def1c06",
+      "after_sha256": "cd61b80886411eece78bb69b9d9d4ed8b34b00e249b5663ef8b6f1f7a219bc29"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/logger/logger.h",
+      "before_sha256": "0ea4a1b2031b6dd43247fb54b9ec02e4415638e8321514bae634f45cb13a886b",
+      "after_sha256": "2fd80c48f352f3130f345fbe300ea8c7cf0c97d979b1b763ff1b4cc61aa28a9b"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/nce.cpp",
+      "before_sha256": "c2c2d99d6d0ea3121f2ce965fa27ecadf8ddc23e9884aec30e1ff7687598b631",
+      "after_sha256": "c90dbe71627e6353420b0a161a160e01f177323dcd8fad2820b0defdc05ae734"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/nce/guest.S",
+      "before_sha256": "a5a5db3ca9cc4caa6bc70bb6166ec8d571082ca99282e6ae85ee722b8b2460b2",
+      "after_sha256": "769168f00b880205f5158466ca7edaec388ad56505a5ee9d35e1f92997bf6bd7"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/nce/guest.h",
+      "before_sha256": "188383d3783b0fd41f77be21b8848194371c21fd08e6bb295e426f81ca553e6f",
+      "after_sha256": "2b9b5db96ceb36a9195c499ece58e706e7bd85ca753c7db004aab9f943814d4c"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/nce/hang_watchdog.h",
+      "before_sha256": "4004263d2fb0229021a8a14071fb462e53531a700d76b1541be19a9ebbd5cc3b",
+      "after_sha256": "2046922cb49e61eed96488c29d92a0d263cc7838e23506198e622efcbef24216"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/nce/jit_fallback.cpp",
+      "before_sha256": "1fddff7f8f3e53fcca8c8dd321fc237bed6717414f445906eb95fb2555811ca4",
+      "after_sha256": "0b054792cd2ec1baa27d4a1a6930981696d4125bbeb8eba59d2a349027583ba5"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/services/base_service.cpp",
+      "before_sha256": "2323bcd0ed632be79abf3afcfe5753e2b384025ba0557c9805f80571e15062dd",
+      "after_sha256": "b519cdb365dfb81b72dd7ea4edf36d39207a7fb51d423b938738b26022535e4e"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/services/base_service.h",
+      "before_sha256": "d32eb559b71b14f914429c700476dd47deeb59a9975b26b41a307a9764e189d0",
+      "after_sha256": "6e61ada2d3cbe702b37a4cd01d7c789472445d29cefbb040ed6a1762b33b65da"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/services/fssrv/IDirectory.cpp",
+      "before_sha256": "3448d9fe4375b2822af9d8671624e7d71792bbb6a4b6347bf78af7ee7e09b158",
+      "after_sha256": "1d53d5365d5518d8dd30d86e2ae9c45850ea55363759aff3a867b68b530dbc99"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/services/fssrv/IFile.cpp",
+      "before_sha256": "fafd84e7a09a088981180e72a285cab2fd7d80a3f51d538a2725c81858c5f8dc",
+      "after_sha256": "02177e6864a7e4d9613a7fcf7e645caf06433c95b5dbd6658ad0fbcf51c43426"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/services/stub_service.cpp",
+      "before_sha256": "41fff4215fae8e59e7737e5764ae9858c068aef626905950738e4dce2dcc92fb",
+      "after_sha256": "9452c12095797e29c2653811e16c28c6ba637cfb7b1aac6c29d6cf36417701cc"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/host1x/classes/nvdec.cpp",
+      "before_sha256": "ebaf5c27d706e9ed1aff9c36e22c375acc90f6e1f90dcdd0084025b4d3102eb5",
+      "after_sha256": "029a4e869b04704f1423bb50b0ce05527d5de6f9c276191983c6bdc1b4ff30d1"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/host1x/classes/nvdec.h",
+      "before_sha256": "dcede499045ce0df1985b84b30e5b85b1a191861675283647768b0a9ce9cf256",
+      "after_sha256": "6e15322c1ffe611f5275e238aa092cec37e02956a29c8e3cbcd96c42297129b6"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/host1x/classes/vic.cpp",
+      "before_sha256": "3dea93ed8038ea436ddb46ce658c3ba61d75ea6c2669fd12d0449754c0c7cf46",
+      "after_sha256": "367d4cade797a68d3e5bde86130884f6126fa324f17e73fce8591f94aabebdb3"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/host1x/classes/vic.h",
+      "before_sha256": "f05202c09bd82440f85fae74af518c173ff68d74c992705a4486ef8f88aa4813",
+      "after_sha256": "41c88ce8f93f83b90497c1eda3674a13522502665416fff6f3173fc3be267d18"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/host1x/command_fifo.cpp",
+      "before_sha256": "74d70c93d3698b0131563202bf06e8bce9eb776e6b71db079fe98baed0ecf52f",
+      "after_sha256": "7b686a98085fd0d73eea44118afee03e445ef72fc01285bc8fccc9357bea6e53"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/host1x/tegra_host_interface.h",
+      "before_sha256": "dc5ab40de8aa01c4204bd59efc4c00541f0ca11f1beadf36cf6c555c4b0b135d",
+      "after_sha256": "e201897acf9091660e3a6fb2cab28db42d2df41fb0262f06880121d616ca123d"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/smmu.cpp",
+      "before_sha256": "7e02aba691fdbce5a959a0973afa0dc6b575623b358c4086f9659bd646ff01b9",
+      "after_sha256": "42f4f90585ae819f253325a1fab70beda68b41e0c878d3b47e8f68b0cbbb9c03"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/smmu.h",
+      "before_sha256": "3df9474b502dfb6f653da30361f28d6e07019d1ca38ac7deac2390675e589baf",
+      "after_sha256": "feeb3de489a44df2218f23175b3f72553d8f51faac13e18fc64d49f7a454dfc5"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/vfs/backing.h",
+      "before_sha256": "77ba7e2c6d5beb3c106967c6774bf7a52d5235f5d974900776a7296f72817b50",
+      "after_sha256": "5db4c6002ab26905b792399f8e9de7ec16d8a2d536bc888cdc719121dd9f1cc9"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/vfs/os_backing.cpp",
+      "before_sha256": "4efcde8cce803e0e8f875fb6b321f503c1cebaba0fbf7a58571ebbbf5f841695",
+      "after_sha256": "ce4d214005782cfbb966d2af5d64e5461ea2d1d2ea98c4867999af61f5f5a8a0"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/vfs/rom_filesystem.cpp",
+      "before_sha256": "396b2ba21ad163480eac9fb76da0ac02ae61f220aa6923bda2ae013371dfb18e",
+      "after_sha256": "cdb519411cf248ef6d28ae928bedffc1fdb9157dd5a765541006d5a41fd87df4"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/AppDialog.kt",
+      "before_sha256": "fa34f222cdad4405386faa13a5029c440eacf6d5cb8a3a555ac52b9ba0df523a",
+      "after_sha256": "8e4c14c86a6fea0c25c3d2ee199bd69710ebc18b2c9e1313b3bfba77fe4f73c6"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/EmulationActivity.kt",
+      "before_sha256": "7c8c75ef6de3b6b75ed51fc4cb1063e488535bbdad266e1d1455f622b3bc8146",
+      "after_sha256": "b4b3d1cda9c6ca89db120bdb7f73e035591690230c69ca68f13850cf4a9d7b97"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/MainActivity.kt",
+      "before_sha256": "da837bb3846953dc370da51fdb7895025ab894357677662ad65b1cfb747b27e7",
+      "after_sha256": "ad7d5bc9756a0dae773fd4b821ff1f576801768516e3ec4756e6ee31a305a657"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/MainViewModel.kt",
+      "before_sha256": "63f3de36bdb08c99d9d0ab15790229769a4ef88b8656cf8d0f47e330bedc8cbe",
+      "after_sha256": "5d5e07e94eb2854778d96191f8b12619d8e745dd4465c26519fd8cd614bd31d5"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/RomProvider.kt",
+      "before_sha256": "885bfad981f4aa674a46a3a1255d79fcac84e779ab78607d99501558b509f250",
+      "after_sha256": "ddf6fe63a4e55da7b77115e96143e0d15ff1a54ccdea8c8e694dd7b36b7180e6"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/UpdateChecker.kt",
+      "before_sha256": "16c7af71b0be3a4ddc407dc43e3fc03b52e4aeeab5fc4b1e2a6a79443920d936",
+      "after_sha256": "75696c7415b16ff4474bde5a1f860868c6613e0fcc6d2c463ad5f827e20391c1"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/UpdateInstaller.kt",
+      "before_sha256": "aca3e4ee9a7cf66ac79b78f6e1f4851118b89ce804538dc342ea30e74ad8a4f2",
+      "after_sha256": "fe719e9a452629e7cfd1c72d648b02618407810d83fbccbbd366db16b78ea0f2"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticActivity.kt",
+      "before_sha256": "4da5db495157f89de6942bf596b4130200dd22dd154900acdfcdc5f9763541ce",
+      "after_sha256": "ee0dce749a09764c6626bede75c3e02f04e9e1168e72155c8e982b21aa29a4bb"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticExporter.kt",
+      "before_sha256": "6a39fdef7af00797a7b85b1a00f519047b51ef399956b2bead3de012d2785159",
+      "after_sha256": "86061c1dc92302b793a4df59e276f639f986825bad52a219037bb1b7886ac2be"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/diagnostics/DiagnosticSession.kt",
+      "before_sha256": "a3e8ac4faf71e4decbcb1a74eb873827f52510ca66e0cc06b588ea6480aa1b74",
+      "after_sha256": "cd543619a8987d57b440a586970dc6ac228fe8271045e096740b01f2df214fa6"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/fragments/IndeterminateProgressDialogFragment.kt",
+      "before_sha256": "ac3dc4f9c7bb14cdacfa39103ebf8332162d8d44f0c671d219fec65db33f7378",
+      "after_sha256": "074fa4574ba62cf1ef147020faffbdeec6089b59c25ca0f68a644010b46035e1"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/model/TaskViewModel.kt",
+      "before_sha256": "725d433ade7d5f64a88924e25b4fd1e9ee4dc210b4589ba30d03e0bdfb43917e",
+      "after_sha256": "24c6488a585193ff477d502d9bf61e170b102d6b45d1c17659530226be0e3c23"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/preference/FirmwareImportPreference.kt",
+      "before_sha256": "78a8a63736574a935678a46d70fc53fa7ef3ca3cc0a900c1996cf0771ba25c00",
+      "after_sha256": "6eb9418a721fe83355e972ead80427276d79bc21aa32d225ddd4a3f3c86e9005"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/settings/SettingsHomeFragment.kt",
+      "before_sha256": "50a9d91615d9072a62c23bb96739bf0718b024ac79d0ac353bd42a5f55ec0c83",
+      "after_sha256": "e4da6734475d39a8a2d4e17997e74c45275e01923e6447529890fbbbaec05453"
+    },
+    {
+      "path": "app/src/main/java/org/stratoemu/strato/utils/SaveManagementUtils.kt",
+      "before_sha256": "cf34b5cb89d440506a1f843e83feb4d81f0f0199ad26fc7a7297b978b5efcbfd",
+      "after_sha256": "9e2df9df0e71f907b505929805d2a6c84bd64e0c97fce638ab64304fa18e0fa7"
+    },
+    {
+      "path": "app/src/main/res/layout/diagnostic_activity.xml",
+      "before_sha256": "7481104d017cde4635f7a8f4981a706fb21eebb90fb47716be081eaff156bdb2",
+      "after_sha256": "15a65b64c56a80a923fcb41861e6b7b1e348b4c83ad424bc06dee7eb76637357"
+    },
+    {
+      "path": "app/src/main/res/layout/emu_activity.xml",
+      "before_sha256": "041c542cf964b7c8e72117e7c77d83fcd4cf6189f077e628f2517066954a448b",
+      "after_sha256": "f716aaa1697abcbb8f1455b57c2c04fcfa3190f8f8fc3e84e294280438b8298b"
+    },
+    {
+      "path": "app/src/main/res/xml/update_file_paths.xml",
+      "before_sha256": "f6646a760d713cca33e9633e676ea6ed73fedd6151ae75d6cb0bbe8ac10f3c3c",
+      "after_sha256": "ce59d581aeab4a1ec2cdb64a263765b7fdf9d4a120f4ca2d4822b027831cdefd"
+    },
+    {
+      "path": "app/src/main/shaders/fg_frame_interpolate.comp",
+      "before_sha256": "193a6b005defbee84f737cd8c5f37fe24f9f824f3dd9de5e3d0fbbfe541276b7",
+      "after_sha256": "2c9f4ec84ee2d2e67408f0ebcef86d271a3ccd9cca97816b5f2e6bd421ece689"
+    },
+    {
+      "path": "app/src/main/shaders/fg_motion_estimate.comp",
+      "before_sha256": "d187a52439fb7357104957201d4152d97c774eb4799227767ee0f2effed6de31",
+      "after_sha256": "a4bb67d9225309c04bd6eb9e60ae7f6876932e9be8e293fe2bf3905e3c66c93b"
+    },
+    {
+      "path": "publish_local.sh",
+      "before_sha256": "e77dc2b8a8486098169233dd72aa9dcc599d8a686d31c8ebe6c2903c68ce84ac",
+      "after_sha256": "9215a6a4c1e4f6618be417db385b91cbaaeb088f5a75a1fcd503f741c86ada0f"
+    },
+    {
+      "path": "tools/analyze_nce_fallback.py",
+      "before_sha256": "fb97a9f1c1d640ee50d9ddc31c1fad4d18ca3df69b3c1ee51de64e4c6e144ef6",
+      "after_sha256": "347d55007b9feac3cb04c4c4506ccb98860e9bba937002859105cc6e7f4b021a"
+    },
+    {
+      "path": "tools/tests/test_analyze_nce_fallback.py",
+      "before_sha256": "c083596fc9ab25fc020d249a5103cb3026faa229043f0283f6b88295902f69f4",
+      "after_sha256": "96ba1f496aaa9795a93c45417847830a24a1b8127dab3e15437b00d9be5bcdb7"
+    }
+  ],
+  "missing_from_worktree": []
+}

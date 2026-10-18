@@ -32,7 +32,7 @@ namespace skyline::gpu::memory {
 
         Buffer &operator=(const Buffer &) = delete;
 
-        Buffer &operator=(Buffer &&) = default;
+        Buffer &operator=(Buffer &&other) noexcept;
 
         ~Buffer();
     };
@@ -102,7 +102,7 @@ namespace skyline::gpu::memory {
 
         Image &operator=(const Image &) = delete;
 
-        Image &operator=(Image &&) = default;
+        Image &operator=(Image &&other) noexcept;
 
         ~Image();
 

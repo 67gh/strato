@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <fstream>
 #include <range/v3/algorithm.hpp>
 #include <boost/functional/hash.hpp>
@@ -17,15 +18,15 @@ static constexpr bool DumpShaders{false};
 
 namespace Shader::Log {
     void Debug(const std::string &message) {
-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Debug, std::move(const_cast<std::string &>(message)));
+        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Debug, std::string{message});
     }
 
     void Warn(const std::string &message) {
-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Warning, std::move(const_cast<std::string &>(message)));
+        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Warning, std::string{message});
     }
 
     void Error(const std::string &message) {
-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Error, std::move(const_cast<std::string &>(message)));
+        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Error, std::string{message});
     }
 }
 
@@ -52,9 +53,11 @@ namespace skyline::gpu {
     }
 
     span<u8> ShaderManager::ProcessShaderBinary(bool spv, u64 hash, span<u8> binary) {
+        skyline::diagnostics::SaveArtifact(spv ? "spirv" : "guest", hash, binary.data(), binary.size(), spv ? "spv" : "bin");
         auto &replacementMap{spv ? hostShaderReplacements : guestShaderReplacements};
         auto it{replacementMap.find(hash)};
         if (it != replacementMap.end()) {
+            skyline::diagnostics::SaveArtifact(spv ? "replacement-spirv" : "replacement-guest", hash, it->second.data(), it->second.size(), spv ? "spv" : "bin");
             LOGI("Replacing shader with hash: 0x{:X}", hash);
             return it->second;
         }
@@ -428,15 +431,30 @@ namespace skyline::gpu {
         if (program.info.loads.Legacy() || program.info.stores.Legacy())
             Shader::Maxwell::ConvertLegacyToGeneric(program, runtimeInfo);
 
-        auto spirvEmitted{Shader::Backend::SPIRV::EmitSPIRV(profile, runtimeInfo, program, bindings)};
-        auto spirv{ProcessShaderBinary(true, hash, span<u32>{spirvEmitted}.cast<u8>()).cast<u32>()};
+        if (skyline::diagnostics::ShaderCaptureEnabled()) {
+            try {
+                auto ir = Shader::IR::DumpProgram(program);
+                skyline::diagnostics::SaveArtifact("ir", hash, ir.data(), ir.size(), "txt");
+            } catch (...) { skyline::diagnostics::Event("shader_ir_capture_failed", hash); }
+        }
+        skyline::diagnostics::Operation diagnosticOperation("shader_compile",hash,skyline::diagnostics::Timing::Shader);
+        skyline::diagnostics::Event("shader_compile_begin", hash);
+        try {
+            auto spirvEmitted{Shader::Backend::SPIRV::EmitSPIRV(profile, runtimeInfo, program, bindings)};
+            auto spirv{ProcessShaderBinary(true, hash, span<u32>{spirvEmitted}.cast<u8>()).cast<u32>()};
 
-        vk::ShaderModuleCreateInfo createInfo{
-            .pCode = spirv.data(),
-            .codeSize = spirv.size_bytes(),
-        };
+            vk::ShaderModuleCreateInfo createInfo{
+                .pCode = spirv.data(),
+                .codeSize = spirv.size_bytes(),
+            };
 
-        return (*gpu.vkDevice).createShaderModule(createInfo, nullptr, *gpu.vkDevice.getDispatcher());
+            auto module=(*gpu.vkDevice).createShaderModule(createInfo, nullptr, *gpu.vkDevice.getDispatcher());
+            diagnosticOperation.Finish(0,"shader_module_created");
+            return module;
+        } catch (const std::exception &error) {
+            skyline::diagnostics::Event("shader_compile_failed",hash,0,0,error.what());
+            throw;
+        }
     }
 
     void ShaderManager::ResetPools() {

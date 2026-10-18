@@ -132,6 +132,18 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     @Volatile
     private var diagnosticSession : DiagnosticSession? = null
     private val diagnosticHandler = Handler(Looper.getMainLooper())
+    private val performanceStatistics = object : Runnable {
+        override fun run() {
+            if (isDestroyed) return
+            updatePerformanceStatistics()
+            ramUsage = runCatching {
+                File("/proc/self/statm").readText().trim().split(Regex("\\s+"))[1].toLong() *
+                    android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE) / 1000000
+            }.getOrDefault(0L)
+            binding.perfStats.text = "$fps FPS • $ramUsage MB"
+            diagnosticHandler.postDelayed(this, 250)
+        }
+    }
     private var lastDiagnosticSession : DiagnosticSession? = null
     private var lastDiagnosticFrames = 0L
     private var lastDiagnosticSampleMs = 0L
@@ -204,6 +216,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
      */
     private external fun updatePerformanceStatistics()
     private external fun getDiagnosticPresentedFrames() : Long
+    private external fun requestDiagnosticCapture(gpuCapture : Boolean) : Long
 
     /**
      * @see [InputHandler.initializeControllers]
@@ -221,7 +234,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
         // Hack for MIUI devices since they don't support the standard Android APIs
         try {
             val setFpsIntent = Intent("com.miui.powerkeeper.SET_ACTIVITY_FPS")
-            setFpsIntent.putExtra("package_name", "skyline.emu")
+            setFpsIntent.putExtra("package_name", packageName)
             setFpsIntent.putExtra("isEnter", enable)
             sendBroadcast(setFpsIntent)
         } catch (_ : Exception) {
@@ -329,6 +342,11 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     @SuppressLint("SetTextI18n", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState : Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                returnFromEmulation()
+            }
+        })
         populateAppItem()
         emulationSettings = EmulationSettings.forEmulation(item.titleId ?: item.key())
 
@@ -337,6 +355,14 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
         inputHandler = InputHandler(inputManager, emulationSettings)
         setContentView(binding.root)
         diagnosticHandler.post(diagnosticStatistics)
+        binding.diagnosticCapture.setOnClickListener {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.diagnostic_capture_title)
+                .setItems(arrayOf(getString(R.string.diagnostic_capture_now), getString(R.string.diagnostic_capture_gpu))) { _, choice ->
+                    val request = requestDiagnosticCapture(choice == 1)
+                    Toast.makeText(this, if (request > 0) getString(R.string.diagnostic_capture_requested, request) else getString(R.string.diagnostic_capture_unavailable), Toast.LENGTH_LONG).show()
+                }.setNegativeButton(android.R.string.cancel, null).show()
+        }
 
         builtinVibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -387,20 +413,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
             if (emulationSettings.disableFrameThrottling)
                 binding.perfStats.setTextColor(getColor(R.color.colorPerfStatsSecondary))
 
-            binding.perfStats.apply {
-                postDelayed(object : Runnable {
-                    override fun run() {
-                        updatePerformanceStatistics()
-                        // We read the `VmRSS` value from the kernel
-                        ramUsage = runCatching {
-                            File("/proc/self/statm").readText().trim().split(Regex("\\s+"))[1].toLong() *
-                                android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE) / 1000000
-                        }.getOrDefault(0L)
-                        text = "$fps FPS • $ramUsage MB"
-                        postDelayed(this, 250)
-                    }
-                }, 250)
-            }
+            diagnosticHandler.postDelayed(performanceStatistics, 250)
         }
 
         force60HzRefreshRate(!emulationSettings.maxRefreshRate)
@@ -470,16 +483,6 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
         pauseEmulator()
     }
 
-    override fun onStart() {
-        super.onStart()
-
-        onBackPressedDispatcher.addCallback(object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                returnFromEmulation()
-            }
-        })
-    }
-
     override fun onResume() {
         super.onResume()
 
@@ -546,6 +549,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
             binding.onScreenControllerView.isGone = true
             binding.onScreenControllerToggle.isGone = true
             binding.onScreenPauseToggle.isGone = true
+            binding.diagnosticCapture.isGone = true
         } else {
             try {
                 unregisterReceiver(pictureInPictureReceiver)
@@ -561,6 +565,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
             binding.onScreenControllerToggle.apply {
                 isGone = binding.onScreenControllerView.isGone
             }
+            binding.diagnosticCapture.isGone = false
             binding.onScreenPauseToggle.apply {
                 isGone = !emulationSettings.showPauseButton
             }
@@ -597,10 +602,14 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
      * Stop the currently executing ROM and replace it with the one specified in the new intent
      */
     override fun onNewIntent(intent : Intent?) {
-        super.onNewIntent(intent!!)
-        if (getIntent().data != intent.data) {
+        if (intent == null) return
+        super.onNewIntent(intent)
+        val incomingItem = intent.serializable(AppItemTag) as? AppItem
+        val incomingUri = incomingItem?.uri ?: intent.data
+        if (incomingUri != null && incomingUri != item.uri) {
             setIntent(intent)
-            executeApplication(intent)
+            // Rebuild the controls and per-game settings along with the native session.
+            recreate()
         }
     }
 
@@ -612,6 +621,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     override fun onDestroy() {
         super.onDestroy()
         diagnosticHandler.removeCallbacks(diagnosticStatistics)
+        diagnosticHandler.removeCallbacks(performanceStatistics)
         shouldFinish = false
 
         // Stop forcing 60Hz on exit to allow the skyline UI to run at high refresh rates
