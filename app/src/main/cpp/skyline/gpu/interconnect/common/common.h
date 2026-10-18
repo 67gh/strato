@@ -4,6 +4,7 @@
 #pragma once
 
 #include <common/dirty_tracking.h>
+#include <exception>
 #include <vulkan/vulkan_raii.hpp>
 #include <gpu/buffer.h>
 #include <soc/gm20b/engines/engine.h>
@@ -39,9 +40,9 @@ namespace skyline::gpu::interconnect {
      */
     class CachedMappedBufferView {
       private:
-        span<u8> blockMapping; //!< The underlying mapping that `view` is a part of
-        u64 blockMappingStartAddr; //!< The start GPU address of `blockMapping`
-        u64 blockMappingEndAddr; //!< The end GPU address of `blockMapping`
+        span<u8> blockMapping{}; //!< The underlying mapping that `view` is a part of
+        u64 blockMappingStartAddr{}; //!< The start GPU address of `blockMapping`
+        u64 blockMappingEndAddr{}; //!< The end GPU address of `blockMapping`
 
       public:
         BufferView view{}; //!< The buffer view created as a result of a call to `Update()`
@@ -88,11 +89,33 @@ namespace skyline::gpu::interconnect {
 
     class StateUpdateBuilder;
 
+    // Unwind preparation before submitting: a mid-draw submit would invalidate
+    // its allocator, descriptor state and attached locks. The draw/dispatch
+    // boundary catches this request, submits prior work, then rebuilds once.
+    struct BufferReadNeedsSubmission : std::exception {
+        const char *what() const noexcept override { return "GPU buffer read requires prior command submission"; }
+    };
+
+    struct TexelBufferBinding {
+        BufferView view;
+        vk::Format format;
+        vk::DeviceSize alignment;
+    };
+
+    // The executor owns the RAII views until its fence completes. The linear
+    // command allocator holds only these spans and a non-owning pointer.
+    struct TexelBufferDescriptors {
+        span<TexelBufferBinding> bindings;
+        span<vk::BufferView> views;
+        std::vector<vk::raii::BufferView> *lifetime{};
+    };
+
     struct DescriptorUpdateInfo {
         span<vk::CopyDescriptorSet> copies; //!< These will be performed before writes
         span<vk::WriteDescriptorSet> writes;
         span<vk::DescriptorBufferInfo> bufferDescs;
         span<DynamicBufferBinding> bufferDescDynamicBindings;
+        TexelBufferDescriptors texelBuffers;
         vk::PipelineLayout pipelineLayout;
         vk::DescriptorSetLayout descriptorSetLayout;
         vk::PipelineBindPoint bindPoint;

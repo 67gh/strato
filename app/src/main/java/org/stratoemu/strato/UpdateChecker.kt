@@ -5,6 +5,7 @@ package org.stratoemu.strato
 
 import android.util.Log
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -35,9 +36,8 @@ data class UpdateInfo(
  * version. Comparing the release's `published_at` timestamp against [currentBuildTimeMs]
  * is therefore the reliable way to answer "is there a build newer than the APK installed here?".
  *
- * This never throws: any network failure, malformed response, or parsing error results in
- * `null` being returned so that a failed check is silently ignored rather than shown to
- * the user or crashing the app, matching the "no popup unless there's an update" requirement.
+ * Failures are returned separately from a successful check with no update. Callers can
+ * keep automatic checks silent while reporting failures of a manual check.
  */
 object UpdateChecker {
     private const val TAG = "UpdateChecker"
@@ -49,9 +49,9 @@ object UpdateChecker {
      * @param currentBuildTimeMs Epoch milliseconds of the commit used to build the currently
      *                            running APK
      * @param currentBuildCommitFull Full git commit hash embedded in the APK
-     * @return Information about the newer release if one exists, otherwise `null`
+     * @return Success containing a newer release or null, or a failed check
      */
-    fun checkForUpdate(owner : String, repo : String, currentBuildTimeMs : Long, currentBuildCommitFull : String) : UpdateInfo? {
+    fun checkForUpdate(owner : String, repo : String, currentBuildTimeMs : Long, currentBuildCommitFull : String) : Result<UpdateInfo?> {
         return try {
             val url = URL("https://api.github.com/repos/$owner/$repo/releases?per_page=20")
             val connection = url.openConnection() as HttpURLConnection
@@ -61,77 +61,84 @@ object UpdateChecker {
 
             try {
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                    Log.w(TAG, "GitHub API returned HTTP ${connection.responseCode}, skipping update check")
-                    return null
+                    throw IOException("GitHub API returned HTTP ${connection.responseCode}")
                 }
 
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val releases = org.json.JSONArray(body)
-
-                var newestRelease : JSONObject? = null
-                var newestReleaseTimeMs = Long.MIN_VALUE
-
-                for (i in 0 until releases.length()) {
-                    val release = releases.optJSONObject(i) ?: continue
-                    if (release.optBoolean("draft", false))
-                        continue
-
-                    val publishedAt = release.optString("published_at", "")
-                    val releaseTimeMs = parseIso8601(publishedAt) ?: continue
-                    if (releaseTimeMs > newestReleaseTimeMs) {
-                        newestReleaseTimeMs = releaseTimeMs
-                        newestRelease = release
-                    }
-                }
-
-                val release = newestRelease ?: return null
-                if (newestReleaseTimeMs <= currentBuildTimeMs)
-                    return null // Already up to date (or somehow newer, e.g. a local dev build)
-
-                val tagName = release.optString("tag_name", "")
-                if (tagName.isEmpty())
-                    return null
-
-                // The release workflow tags the exact commit as vYYYY.MM.DD-<12-char-sha>.
-                // The APK stores the full commit hash. Comparing the tag's commit prefix
-                // against that full hash avoids treating the exact same build as an update,
-                // even if the release is published after the APK was built.
-                val releaseCommit = tagName.substringAfterLast('-', "")
-                if (releaseCommit.isNotEmpty() && currentBuildCommitFull.startsWith(releaseCommit))
-                    return null
-
-                val releaseUrl = release.optString(
-                    "html_url",
-                    "https://github.com/$owner/$repo/releases/latest"
-                )
-
-                var apkDownloadUrl : String? = null
-                var zipDownloadUrl : String? = null
-                val assets = release.optJSONArray("assets")
-                if (assets != null) {
-                    for (i in 0 until assets.length()) {
-                        val asset = assets.getJSONObject(i)
-                        val name = asset.optString("name", "")
-                        val url = asset.optString("browser_download_url", null)
-                        when {
-                            name.endsWith(".zip", ignoreCase = true) && zipDownloadUrl == null -> zipDownloadUrl = url
-                            name.endsWith(".apk", ignoreCase = true) && apkDownloadUrl == null -> apkDownloadUrl = url
-                        }
-                    }
-                }
-
-                val downloadUrl = zipDownloadUrl ?: apkDownloadUrl
-                UpdateInfo(tagName, releaseUrl, downloadUrl, zipDownloadUrl != null)
+                Result.success(parseReleases(body, owner, repo, currentBuildTimeMs, currentBuildCommitFull))
             } finally {
                 connection.disconnect()
             }
         } catch (e : Exception) {
-            // Deliberately broad: no network, DNS failure, malformed JSON, GitHub API rate
-            // limiting, etc. should all just mean "couldn't check right now", never a crash
-            // or a wrongly-shown popup.
-            Log.w(TAG, "Update check failed, ignoring: ${e.message}")
-            null
+            Log.w(TAG, "Update check failed: ${e.message}")
+            Result.failure(e)
         }
+    }
+
+    /** Pure response handling; direct APK assets only. The archive flag is kept
+     * for existing callers and restored legacy update screens, and is always false here. */
+    internal fun parseReleases(body: String, owner: String, repo: String,
+                               currentBuildTimeMs: Long, currentBuildCommitFull: String): UpdateInfo? {
+        val releases = org.json.JSONArray(body)
+
+        var newestRelease : JSONObject? = null
+        var newestReleaseTimeMs = Long.MIN_VALUE
+
+        for (i in 0 until releases.length()) {
+            val release = releases.optJSONObject(i) ?: continue
+            if (release.optBoolean("draft", false))
+                continue
+
+            val publishedAt = release.optString("published_at", "")
+            val releaseTimeMs = parseIso8601(publishedAt) ?: continue
+            if (releaseTimeMs > newestReleaseTimeMs) {
+                newestReleaseTimeMs = releaseTimeMs
+                newestRelease = release
+            }
+        }
+
+        val release = newestRelease ?: run {
+            if (releases.length() != 0)
+                throw IOException("No usable published release in response")
+            return null
+        }
+        if (newestReleaseTimeMs <= currentBuildTimeMs)
+            return null // Already up to date (or a newer local build)
+
+        val tagName = release.optString("tag_name", "")
+        if (tagName.isEmpty())
+            throw IOException("Release has no tag name")
+
+        // The release workflow tags the exact commit as vYYYY.MM.DD-<12-char-sha>.
+        // The APK stores the full commit hash. Comparing the tag's commit prefix
+        // against that full hash avoids treating the exact same build as an update,
+        // even if the release is published after the APK was built.
+        val releaseCommit = tagName.substringAfterLast('-', "")
+        if (releaseCommit.isNotEmpty() && currentBuildCommitFull.startsWith(releaseCommit))
+            return null
+
+        val releaseUrl = release.optString(
+            "html_url",
+            "https://github.com/$owner/$repo/releases/latest"
+        )
+
+        val assets = release.optJSONArray("assets")
+        val apks = mutableListOf<Pair<String, String>>()
+        if (assets != null) {
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                val name = asset.optString("name", "")
+                val url = asset.optString("browser_download_url", "")
+                if (name.endsWith(".apk", ignoreCase = true) && url.isNotBlank() &&
+                    asset.optString("state", "uploaded") == "uploaded")
+                    apks += name to url
+            }
+        }
+        // Prefer the canonical mainline APK. Old releases with APK + ZIP still
+        // work, but ZIP-only releases open their release page through the caller.
+        val downloadUrl = apks.firstOrNull { it.first.equals("strato-mainline-release.apk", ignoreCase = true) }?.second
+            ?: apks.firstOrNull()?.second
+        return UpdateInfo(tagName, releaseUrl, downloadUrl, false)
     }
 
     /**

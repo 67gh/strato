@@ -15,8 +15,11 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import androidx.activity.result.ActivityResultLauncher
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.lifecycleScope
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.snackbar.Snackbar
@@ -27,6 +30,12 @@ import org.stratoemu.strato.loader.LoaderResult
 import org.stratoemu.strato.settings.SettingsActivity
 import org.stratoemu.strato.utils.SaveManagementUtils
 import org.stratoemu.strato.utils.serializable
+import org.stratoemu.strato.utils.ShaderCacheFiles
+import org.stratoemu.strato.diagnostics.DiagnosticSession
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * This dialog is used to show extra game metadata and provide extra options such as pinning the game to the home screen
@@ -149,6 +158,55 @@ class AppDialog : BottomSheetDialogFragment() {
             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Title ID", item.titleId))
             Snackbar.make(binding.root, getString(R.string.copied_to_clipboard), Snackbar.LENGTH_SHORT).show()
             true
+        }
+
+        val clearCache = MaterialButton(requireContext()).apply {
+            setText(R.string.delete_game_shader_cache)
+            isEnabled = item.titleId?.matches(Regex("[0-9a-fA-F]{16}")) == true
+        }
+        (binding.root as LinearLayout).addView(clearCache, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            val margin = (16 * resources.displayMetrics.density).toInt()
+            setMargins(margin, 0, margin, margin)
+        })
+        clearCache.setOnClickListener {
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.delete_game_shader_cache)
+                .setMessage(getString(R.string.delete_game_shader_cache_confirm, item.title))
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.yes) { _, _ ->
+                    val appContext = requireContext().applicationContext
+                    val cacheOwner = item.titleId
+                    clearCache.isEnabled = false
+                    binding.gamePlay.isEnabled = false
+                    binding.gameSettings.isEnabled = false
+                    isCancelable = false
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            val message = withContext(Dispatchers.IO) {
+                                if (DiagnosticSession.listSessions(appContext).any { DiagnosticSession.isSessionActive(it) })
+                                    R.string.game_shader_cache_active
+                                else if (ShaderCacheFiles.delete(appContext.getPublicFilesDir(), cacheOwner))
+                                    R.string.game_shader_cache_deleted
+                                else
+                                    R.string.game_shader_cache_empty
+                            }
+                            Snackbar.make(view, message, Snackbar.LENGTH_LONG).show()
+                        } catch (e : CancellationException) {
+                            throw e
+                        } catch (_ : Exception) {
+                            Snackbar.make(view, R.string.game_shader_cache_failed, Snackbar.LENGTH_LONG).show()
+                        } finally {
+                            isCancelable = true
+                            if (this@AppDialog.view === view) {
+                                clearCache.isEnabled = true
+                                binding.gamePlay.isEnabled = item.loaderResult == LoaderResult.Success
+                                binding.gameSettings.isEnabled = item.loaderResult == LoaderResult.Success
+                            }
+                        }
+                    }
+                }.show()
         }
 
         dialog?.setOnKeyListener { _, keyCode, event ->

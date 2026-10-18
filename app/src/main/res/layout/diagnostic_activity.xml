@@ -36,6 +36,11 @@
                 android:layout_marginTop="8dp"
                 android:textAppearance="?attr/textAppearanceBodyMedium" />
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/diagnostic_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/diagnostic_options_title" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/choose_session"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="match_parent"

@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <asm/sigcontext.h>
 #include <common/signal.h>
+#include <common/utils.h>
 #include <loader/loader.h>
 #include <kernel/types/KProcess.h>
 #include <kernel/types/KThread.h>
@@ -471,9 +472,8 @@ namespace skyline::nce {
             void AddTicks(u64 ticks) override {}
             u64 GetTicksRemaining() override { return 1; }
             u64 GetCNTPCT() override {
-                u64 value;
-                asm volatile("MRS %0, CNTVCT_EL0" : "=r"(value));
-                return value;
+                // Match GetSystemTick and the NCE counter patch: guest time is 19.2 MHz.
+                return util::GetTimeTicks();
             }
         };
 

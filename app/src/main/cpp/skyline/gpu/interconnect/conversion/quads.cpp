@@ -4,9 +4,13 @@
 #include "quads.h"
 
 namespace skyline::gpu::interconnect::conversion::quads {
-    void GenerateQuadListConversionBuffer(u32 *dest, u32 vertexCount) {
+    void GenerateQuadListConversionBuffer(u32 *dest, u32 vertexCount, u32 firstVertex) {
+        const u32 completeCount{vertexCount - vertexCount % QuadVertexCount};
+        if (completeCount && firstVertex > std::numeric_limits<u32>::max() - (completeCount - 1))
+            throw std::out_of_range("Quad vertex range overflow");
         #pragma clang loop vectorize(enable) interleave(enable) unroll(enable)
-        for (u32 i{}; i < vertexCount; i += 4) {
+        for (u32 offset{}; offset < completeCount; offset += QuadVertexCount) {
+            const u32 i{firstVertex + offset};
             // Given a quad ABCD, we want to generate triangles ABC & CDA
             // Triangle ABC
             *(dest++) = i + 0;
@@ -22,8 +26,9 @@ namespace skyline::gpu::interconnect::conversion::quads {
 
     template<typename S>
     static void GenerateQuadIndexConversionBufferImpl(S *__restrict__ dest, S *__restrict__ source, u32 indexCount) {
+        const u32 completeCount{indexCount - indexCount % QuadVertexCount};
         #pragma clang loop vectorize(enable) interleave(enable) unroll(enable)
-        for (size_t i{}; i < indexCount; i += 4, source += 4) {
+        for (size_t i{}; i < completeCount; i += QuadVertexCount, source += QuadVertexCount) {
             // Given a quad ABCD, we want to generate triangles ABC & CDA
             // Triangle ABC
             *(dest++) = *(source + 0);
@@ -49,7 +54,7 @@ namespace skyline::gpu::interconnect::conversion::quads {
                 GenerateQuadIndexConversionBufferImpl(dest, source, indexCount);
                 break;
             default:
-                break;
+                throw std::invalid_argument("Unsupported quad index type");
         }
     }
 }

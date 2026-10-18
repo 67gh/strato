@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2022 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <soc/gm20b/channel.h>
 #include <soc/gm20b/gmmu.h>
 #include <gpu/texture_manager.h>
+#include <gpu/interconnect/command_executor.h>
 #include <gpu/texture/format.h>
 #include "textures.h"
 
@@ -358,6 +360,100 @@ namespace skyline::gpu::interconnect {
 
         textureHeaderCache[index] = {textureHeader, texture.get(), ctx.channelCtx.channelSequenceNumber};
         return texture.get();
+    }
+
+    TexelBufferBinding Textures::GetTexelBuffer(InterconnectContext &ctx, u32 index, bool storage, Shader::ImageFormat shaderFormat, Shader::ImageNumericType numericType) try {
+        auto headers{texturePool.UpdateGet(ctx).textureHeaders};
+        if (index >= headers.size())
+            throw exception("Texel buffer TIC index {} exceeds pool size {}", index, headers.size());
+        const auto &tic{headers[index]};
+        if (tic.textureType != TextureImageControl::TextureType::e1DBuffer || tic.headerType != TextureImageControl::HeaderType::Buffer1D)
+            throw exception("Texel buffer TIC {} is not a Buffer1D", index);
+
+        auto format{ConvertTicFormat(tic.formatWord, false)};
+        if (!format || format->IsCompressed() || format->vkAspect != vk::ImageAspectFlagBits::eColor || tic.isSrgb)
+            throw exception("Unsupported texel buffer TIC format at index {}", index);
+        const auto guestTexelBytes{format->bpb};
+
+        if (storage) {
+            // The compiler declares typed surface accesses independently of TIC
+            // numeric interpretation. Reinterpret bits, never convert the data.
+            switch (shaderFormat) {
+                case Shader::ImageFormat::R32_UINT: format = format::R32Uint; break;
+                case Shader::ImageFormat::R32G32B32A32_UINT: format = format::R32G32B32A32Uint; break;
+                case Shader::ImageFormat::Typeless:
+                    if (GetTexelBufferNumericType(ctx, index) != numericType) {
+                        skyline::diagnostics::SaveArtifact("tic_rejected", index, &tic, sizeof(tic), "bin");
+                        throw exception("Storage texel buffer {} shader/TIC numeric type mismatch (formatWord=0x{:08X})", index, tic.formatWord.Raw());
+                    }
+                    if (!ctx.gpu.traits.supportsImageReadWithoutFormat || !ctx.gpu.traits.supportsShaderStorageImageWriteWithoutFormat)
+                        throw exception("Storage texel buffer {} needs formatless image access features", index);
+                    break;
+                default:
+                    throw exception("Unsupported storage texel shader format {} at TIC {}", static_cast<u32>(shaderFormat), index);
+            }
+            if (format->bpb != guestTexelBytes)
+                throw exception("Storage texel buffer {} changes texel size ({} to {})", index, guestTexelBytes, format->bpb);
+        } else {
+            if (GetTexelBufferNumericType(ctx, index) != numericType) {
+                skyline::diagnostics::SaveArtifact("tic_rejected", index, &tic, sizeof(tic), "bin");
+                throw exception("Sampled texel buffer {} shader/TIC numeric type mismatch (formatWord=0x{:08X})", index, tic.formatWord.Raw());
+            }
+
+            // VkBufferView has no component swizzle. Accept identity and the
+            // canonical defaults for missing channels, not arbitrary remaps.
+            using Swizzle = TextureImageControl::ImageSwizzle;
+            using ImageFormat = TextureImageControl::ImageFormat;
+            u32 components{4};
+            switch (tic.formatWord.format) {
+                case ImageFormat::R8: case ImageFormat::R16: case ImageFormat::R32: components = 1; break;
+                case ImageFormat::R8G8: case ImageFormat::R16G16: case ImageFormat::R32G32: components = 2; break;
+                case ImageFormat::B10G11R11: case ImageFormat::E5B9G9R9: case ImageFormat::B5G6R5: components = 3; break;
+                default: break;
+            }
+            const auto &mapping{format->swizzleMapping};
+            if (mapping.r != vk::ComponentSwizzle::eR || mapping.g != vk::ComponentSwizzle::eG ||
+                mapping.b != vk::ComponentSwizzle::eB || mapping.a != vk::ComponentSwizzle::eA ||
+                tic.formatWord.swizzleX != Swizzle::R ||
+                (tic.formatWord.swizzleY != Swizzle::G && !(components < 2 && tic.formatWord.swizzleY == Swizzle::Zero)) ||
+                (tic.formatWord.swizzleZ != Swizzle::B && !(components < 3 && tic.formatWord.swizzleZ == Swizzle::Zero)) ||
+                (tic.formatWord.swizzleW != Swizzle::A && !(components < 4 && tic.formatWord.swizzleW == (numericType == Shader::ImageNumericType::Float ? Swizzle::OneFloat : Swizzle::OneInt))))
+                throw exception("Noncanonical sampled texel buffer swizzle at TIC {}", index);
+        }
+
+        const u64 texels{((static_cast<u64>(tic.tileConfig.widthMinusOne_16_31) << 16) | tic.widthMinusOne) + 1};
+        const auto limits{ctx.gpu.vkPhysicalDevice.getProperties().limits};
+        if (texels > limits.maxTexelBufferElements)
+            throw exception("Texel buffer {} has {} elements, device limit is {}", index, texels, limits.maxTexelBufferElements);
+        auto features{ctx.gpu.vkPhysicalDevice.getFormatProperties(format->vkFormat).bufferFeatures};
+        auto required{storage ? vk::FormatFeatureFlagBits::eStorageTexelBuffer : vk::FormatFeatureFlagBits::eUniformTexelBuffer};
+        if (!(features & required))
+            throw exception("Texel buffer format {} unsupported by device for TIC {}", static_cast<u32>(format->vkFormat), index);
+
+        const u64 bytes{texels * format->bpb};
+        CachedMappedBufferView mapped{};
+        mapped.Update(ctx, tic.Iova(), bytes, false);
+        if (!mapped.view || mapped.view.size != bytes)
+            throw exception("Unmapped or split texel buffer at TIC {} (address=0x{:X}, bytes={})", index, tic.Iova(), bytes);
+        skyline::diagnostics::Event("texel_descriptor", index, tic.Iova(), bytes, storage ? "storage" : "sampled");
+        skyline::diagnostics::SaveArtifact("tic", index, &tic, sizeof(tic), "bin");
+        ctx.executor.AttachBuffer(mapped.view);
+        return {mapped.view, format->vkFormat, std::max<vk::DeviceSize>(1, limits.minTexelBufferOffsetAlignment)};
+    } catch (const std::exception &error) {
+        skyline::diagnostics::Unsupported("texel_descriptor", index, error.what());
+        throw;
+    }
+
+    Shader::ImageNumericType Textures::GetTexelBufferNumericType(InterconnectContext &ctx, u32 index) {
+        auto headers{texturePool.UpdateGet(ctx).textureHeaders};
+        if (index >= headers.size())
+            throw exception("Texel buffer TIC index {} exceeds pool size {}", index, headers.size());
+        using Component = TextureImageControl::ImageComponent;
+        switch (headers[index].formatWord.componentR) {
+            case Component::Uint: return Shader::ImageNumericType::UnsignedInt;
+            case Component::Sint: return Shader::ImageNumericType::SignedInt;
+            default: return Shader::ImageNumericType::Float; // Normalized and floating formats.
+        }
     }
 
     Shader::TextureType Textures::GetTextureType(InterconnectContext &ctx, u32 index) {

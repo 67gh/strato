@@ -6,6 +6,7 @@
 #include <common/trace.h>
 #include "types/KThread.h"
 #include "scheduler.h"
+#include "scheduler_timing.h"
 
 namespace skyline::kernel {
     Scheduler::CoreContext::CoreContext(u8 id, i8 preemptionPriority) : id(id), preemptionPriority(preemptionPriority) {}
@@ -37,34 +38,35 @@ namespace skyline::kernel {
     Scheduler::CoreContext &Scheduler::GetOptimalCoreForThread(const std::shared_ptr<type::KThread> &thread) {
         auto *currentCore{&cores.at(thread->coreId)};
 
-        if (!currentCore->queue.empty() && thread->affinityMask.count() != 1) {
+        bool currentCoreEmpty;
+        {
+            std::scoped_lock coreLock{currentCore->mutex};
+            currentCoreEmpty = currentCore->queue.empty();
+        }
+
+        if (!currentCoreEmpty && thread->affinityMask.count() != 1) {
             // Select core where the current thread will be scheduled the earliest based off average timeslice durations for resident threads
             // There's a preference for the current core as migration isn't free
-            size_t minTimeslice{};
+            u64 minTimeslice{};
             CoreContext *optimalCore{};
             for (auto &candidateCore : cores) {
                 if (thread->affinityMask.test(candidateCore.id)) {
                     u64 timeslice{};
 
-                    if (!candidateCore.queue.empty()) {
+                    {
+                        // Even empty() must be protected: other host threads mutate this queue.
                         std::scoped_lock coreLock{candidateCore.mutex};
-
                         auto threadIterator{candidateCore.queue.cbegin()};
                         if (threadIterator != candidateCore.queue.cend()) {
                             const auto &runningThread{*threadIterator};
-                            timeslice += [&]() {
-                                if (runningThread->averageTimeslice)
-                                    return std::min(runningThread->averageTimeslice - (util::GetTimeTicks() - runningThread->timesliceStart), 1UL);
-                                else if (runningThread->timesliceStart)
-                                    return util::GetTimeTicks() - runningThread->timesliceStart;
-                                else
-                                    return 1UL;
-                            }();
+                            timeslice = scheduler_detail::RemainingTimeslice(
+                                runningThread->averageTimeslice, runningThread->timesliceStart, util::GetTimeTicks());
 
                             while (++threadIterator != candidateCore.queue.cend()) {
                                 const auto &residentThread{*threadIterator};
                                 if (residentThread->priority <= thread->priority)
-                                    timeslice += residentThread->averageTimeslice ? residentThread->averageTimeslice : 1UL;
+                                    timeslice = scheduler_detail::AddTimeslices(timeslice,
+                                        residentThread->averageTimeslice ? residentThread->averageTimeslice : 1UL);
                             }
                         }
                     }
@@ -141,7 +143,7 @@ namespace skyline::kernel {
                 core.queue.push_front(thread);
             }
             if (thread != state.thread)
-                thread->scheduleCondition.notify(); // We only want to trigger the conditional variable if the current thread isn't inserting itself
+                thread->scheduleCondition.notify_one(); // We only want to trigger the conditional variable if the current thread isn't inserting itself
         } else {
             core.queue.insert(nextThread, thread);
         }
@@ -155,7 +157,7 @@ namespace skyline::kernel {
         if (wasInserted) {
             it = currentCore->queue.erase(it);
             if (it == currentCore->queue.begin() && it != currentCore->queue.end())
-                (*it)->scheduleCondition.notify();
+                (*it)->scheduleCondition.notify_one();
         }
         lock.unlock();
 
@@ -195,7 +197,7 @@ namespace skyline::kernel {
                 if (core != newCore)
                     MigrateToCore(thread, core, newCore, lock);
 
-                loadBalanceThreshold *= 2; // We double the duration required for future load balancing for this invocation to minimize pointless load balancing
+                loadBalanceThreshold = scheduler_detail::NextLoadBalanceDelay(loadBalanceThreshold);
             }
         } else {
             thread->scheduleCondition.wait(lock, wakeFunction);
@@ -216,8 +218,12 @@ namespace skyline::kernel {
         std::unique_lock lock(core->mutex);
         if (thread->scheduleCondition.wait_for(lock, timeout, [&]() {
             if (!thread->affinityMask.test(thread->coreId)) [[unlikely]] {
+                // InsertThread takes migration before core; never wait for migration while holding core.
+                lock.unlock();
                 std::scoped_lock migrationLock{thread->coreMigrationMutex};
-                MigrateToCore(thread, core, &cores.at(thread->idealCore), lock);
+                lock.lock();
+                if (!thread->affinityMask.test(thread->coreId))
+                    MigrateToCore(thread, core, &cores.at(thread->idealCore), lock);
             }
             return !core->queue.empty() && core->queue.front() == thread;
         })) {
@@ -238,7 +244,7 @@ namespace skyline::kernel {
 
         std::unique_lock lock(core.mutex);
 
-        if (core.queue.front() == thread) {
+        if (!core.queue.empty() && core.queue.front() == thread) {
             // If this thread is at the front of the thread queue then we need to rotate the thread
             // In the case where this thread was forcefully yielded, we don't need to do this as it's done by the thread which yielded to this thread
             // Splice the linked element from the beginning of the queue to where its priority is present
@@ -246,12 +252,12 @@ namespace skyline::kernel {
 
             auto &front{core.queue.front()};
             if (front != thread)
-                front->scheduleCondition.notify(); // If we aren't at the front of the queue, only then should we wake the thread at the front up
+                front->scheduleCondition.notify_one(); // If we aren't at the front of the queue, only then should we wake the thread at the front up
         } else if (!thread->forceYield) {
             throw exception("T{} called Rotate while not being in C{}'s queue", thread->id, thread->coreId);
         }
 
-        thread->averageTimeslice = (thread->averageTimeslice / 4) + (3 * (util::GetTimeTicks() - thread->timesliceStart / 4));
+        thread->averageTimeslice = scheduler_detail::UpdateAverage(thread->averageTimeslice, thread->timesliceStart, util::GetTimeTicks());
 
         thread->DisarmPreemptionTimer(); // If a preemptive thread did a cooperative yield then we need to disarm the preemptive timer
         thread->pendingYield = false;
@@ -271,10 +277,10 @@ namespace skyline::kernel {
                     if (it == core.queue.begin()) {
                         // We need to update the averageTimeslice accordingly, if we've been unscheduled by this
                         if (thread->timesliceStart)
-                            thread->averageTimeslice = (thread->averageTimeslice / 4) + (3 * (util::GetTimeTicks() - thread->timesliceStart / 4));
+                            thread->averageTimeslice = scheduler_detail::UpdateAverage(thread->averageTimeslice, thread->timesliceStart, util::GetTimeTicks());
 
                         if (it != core.queue.end())
-                            (*it)->scheduleCondition.notify(); // We need to wake the thread at the front of the queue, if we were at the front previously
+                            (*it)->scheduleCondition.notify_one(); // We need to wake the thread at the front of the queue, if we were at the front previously
                     }
                 } else {
                     LOGW("T{} was not in C{}'s queue", thread->id, thread->coreId);
@@ -295,10 +301,12 @@ namespace skyline::kernel {
         auto *core{&cores.at(thread->coreId)};
         std::unique_lock coreLock(core->mutex);
 
-        auto currentIt{std::find(core->queue.begin(), core->queue.end(), thread)}, nextIt{std::next(currentIt)};
+        auto currentIt{std::find(core->queue.begin(), core->queue.end(), thread)};
         if (currentIt == core->queue.end()) {
             return;
-        } else if (currentIt == core->queue.begin()) {
+        }
+        auto nextIt{std::next(currentIt)};
+        if (currentIt == core->queue.begin()) {
             // Alternatively, if it's currently running then we'd just want to yield if there's a higher priority thread to run instead
             if (nextIt != core->queue.end() && (*nextIt)->priority < thread->priority) {
                 YieldThread(thread);
@@ -326,10 +334,10 @@ namespace skyline::kernel {
     void Scheduler::UpdateCore(const std::shared_ptr<type::KThread> &thread) {
         auto *core{&cores.at(thread->coreId)};
         std::scoped_lock coreLock{core->mutex};
-        if (core->queue.front() == thread)
+        if (!core->queue.empty() && core->queue.front() == thread)
             thread->SendSignal(YieldSignal);
         else
-            thread->scheduleCondition.notify();
+            thread->scheduleCondition.notify_one();
     }
 
     void Scheduler::ParkThread() {
@@ -359,7 +367,7 @@ namespace skyline::kernel {
             auto &core{cores.at(thread->coreId)};
             std::unique_lock coreLock(core.mutex);
             auto nextThread{core.queue.size() > 1 ? *std::next(core.queue.begin()) : nullptr};
-            nextThread = nextThread->priority == thread->priority ? nextThread : nullptr; // If the next thread doesn't have the same priority then it won't be scheduled next
+            nextThread = nextThread && nextThread->priority == thread->priority ? nextThread : nullptr; // If the next thread doesn't have the same priority then it won't be scheduled next
             auto parkedThread{parkedQueue.front()};
 
             // We need to be conservative about waking up a parked thread, it should only be done if its priority is higher than the current thread
@@ -367,7 +375,7 @@ namespace skyline::kernel {
             if (parkedThread->priority < thread->priority || (parkedThread->priority == thread->priority && (!nextThread || parkedThread->timesliceStart < nextThread->timesliceStart))) {
                 parkedThread->coreId = thread->coreId;
                 parkedLock.unlock();
-                parkedThread->scheduleCondition.notify();
+                parkedThread->scheduleCondition.notify_one();
             }
         }
     }
@@ -384,7 +392,7 @@ namespace skyline::kernel {
 
             it = core->queue.erase(it);
             if (it == core->queue.begin() && it != core->queue.end())
-                (*it)->scheduleCondition.notify();
+                (*it)->scheduleCondition.notify_one();
 
             if (it == core->queue.begin()) {
                 // We need to send a yield signal to the thread if it's currently running
@@ -405,6 +413,6 @@ namespace skyline::kernel {
             InsertThread(thread);
         else
             // If we're not inserting the thread back into the queue ourselves then we need to notify the thread inserting it about the updated pause state
-            thread->scheduleCondition.notify();
+            thread->scheduleCondition.notify_one();
     }
 }

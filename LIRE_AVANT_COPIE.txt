@@ -1,0 +1,78 @@
+STRATO — PATCH INCRÉMENTAL RENDU / DIAGNOSTIC VIDÉO
+
+INSTALLATION
+Ce ZIP contient seulement les fichiers modifiés ou ajoutés pendant cette reprise.
+Il s’applique sur le projet déjà corrigé lors des étapes précédentes :
+strato_fichiers_modifies_diagnostics.zip, strato_patch_threads_invites.zip,
+puis strato_patch_crash_smmu.zip. Ce n’est PAS un correctif autonome pour le ZIP original.
+Extraire à la racine contenant app/ et tools/, remplacer les fichiers correspondants,
+puis reconstruire l’APK. Aucun fichier à supprimer. Aucun keystore modifié.
+Conserver les modifications locales personnelles avant de remplacer un fichier entier.
+
+CHANGEMENTS
+1. Storage texel buffers compute : spécialisation float, signed et unsigned d’après
+   le TIC effectivement lié. Conservation du VkFormat ; bitcasts SPIR-V pour préserver
+   les bits des registres. Cache de variantes revérifié à chaque dispatch.
+   Cela traite la restriction qui interrompait Dragon Ball avec le TIC 2161.
+2. Buffers GPU : renouvellement des protections d’écriture et du numéro de version
+   pour chaque écriture GPU, même si le buffer est déjà GpuDirty. Le défaut est reproduit
+   par un test. Son lien avec les morceaux de personnage de Zelda reste à vérifier en jeu.
+3. Atomiques image : utiliser descriptor_index dans les flags IR ; l’argument 0 est
+   un indice de tableau, et il est vide pour un descripteur scalaire.
+4. NVDEC/VIC : capture des registres, picture info et bitstream H264/VP8/VP9,
+   probabilités VP9 et configuration VIC. Avertissement limité à une fois par moteur.
+   ATTENTION : ceci est un diagnostic, pas une implémentation du décodage vidéo.
+   Les classes NVDEC et VIC ne produisent toujours pas d’images.
+
+CAPTURE POUR LES CINÉMATIQUES
+Dans Diagnostics, activer la capture détaillée des shaders (elle commande aussi ces
+artefacts vidéo), démarrer le jeu et reproduire la cinématique. Les deux premières
+exécutions de chaque moteur sont capturées ; Capturer le problème maintenant demande
+une capture à la prochaine exécution vidéo. Exporter la session.
+Chercher shader-nvdec-*.bin et shader-vic-*.bin dans le ZIP exporté.
+Une session sans ces fichiers peut avoir échoué avant la vidéo, ne pas utiliser NVDEC,
+ou avoir atteint un quota : consulter flight_recorder.jsonl / recorder_status.json.
+Maximum : 8 snapshots par moteur/canal, 1 Mio par bloc, quota global existant 32 Mio.
+Les paquets incomplets portent un indicateur et un événement video_capture_incomplete.
+
+Lecture hors ligne :
+python3 tools/inspect_video_capture.py shader-nvdec-EXEMPLE.bin
+python3 tools/inspect_video_capture.py shader-nvdec-EXEMPLE.bin --output-dir paquets
+Ce sont des données d’entrée brutes de l’émulateur, pas un film MP4 ni une image décodée.
+
+VÉRIFICATIONS RÉALISÉES
+- Tests Buffer et cache compute avec ASan/UBSan ; ancien défaut reproduit.
+- Binding texel avec Vulkan-Hpp exact : formats numériques, barrières et rejets.
+- Compilation des unités SPIR-V modifiées et de TexturePass avec dépendances épinglées.
+- Génération réelle de SPIR-V avec Sirit : types, bitcasts et atomique descripteur 1.
+- Capture vidéo et branchement THI/NVDEC/VIC : tests hôte ASan/UBSan.
+- Régression SMMU : plage Hollow Knight, dernière adresse 32 bits, trous/remappage.
+
+Tests reproductibles :
+python3 tools/render_tests/run.py
+python3 tools/render_tests/texel.py
+python3 tools/render_tests/shaders.py
+python3 tools/render_tests/video.py
+Les tests texel et shaders demandent les sous-modules natifs initialisés. Le script
+shaders accepte --dependencies DOSSIER pour un dossier séparé de dépendances.
+
+LIMITES ET SUITE DU TRAVAIL
+Aucun APK construit ni jeu exécuté ici : SDK/NDK Android et diverses dépendances
+complètes du moteur manquent. spirv-val absent ; les instructions binaires ont été
+contrôlées, pas validées par cet outil ni exécutées sur GPU matériel.
+Le support des types de storage texel ajouté ici concerne compute. Le pipeline graphique
+conserve son type unsigned ; les sampled texel buffers entiers et plusieurs formats
+storage typés restent non pris en charge. Les captures existantes ne prouvent pas
+que ces fonctions soient nécessaires aux scènes concernées.
+Le crash SMMU de Hollow Knight a été corrigé dans le patch précédent. Il est distinct
+du manque de décodage/conversion vidéo. Un décodeur NVDEC, la gestion des références,
+la conversion VIC et leur validation sur Android restent à implémenter.
+La disparition du crash Dragon Ball et la correction des déformations Zelda doivent
+être confirmées avec la nouvelle APK sur les mêmes scènes. Pas de promesse que tous
+les défauts graphiques ou blocages soient résolus par ce patch.
+
+SUIVI
+_suivi_rendu_video/ contient le journal d’analyse, les verdicts fichier par fichier,
+les résultats de tests, le manifeste SHA-256 et les trois lectures automatisées de
+chaque version. Ces lectures d’intégrité ne sont pas trois audits manuels indépendants.
+L’audit global de l’émulateur n’est pas présenté comme entièrement achevé.

@@ -33,34 +33,55 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download artifact (workflow_run)
-        if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@v4
-        with:
-          name: mainline-release-apk
-          path: ./artifacts
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download artifact (manual)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Select successful build
+        id: build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          gh run list --repo ${{ github.repository }} --workflow=Build --status=success --branch=master --limit=1 --json databaseId --jq '.[0].databaseId' > run_id.txt
-          RUN_ID=$(cat run_id.txt)
-          gh run download $RUN_ID --repo ${{ github.repository }} --name mainline-release-apk --dir ./artifacts
+          RUN_ID="$TRIGGER_RUN_ID"
+          if [ -z "$RUN_ID" ]; then
+            RUN_ID=$(gh run list --workflow=build.yml --status=success --branch=master --limit=1 --json databaseId --jq '.[0].databaseId // empty')
+          fi
+          if ! [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "No successful Build run found. Run Build before publishing."
+            exit 1
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      # v8 supports the raw single-file artifacts uploaded by Build v7.
+      - name: Download direct APK
+        uses: actions/download-artifact@v8
+        with:
+          name: strato-mainline-release.apk
+          path: ./artifacts
+          run-id: ${{ steps.build.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download build commit
+        uses: actions/download-artifact@v8
+        with:
+          name: release-commit.txt
+          path: ./artifacts
+          run-id: ${{ steps.build.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify downloaded APK before publication
+        run: python3 tools/check_release_apk.py artifacts/strato-mainline-release.apk
 
       - name: Inspect
         id: inspect
         run: |
-          ls -lh ./artifacts/
-          APK=$(find ./artifacts -name "*.apk" | head -n 1)
-          [ -z "$APK" ] && exit 1
-          BUILD_SHA_FILE=$(find ./artifacts -name "release-commit.txt" | head -n 1)
-          [ -z "$BUILD_SHA_FILE" ] && exit 1
+          APK="./artifacts/strato-mainline-release.apk"
+          BUILD_SHA_FILE="./artifacts/release-commit.txt"
+          test -s "$APK"
+          test -s "$BUILD_SHA_FILE"
           BUILD_SHA=$(tr -d '[:space:]' < "$BUILD_SHA_FILE")
-          [ -z "$BUILD_SHA" ] && exit 1
+          if ! [[ "$BUILD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid build commit"
+            exit 1
+          fi
           git cat-file -e "$BUILD_SHA^{commit}"
           echo "apk_path=$APK" >> $GITHUB_OUTPUT
           echo "build_sha=$BUILD_SHA" >> $GITHUB_OUTPUT
@@ -69,55 +90,23 @@ jobs:
           echo "version=${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "tag_name=v${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
 
-      - name: Create compressed update archive when it saves space
-        id: package
-        run: |
-          APK="${{ steps.inspect.outputs.apk_path }}"
-          ZIP="./artifacts/strato-update.zip"
-          rm -f "$ZIP"
-          zip -9 -j "$ZIP" "$APK"
-          APK_SIZE=$(stat -c%s "$APK")
-          ZIP_SIZE=$(stat -c%s "$ZIP")
-          echo "APK size: $APK_SIZE bytes"
-          echo "ZIP size: $ZIP_SIZE bytes"
-          if [ "$ZIP_SIZE" -lt "$APK_SIZE" ]; then
-            echo "use_zip=true" >> "$GITHUB_OUTPUT"
-            echo "ZIP is smaller; publishing the compressed update archive."
-          else
-            rm -f "$ZIP"
-            echo "use_zip=false" >> "$GITHUB_OUTPUT"
-            echo "ZIP is not smaller; publishing the APK directly."
-          fi
-
-      - name: Prepare release assets
-        run: |
-          rm -rf ./release-assets
-          mkdir -p ./release-assets
-          cp "${{ steps.inspect.outputs.apk_path }}" ./release-assets/
-          if [ -f ./artifacts/strato-update.zip ]; then
-            cp ./artifacts/strato-update.zip ./release-assets/
-          fi
-
       - name: Release notes
         id: notes
+        env:
+          RELEASE_TITLE: ${{ inputs.release_title }}
+          BUILD_VERSION: ${{ steps.inspect.outputs.version }}
+          BUILD_SHA: ${{ steps.inspect.outputs.build_sha }}
         run: |
-          if [ -n "${{ github.event.inputs.release_title }}" ]; then
-            TITLE="${{ github.event.inputs.release_title }}"
-          else
-            TITLE="Strato Build ${{ steps.inspect.outputs.version }}"
-          fi
-          echo "title=$TITLE" >> $GITHUB_OUTPUT
-          cat > RELEASE_NOTES.md << 'EOF'
-          ## ${TITLE}
-          **Date:** $(date +'%d %B %Y') | **Commit:** ${{ github.sha }}
-          ### Download
-          Artifact ci-dessous.
-          ### Warning
-          Build expérimentale.
-          EOF
-          echo "\`\`\`" >> RELEASE_NOTES.md
-          git log --oneline -10 >> RELEASE_NOTES.md
-          echo "\`\`\`" >> RELEASE_NOTES.md
+          TITLE="${RELEASE_TITLE:-Strato Build $BUILD_VERSION}"
+          # Step outputs are single-line; the body preserves the full title.
+          echo "title=${TITLE//$'\n'/ }" >> "$GITHUB_OUTPUT"
+          {
+            printf '## %s\n\n' "$TITLE"
+            printf '**Date:** %s | **Commit:** %s\n\n' "$(date -u +'%d %B %Y')" "$BUILD_SHA"
+            printf '### Download\nDownload strato-mainline-release.apk directly.\n\n'
+            printf '### Warning\nExperimental build.\n\n'
+            git log --oneline -10 "$BUILD_SHA"
+          } > RELEASE_NOTES.md
 
       - name: Create tag
         run: |
@@ -135,7 +124,8 @@ jobs:
           tag_name: ${{ steps.inspect.outputs.tag_name }}
           name: ${{ steps.notes.outputs.title }}
           body_path: RELEASE_NOTES.md
-          prerelease: ${{ github.event.inputs.prerelease || true }}
-          files: ./release-assets/*
+          prerelease: ${{ github.event_name != 'workflow_dispatch' || inputs.prerelease }}
+          files: ./artifacts/strato-mainline-release.apk
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

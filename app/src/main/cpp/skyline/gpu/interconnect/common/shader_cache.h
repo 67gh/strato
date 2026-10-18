@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <deque>
 #include <tsl/robin_map.h>
 #include <common/trap_manager.h>
 #include "common.h"
@@ -36,7 +37,7 @@ namespace skyline::gpu::interconnect {
         span<u8> mirrorBlock{}; //!< Guest mapped memory block corresponding to `entry`
         u64 lastProgramBase{};
         u32 lastProgramOffset{};
-        std::vector<u8> splitBinaryStorage;
+        std::deque<std::vector<u8>> splitBinaryStorage; //!< Stable ownership for cached split-shader spans
 
       public:
         /**

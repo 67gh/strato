@@ -1,0 +1,122 @@
+STRATO — CORRECTIONS DU LOT D'AUDIT GPU — 18 OCTOBRE 2026
+
+13 fichiers C++ modifiés sur la dernière version cumulative corrigée.
+Le ZIP de livraison contient le projet complet et les changements antérieurs.
+Feu vert reçu après le rapport AUDIT_CPP_SUITE_20261018.txt.
+Le journal d'analyse et le fichier de verdicts sont complétés, sans effacer l'historique.
+
+Corrections appliquées
+---------------------
+SUITE-01/07 : les conversions de quads traitent les groupes complets de quatre.
+Le nombre d'indices est calculé sur 64 bits avant multiplication. Les tailles
+et les générateurs utilisent le même compte. Les groupes incomplets n'entraînent
+plus d'accès aux sommets absents. Une taille non représentable est refusée.
+Le type d'index inconnu produit désormais une erreur explicite.
+
+SUITE-05 : le dessin non indexé conserve son premier sommet dans les indices
+générés. Le compte original est utilisé pour générer les indices ; le compte
+converti sert uniquement au drawIndexed. Le base vertex des dessins non indexés
+reste nul. Le cache suit le premier sommet et le compte réellement initialisé,
+pas simplement la capacité arrondie à une page. Les anciennes allocations restent
+attachées à leur cycle ; changer le premier sommet ne réécrit pas une allocation
+encore utilisée par une commande antérieure.
+
+SUITE-06/08/09 : taille inclusive corrigée (limit-address+1), plage inversée refusée,
+sommes de bornes élargies, taille mappée contrôlée avant conversion. Un mapping
+absent ou trop court invalide l'état d'indices et empêche le dessin. Refresh retente
+le mapping au lieu de déréférencer une vue vide. Le rejet invalide les caches pour
+que le dessin suivant reconstruise ses états plutôt que réutiliser un builder jeté.
+
+SUITE-10 : une composante de swizzle non prise en charge est détectée même si les
+autres composantes sont canoniques. Les transformations X/Z/W manquantes ne sont
+pas implémentées par ce lot ; elles ne sont plus silencieusement acceptées.
+
+SUITE-02/03/04 : le worker de complétion démarre après construction de ses états.
+Arrêt explicite et jointure des workers, fermeture des files dans l'ordre qui
+réveille aussi un producteur bloqué, retrait des slots avant destruction de leurs
+ressources. Un slot retiré ne redémarre pas de command buffer depuis ScopedBegin.
+Une erreur de Begin est mémorisée et réveille WaitReady. Les erreurs de worker sont
+capturées et signalées ; les callbacks restants ne prétendent pas avoir réussi.
+Submit(wait=true) emploie une promesse : si son callback est abandonné, le demandeur
+reçoit une erreur broken_promise au lieu d'attendre indéfiniment une référence locale.
+
+SUITE-11 : branche de création de subpass inaccessible retirée ; séparation
+conservatrice des render passes conservée et explicitée. Aucun gain FPS revendiqué.
+
+SUITE-12 : les callbacks de lecture GPU dirty ne sont plus des stubs de journalisation.
+Ils demandent une soumission par une exception typée. Les frontières Draw,
+DrawIndirect et Dispatch abandonnent le builder partiel, soumettent et attendent
+le travail précédent, puis reconstruisent une fois leurs états. Une deuxième demande
+au même point devient une erreur explicite, sans récursion ni boucle infinie.
+Les écritures d'un ancien cycle déjà soumis restent attendues directement.
+
+SUITE-13 / T02 : attente Vulkan par tranches de 50 ms, avec possibilité d'observer
+l'état entre les appels. Annulation limitée au travail non soumis ; les ressources
+déjà possédées par la queue Vulkan ne sont pas libérées avant la fin du travail.
+Soumission et NotifySubmitted protégés par le même verrou que Cancel, pour fermer
+la fenêtre entre vkQueueSubmit et la notification. Ce verrou est relâché avant de
+pousser dans la file des cycles. Le destructeur FenceCycle capture ses erreurs ;
+les attentes explicites continuent à les propager.
+
+Vérifications réalisées
+----------------------
+Trois passes de revue : logique, cas limites, compatibilité des déclarations et
+des consommateurs. Verdict par fichier avec SHA256 dans VERDICTS_CORRECTIONS_STRATO.txt.
+
+Trois exécutables de test hôte C++20 compilés avec g++, ASan et UBSan, sans alerte :
+1. Quads : comptes 0 à 19, indices 8/16/32 bits, premier sommet non nul, limites
+   entières, type invalide, croissance du cache dans une page et changement de base.
+2. Workers/fences : annulation avant soumission, rétention d'une dépendance après
+   soumission, erreur device-lost injectée, démarrage/arrêt répétés, drainage de
+   10 000 callbacks, callback levant, promesse abandonnée, refus après arrêt ;
+   arrêt du recorder avec file vide ou producteur bloqué dans la file de sortie.
+3. État d'indices et lectures : mapping exact/partiel/absent, nouvelle tentative,
+   purge, grandes tailles, plage inclusive/inversée, garde des accès et demande
+   de soumission depuis indices et constant buffers dirty.
+
+Nature exacte des tests : fonctions et classes extraites de cette version source,
+avec types hôtes et doubles Vulkan/mémoire. Les SpinLock sont remplacés par mutex
+standard pour ces tests hôtes. Le recorder utilise ses vraies files et sa méthode
+Stop, mais son Run et ses objets Vulkan sont simulés ; ProcessSlot complet n'est
+pas exécuté. Les workers de complétion et FenceCycle utilisent leurs méthodes
+extraites. Le test du constant buffer valide le callback de reprise, pas une vraie
+copie GPU. Les boucles complètes Draw/Dispatch et le verrou vkQueueSubmit restent
+vérifiés par lecture, pas par un rendu Vulkan réel.
+LeakSanitizer est désactivé à cause de son accès /proc indisponible dans cet
+environnement ; AddressSanitizer et UndefinedBehaviorSanitizer sont actifs.
+
+Ce qui reste non vérifié / non résolu
+-------------------------------------
+• Pas de compilation Android/NDK complète : SDK/NDK et dépendances de sous-modules
+  nécessaires absents ici (notamment fmt). Les tests hôtes ne remplacent pas le
+  build GitHub ; aucune réussite de compilation de l'APK n'est annoncée.
+• Aucun test sur Galaxy S21, aucune capture réelle Vulkan et aucun test des trois
+  jeux. Les corrections ne prouvent pas encore la cause exacte de leurs symptômes.
+• Pas de reset/récupération du GPU après perte du device. Si le pilote ne termine
+  jamais un travail soumis, l'arrêt peut encore attendre : ce lot conserve ses
+  ressources plutôt que les libérer pendant leur utilisation. Les 50 ms sont un
+  timeout demandé au pilote, pas une garantie que le pilote respecte ce délai.
+• La reprise de lecture est bornée à une soumission. Les alias complexes où une
+  même préparation marque à nouveau son buffer comme écrit ne sont pas validés
+  sur matériel et produisent une erreur explicite si la seconde tentative échoue.
+• Les indices couvrant une plage non contiguë ou incomplète sont refusés ; ce lot
+  ne crée pas les mappings absents. Pour les draws indirects, la plage déclarée
+  par les registres doit être accessible : refus plus strict qu'un préfixe tronqué.
+• N01 (validation des pages/permissions et courses dans le fallback NCE) demeure
+  ouvert. Il n'est pas corrigé par les contrôles de buffers GPU de ce lot.
+• NVDEC/VIC, quads indirects, autres compteurs que l'occlusion et swizzles arbitraires
+  restent des fonctionnalités incomplètes ; ce lot n'implémente pas de décodeur vidéo.
+• Destruction complète de DeviceState/GPU, réentrance des callbacks et interactions
+  avec les vrais verrous ARM à valider sur Android ; aucun résultat ThreadSanitizer.
+
+Reproduction
+------------
+Depuis la racine du projet livré :
+  python3 audit_cpp_suite_corrige_20261018/test_host.py
+Il faut g++ avec C++20, ASan, UBSan et la commande timeout sur une machine Linux.
+Les shims sont dans ce script, les .cpp générés et logs sont fournis avec le lot.
+Les binaires hôtes ne sont pas inclus dans le ZIP de sources.
+
+Événements utiles pour le prochain diagnostic téléphone : buffer_readback_retry,
+index_buffer_invalid, draw_rejected_index_buffer, fence_cancel_deferred, erreurs
+« GPU completion worker failed » et « GPU command recorder failed ».

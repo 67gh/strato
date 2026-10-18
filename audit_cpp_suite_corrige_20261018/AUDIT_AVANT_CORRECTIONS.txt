@@ -1,0 +1,206 @@
+STRATO — SUITE DE L'AUDIT C++ — 18 OCTOBRE 2026
+
+Périmètre et décision
+--------------------
+Base : strato_complet_corrige_20261018.zip, dernière livraison cumulative récupérée.
+L'archive jointe 01-strato.zip est la source initiale, pas la base corrigée utilisée ici.
+Aucun fichier source du projet n'a été modifié pendant ce lot. Corrections proposées,
+à valider selon la consigne « analyse, puis feu vert ». Les scripts de reproduction
+et ce rapport sont de nouveaux documents d'audit, pas des correctifs.
+Ce lot ne signifie pas que l'audit de tout l'émulateur est terminé.
+
+Certitude : « reproduit » désigne un test hôte sur le code extrait, « confirmé par
+lecture » un défaut ou manque démontré dans le chemin source, « conditionnel » un
+effet dépendant d'un état d'exécution que nous n'avons pas reproduit sur téléphone.
+Les identifiants de ce lot sont préfixés SUITE pour ne pas écraser les anciens.
+
+Constats prioritaires
+---------------------
+SUITE-01 — Critique pour la stabilité — REPRODUIT, ASan
+Fichiers : gpu/interconnect/conversion/quads.h:18-27 ; quads.cpp:7-35.
+GetIndexCount calcule (count*6)/4, tandis que les générateurs émettent six indices
+pour chaque groupe commencé de quatre. Avec count=5, la taille annoncée contient
+7 indices mais le générateur en écrit 12 ; le générateur indexé lit aussi 8 indices
+alors que le compte fourni n'en garantit que 5.
+Tests séparés : écriture hors destination non indexée ; écriture hors destination
+indexée avec source volontairement assez grande ; lecture hors source indexée avec
+destination volontairement assez grande. Les trois signalent heap-buffer-overflow.
+Les comptes 4 et 8 produisent les séquences attendues, sans alerte ASan/UBSan.
+Proposition : définir le traitement des groupes incomplets, faire partager le même
+nombre de quads complets au calcul de taille et aux deux générateurs ; vérifier
+les longueurs source/destination avant conversion. Ne pas simplement surallouer :
+cela laisserait subsister la lecture hors source.
+Limite : aucun journal de jeu n'établit encore qu'un count non multiple de 4 atteint
+ce chemin dans Hollow Knight, Zelda ou Dragon Ball.
+
+SUITE-02 — Élevée — CONFIRMÉ PAR LECTURE, course non reproduite
+Fichiers : gpu/interconnect/command_executor.h:103-112 ; .cpp:264-303.
+ExecutionWaiterThread déclare thread avant mutex, condition, pendingSignalQueue et
+idle. Son initialiseur démarre Run(this) avant la construction de ces membres.
+Le nouveau thread peut donc verrouiller/consulter des objets encore non construits.
+Proposition : démarrer le thread après construction de tous ses états ; vérifier
+aussi la durée de vie de DeviceState et les chemins d'échec du constructeur.
+
+SUITE-03 — Élevée — CONFIRMÉ PAR LECTURE, déclenchement conditionnel
+Fichiers : command_executor.h (trois classes propriétaires de threads) ;
+command_executor.cpp:349-351 et boucles Run.
+CommandExecutor::~CommandExecutor annule seulement cycle. CommandRecordThread et
+ExecutionWaiterThread n'ont aucun protocole d'arrêt ni join/detach ; leurs std::thread
+restent joignables. À destruction normale de ces objets, la destruction d'un thread
+joignable termine le processus. Pour ExecutionWaiterThread, les membres déclarés
+après thread sont en plus détruits avant lui pendant que Run peut encore les utiliser.
+CheckpointPollerThread a le même manque, mais il est désactivé par défaut.
+Proposition : arrêt explicite, réveil des attentes, politique drain/annulation puis
+join avant destruction de toute donnée partagée. Ne pas détacher un thread qui
+continue à utiliser this. Le correctif antérieur de CommandScheduler ne couvre
+pas ces classes distinctes.
+Limite : nous n'avons pas démontré quel chemin de fermeture de l'application détruit
+effectivement ces objets, ni exécuté l'arrêt complet du GPU Android.
+
+SUITE-04 — Élevée — CONFIRMÉ PAR LECTURE
+Fichier : command_executor.cpp:264-300 ; fence_cycle.h:Wait.
+ExecutionWaiterThread::Run appelle FenceCycle::Wait et des callbacks sans catch à
+son point d'entrée. Wait peut lever sur une erreur Vulkan ; une exception sortant
+du point d'entrée std::thread termine le processus. Même risque pour un callback.
+Proposition : enregistrer et propager l'état d'échec au propriétaire, réveiller les
+attentes CPU, arrêter proprement. Ne pas annoncer un succès GPU fictif.
+Limite : panne Vulkan réelle et callbacks levants non injectés sur téléphone.
+
+SUITE-05 — Élevée — CONFIRMÉ PAR LECTURE DU CHEMIN D'APPEL
+Fichiers : gpu/interconnect/maxwell_3d/maxwell_3d.cpp:304-363,52-66 ;
+soc/gm20b/engines/maxwell_3d.cpp:529-537.
+DrawInstanced transmet vertexArrayStart comme first et vertexOffset=0. Le chemin
+de conversion des quads remet first à 0 avant UpdateQuadConversionBuffer. Le
+drawIndexed final conserve vertexOffset=0. Exemple : quatre sommets à partir de 8
+deviennent des indices 0,1,2,2,3,0, au lieu de référencer les sommets 8 à 11.
+Le count déjà converti en indices est aussi passé à un helper qui attend un compte
+de sommets, ce qui génère trop d'indices. L'alignement d'allocation ne rétablit pas
+le premier sommet perdu.
+Proposition : conserver séparément compte invité, compte converti, premier sommet
+et base vertex ; tester first=0 et first non nul, chemins indexé et non indexé.
+Limite : pas de comparaison d'image sur GPU réel ; jeu déclencheur inconnu.
+
+SUITE-06 — Élevée — CONFIRMÉ PAR LECTURE
+Fichier : maxwell_3d/active_state.cpp:130-137.
+L'estimation de taille fait address-limit+1, dans cet ordre. Pour une plage inclusive
+0x1000..0x10ff, elle doit représenter 256 octets mais l'expression non signée renvoie
+18446744073709551362. CachedMappedBufferView peut alors chercher une très grande
+plage et la tronquer au préfixe accessible. Ne pas assimiler cela à une allocation
+effective de cette taille : le helper possède une borne de traduction.
+Proposition : contrôler limit>=address puis calculer limit-address+1 sans overflow.
+
+SUITE-07 — Élevée — REPRODUIT pour quads ; lecture statique pour indices
+Fichiers : conversion/quads.h:18-19 ; maxwell_3d/active_state.cpp:76-84,135,164.
+Les opérations restent sur 32 bits avant élargissement : count*6 et elementCount*4,
+ainsi que firstIndex+elementCount. Test : GetIndexCount(715827884) renvoie 2 au lieu
+de 1073741826. Pour 1073741824 indices de quatre octets, le produit 32 bits devient
+0 avant conversion en vk::DeviceSize. Les additions de bornes peuvent aussi reboucler.
+Proposition : arithmétique élargie avant l'opération, bornes explicites, rejet si la
+représentation ou l'allocation finale ne peut pas contenir le résultat.
+Limite : nombres élevés non observés dans les jeux ; aucune allocation géante tentée.
+
+SUITE-08 — Élevée — CONFIRMÉ PAR LECTURE, scénario conditionnel
+Fichiers : active_state.cpp:125-183 ; common/dirty_tracking.h:222-229 ;
+gpu/buffer.cpp:727-729 ; interconnect/common/common.cpp:22-26.
+Si un mapping d'indices est absent, Flush enregistre déjà usedQuadConversion et les
+comptes puis retourne après un warning. ManualDirtyState avait déjà nettoyé dirty.
+À l'Update suivant, avec mêmes paramètres et sans invalidation intermédiaire,
+Refresh peut rappeler GenerateQuadConversionIndexBuffer sur la vue vide.
+BufferView::GetReadOnlyBackingSpan déréférence alors delegate sans garde.
+Le premier Flush raté ne demande pas non plus à Draw de s'arrêter : l'ancienne
+liaison d'indices peut subsister, ou aucune liaison valide n'être disponible.
+Proposition : état valide/invalide explicite, propagation de l'échec jusqu'au draw,
+nouvelle tentative de mapping contrôlée ; aucune conversion sur vue absente.
+Limite : séquence complète avec registres invités non exécutée dans l'émulateur.
+
+SUITE-09 — Élevée — CONFIRMÉ PAR LECTURE DU CONTRAT, intégration non reproduite
+Fichiers : active_state.cpp:103-114 ; interconnect/common/common.cpp:34-50 ;
+common/span.h:145-146.
+Le helper de mapping accepte une vue plus courte que la taille demandée. Le chemin
+quads ne vérifie ni firstIndex*indexSize <= viewSpan.size(), ni que tous les indices
+à lire tiennent ensuite dans cette vue ; subspan est transmis comme pointeur brut.
+Un simple warning de mapping partiel ne rend pas la lecture valide. Ce défaut est
+distinct du compte incomplet SUITE-01 : il existe aussi avec un compte multiple de 4.
+Proposition : vérifier offset et longueur en arithmétique sûre avant toute lecture ;
+prendre en charge les plages disjointes ou rejeter proprement le draw concerné.
+
+SUITE-10 — Moyenne à élevée — CONFIRMÉ PAR LECTURE
+Fichier : active_state.cpp:260-267.
+Le test des swizzles relie toutes les composantes par && : il ne rejette que si
+X, Y, Z et W sont tous non pris en charge simultanément. Avec X=NegX et les autres
+axes canoniques, il accepte et n'applique aucune transformation X dans ConvertViewport.
+Proposition : rejeter dès qu'une composante est non prise en charge, ou implémenter
+la transformation correspondante. Éviter de masquer le problème avec un log seul.
+Limite : effets visuels non mesurés ; aucun lien démontré avec le corps séparé de Zelda.
+
+SUITE-11 — Faible / performance — CONFIRMÉ PAR LECTURE ; gain non mesuré
+Fichier : command_executor.cpp:370-409.
+!attachmentsMatch provoque déjà splitRenderPass. La branche else if(!attachmentsMatch)
+est donc inaccessible. noSubpassCreation est reçu mais inutilisé. Le chemin actuel
+sépare toujours les passes quand les attachments changent.
+Proposition : clarifier la politique voulue ; conserver la séparation prudente si
+nécessaire au driver. Ne pas réactiver la fusion sans tests de compatibilité Vulkan.
+Ce n'est pas une preuve de crash ni un gain de performances chiffré.
+
+Manques reconfirmés et limites des corrections antérieures
+--------------------------------------------------------
+SUITE-12 — Élevée — CALLBACKS STUB CONFIRMÉS ; effet conditionnel
+active_state.cpp:103-107 et interconnect/common/common.cpp:65-72 : les callbacks
+de flush pour lectures GPU dirty ne font qu'écrire un message. buffer.cpp appelle
+ce callback puis poursuit l'attente/synchronisation. Le travail encore en cours
+d'assemblage n'est pas réellement soumis par ces callbacks. Lecture périmée ou
+attente bloquée restent des risques selon le cycle attaché et le mode DMI.
+Nous n'avons pas prouvé un interblocage pour chaque cas ; la non-implémentation,
+elle, est certaine. Corriger nécessite un point de soumission valide en milieu de
+préparation du draw, pas simplement remplacer LOG par Submit sans traiter les verrous.
+
+SUITE-13 — Élevée — CONFIRMÉ PAR LECTURE ; blocage Vulkan non injecté
+fence_cycle.h:Cancel,Wait : la correction antérieure réveille l'attente avant
+soumission. En revanche Wait garde mutex pendant waitForFences avec timeout maximal.
+Un Cancel concurrent attend ce même mutex ; il ne peut pas interrompre cette
+attente Vulkan déjà engagée. Limitation distincte du réveil de submitCondition.
+Proposition : protocole d'arrêt/échec compatible avec la durée de vie des ressources,
+attentes bornées si approprié ; ne pas libérer des buffers encore utilisés par GPU.
+
+T02 reste ouvert : ~FenceCycle appelle Wait qui peut lever ; destructeur implicitement
+noexcept, donc terminaison possible. Aucun correctif appliqué à cette limitation.
+N01 reste ouvert : jit_fallback.cpp:385-429 valide via AddressSpaceContains, puis
+memcpy ou atomic_compare_exchange sur les données. kernel/memory.h:396-403 vérifie
+la réservation, pas les pages ni leurs permissions. Vérifier une plage réservée
+ne prouve pas qu'elle est lisible/inscriptible. MemoryReadCode utilise en revanche
+ReadInstruction après le contrôle : ne pas confondre ce chemin avec Read<T>.
+V01 (NVDEC/VIC) : non-implémentation déjà relevée précédemment, pas réauditée dans ce
+lot ; aucune nouvelle conclusion sur la cinématique Hollow Knight.
+
+Inventaire local des chemins incomplets / retours
+-----------------------------------------------
+• quads.cpp : type d'index inconnu -> default break silencieux, sortie inchangée.
+  Les appels observés passent par ConvertIndexType qui rejette déjà les types inconnus.
+  Lacune de contrat du helper ; pas un crash atteint démontré.
+• active_state.cpp : lecture dirty d'indices stub ; régénération quads à chaque Refresh
+  avec TODO d'optimisation ; index non mappé -> warning puis return, SUITE-08.
+• common/common.cpp : FlushHostCallback stub ; mapping nul -> retour normal documenté,
+  mapping absent/partiel déjà instrumenté. Ne pas ajouter des logs à chaque retour normal.
+• maxwell_3d.cpp:DrawIndirect : conversion quads non prise en charge -> exception explicite.
+• maxwell_3d.cpp:Query/ResetCounter : seuls les compteurs d'occlusion sont traités ;
+  les autres sont refusés avec LOGE/LOGD puis retour. Ce n'est pas une implémentation
+  des compteurs manquants, ni une preuve qu'un jeu donné les demande.
+• command_executor.cpp : pas d'arrêt normal des workers ; branche subpass inaccessible.
+
+Vérifications et limites
+-----------------------
+reproduce.py extrait quads.h et quads.cpp de cette base, sans modifier les fonctions.
+Les includes sont remplacés par les entiers standard et une enum minimale vk::IndexType.
+Compilateur hôte g++, C++20, -O1, ASan+UBSan. Aucune bibliothèque Vulkan ni Android.
+LeakSanitizer désactivé car son accès /proc échoue dans cet environnement ; ASan
+et UBSan restent actifs. Le premier essai clang++ n'a pas pu démarrer (absent),
+puis l'essai g++ avec LeakSanitizer a échoué à la sortie ; les résultats finaux
+sont ceux obtenus avec detect_leaks=0. Les sources et logs sont joints.
+Pas de compilation complète NDK, de validation Vulkan, de mesure FPS ou de test
+de jeu/téléphone. Les problèmes de threads sont des constats statiques, pas des
+résultats ThreadSanitizer. Aucun correctif n'est déclaré testé ni terminé ici.
+
+Ordre proposé après feu vert : SUITE-01/07/09 (bornes et conversion), SUITE-05/06/08
+(dessins et état d'indices), SUITE-02/03/04/13 et T02 (cycle de vie GPU), SUITE-10.
+SUITE-12 et N01 demandent un travail de synchronisation séparé. SUITE-11 est à garder
+en dernier tant que la correction et la compatibilité du rendu priment sur le débit.

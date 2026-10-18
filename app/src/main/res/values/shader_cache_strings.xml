@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="delete_game_shader_cache">Delete shader cache</string>
+    <string name="delete_game_shader_cache_confirm">Delete the shader cache for %1$s? It will be rebuilt the next time you play, which may cause temporary stuttering. Your saves will be kept.</string>
+    <string name="game_shader_cache_deleted">Shader cache deleted.</string>
+    <string name="game_shader_cache_empty">No shader cache found for this game.</string>
+    <string name="game_shader_cache_failed">Could not delete the entire shader cache. Please try again.</string>
+    <string name="game_shader_cache_active">Close the running game before deleting its shader cache.</string>
+</resources>

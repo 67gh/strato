@@ -1,0 +1,618 @@
+[
+  {
+    "name": "IAccountServiceForApplication::InitializeApplicationInfoV0",
+    "file": "services/account/IAccountServiceForApplication.cpp",
+    "line": 63,
+    "body": "Result IAccountServiceForApplication::InitializeApplicationInfoV0(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "account::IAccountServiceForApplication"
+  },
+  {
+    "name": "IAccountServiceForApplication::InitializeApplicationInfo",
+    "file": "services/account/IAccountServiceForApplication.cpp",
+    "line": 95,
+    "body": "Result IAccountServiceForApplication::InitializeApplicationInfo(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "account::IAccountServiceForApplication"
+  },
+  {
+    "name": "IAccountServiceForApplication::StoreSaveDataThumbnail",
+    "file": "services/account/IAccountServiceForApplication.cpp",
+    "line": 109,
+    "body": "Result IAccountServiceForApplication::StoreSaveDataThumbnail(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "account::IAccountServiceForApplication"
+  },
+  {
+    "name": "IAccountServiceForApplication::LoadOpenContext",
+    "file": "services/account/IAccountServiceForApplication.cpp",
+    "line": 113,
+    "body": "Result IAccountServiceForApplication::LoadOpenContext(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "account::IAccountServiceForApplication"
+  },
+  {
+    "name": "IAccountServiceForApplication::InitializeApplicationInfoV2",
+    "file": "services/account/IAccountServiceForApplication.cpp",
+    "line": 130,
+    "body": "Result IAccountServiceForApplication::InitializeApplicationInfoV2(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "account::IAccountServiceForApplication"
+  },
+  {
+    "name": "IAsyncContext::GetResult",
+    "file": "services/account/IAsyncContext.cpp",
+    "line": 28,
+    "body": "Result IAsyncContext::GetResult(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "account::IAsyncContext"
+  },
+  {
+    "name": "IAuthorizationRequest::GetAuthorizationCode",
+    "file": "services/account/IAuthorizationRequest.cpp",
+    "line": 20,
+    "body": "Result IAuthorizationRequest::GetAuthorizationCode(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "account::IAuthorizationRequest"
+  },
+  {
+    "name": "IManagerForApplication::LoadIdTokenCache",
+    "file": "services/account/IManagerForApplication.cpp",
+    "line": 29,
+    "body": "Result IManagerForApplication::LoadIdTokenCache(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "account::IManagerForApplication"
+  },
+  {
+    "name": "IApplicationFunctions::InitializeGamePlayRecording",
+    "file": "services/am/controller/IApplicationFunctions.cpp",
+    "line": 132,
+    "body": "Result IApplicationFunctions::InitializeGamePlayRecording(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::IApplicationFunctions"
+  },
+  {
+    "name": "IApplicationFunctions::SetGamePlayRecordingState",
+    "file": "services/am/controller/IApplicationFunctions.cpp",
+    "line": 136,
+    "body": "Result IApplicationFunctions::SetGamePlayRecordingState(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::IApplicationFunctions"
+  },
+  {
+    "name": "IApplicationFunctions::EnableApplicationCrashReport",
+    "file": "services/am/controller/IApplicationFunctions.cpp",
+    "line": 140,
+    "body": "Result IApplicationFunctions::EnableApplicationCrashReport(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::IApplicationFunctions"
+  },
+  {
+    "name": "ICommonStateGetter::SetRequestExitToLibraryAppletAtExecuteNextProgramEnabled",
+    "file": "services/am/controller/ICommonStateGetter.cpp",
+    "line": 122,
+    "body": "Result ICommonStateGetter::SetRequestExitToLibraryAppletAtExecuteNextProgramEnabled(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ICommonStateGetter"
+  },
+  {
+    "name": "ISelfController::LockExit",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 20,
+    "body": "Result ISelfController::LockExit(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::UnlockExit",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 24,
+    "body": "Result ISelfController::UnlockExit(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::SetScreenShotPermission",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 38,
+    "body": "Result ISelfController::SetScreenShotPermission(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::SetOperationModeChangedNotification",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 42,
+    "body": "Result ISelfController::SetOperationModeChangedNotification(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::SetPerformanceModeChangedNotification",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 46,
+    "body": "Result ISelfController::SetPerformanceModeChangedNotification(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::SetFocusHandlingMode",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 50,
+    "body": "Result ISelfController::SetFocusHandlingMode(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::SetRestartMessageEnabled",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 54,
+    "body": "Result ISelfController::SetRestartMessageEnabled(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::SetOutOfFocusSuspendingEnabled",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 58,
+    "body": "Result ISelfController::SetOutOfFocusSuspendingEnabled(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::SetAlbumImageOrientation",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 62,
+    "body": "Result ISelfController::SetAlbumImageOrientation(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::ReportUserIsActive",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 84,
+    "body": "Result ISelfController::ReportUserIsActive(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "ISelfController::SetRecordVolumeMuted",
+    "file": "services/am/controller/ISelfController.cpp",
+    "line": 133,
+    "body": "Result ISelfController::SetRecordVolumeMuted(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::ISelfController"
+  },
+  {
+    "name": "IWindowController::AcquireForegroundRights",
+    "file": "services/am/controller/IWindowController.cpp",
+    "line": 15,
+    "body": "Result IWindowController::AcquireForegroundRights(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "am::IWindowController"
+  },
+  {
+    "name": "IAddOnContentManager::CheckAddOnContentMountStatus",
+    "file": "services/aocsrv/IAddOnContentManager.cpp",
+    "line": 39,
+    "body": "Result IAddOnContentManager::CheckAddOnContentMountStatus(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "aocsrv::IAddOnContentManager"
+  },
+  {
+    "name": "IPurchaseEventManager::SetDefaultDeliveryTarget",
+    "file": "services/aocsrv/IPurchaseEventManager.cpp",
+    "line": 12,
+    "body": "Result IPurchaseEventManager::SetDefaultDeliveryTarget(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "aocsrv::IPurchaseEventManager"
+  },
+  {
+    "name": "IPurchaseEventManager::PopPurchasedProductInfo",
+    "file": "services/aocsrv/IPurchaseEventManager.cpp",
+    "line": 24,
+    "body": "Result IPurchaseEventManager::PopPurchasedProductInfo(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "aocsrv::IPurchaseEventManager"
+  },
+  {
+    "name": "IDeliveryCacheProgressService::GetImpl",
+    "file": "services/bcat/IDeliveryCacheProgressService.cpp",
+    "line": 18,
+    "body": "Result IDeliveryCacheProgressService::GetImpl(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "bcat::IDeliveryCacheProgressService"
+  },
+  {
+    "name": "IFriendService::DeclareOpenOnlinePlaySession",
+    "file": "services/friends/IFriendService.cpp",
+    "line": 34,
+    "body": "Result IFriendService::DeclareOpenOnlinePlaySession(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "friends::IFriendService"
+  },
+  {
+    "name": "IFriendService::DeclareCloseOnlinePlaySession",
+    "file": "services/friends/IFriendService.cpp",
+    "line": 38,
+    "body": "Result IFriendService::DeclareCloseOnlinePlaySession(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "friends::IFriendService"
+  },
+  {
+    "name": "IFriendService::UpdateUserPresence",
+    "file": "services/friends/IFriendService.cpp",
+    "line": 42,
+    "body": "Result IFriendService::UpdateUserPresence(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "friends::IFriendService"
+  },
+  {
+    "name": "IFriendService::GetPlayHistoryRegistrationKey",
+    "file": "services/friends/IFriendService.cpp",
+    "line": 46,
+    "body": "Result IFriendService::GetPlayHistoryRegistrationKey(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "friends::IFriendService"
+  },
+  {
+    "name": "IFile::Flush",
+    "file": "services/fssrv/IFile.cpp",
+    "line": 70,
+    "body": "Result IFile::Flush(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "fssrv::IFile"
+  },
+  {
+    "name": "IFileSystem::Commit",
+    "file": "services/fssrv/IFileSystem.cpp",
+    "line": 93,
+    "body": "Result IFileSystem::Commit(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "fssrv::IFileSystem"
+  },
+  {
+    "name": "IMultiCommitManager::Add",
+    "file": "services/fssrv/IMultiCommitManager.cpp",
+    "line": 9,
+    "body": "Result IMultiCommitManager::Add(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "fssrv::IMultiCommitManager"
+  },
+  {
+    "name": "IMultiCommitManager::Commit",
+    "file": "services/fssrv/IMultiCommitManager.cpp",
+    "line": 13,
+    "body": "Result IMultiCommitManager::Commit(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "fssrv::IMultiCommitManager"
+  },
+  {
+    "name": "IHidServer::ActivateDebugPad",
+    "file": "services/hid/IHidServer.cpp",
+    "line": 19,
+    "body": "Result IHidServer::ActivateDebugPad(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "hid::IHidServer"
+  },
+  {
+    "name": "IHidServer::ActivateMouse",
+    "file": "services/hid/IHidServer.cpp",
+    "line": 28,
+    "body": "Result IHidServer::ActivateMouse(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "hid::IHidServer"
+  },
+  {
+    "name": "IHidServer::ActivateKeyboard",
+    "file": "services/hid/IHidServer.cpp",
+    "line": 32,
+    "body": "Result IHidServer::ActivateKeyboard(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "hid::IHidServer"
+  },
+  {
+    "name": "IHidServer::StartSixAxisSensor",
+    "file": "services/hid/IHidServer.cpp",
+    "line": 36,
+    "body": "Result IHidServer::StartSixAxisSensor(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "hid::IHidServer"
+  },
+  {
+    "name": "IHidServer::StopSixAxisSensor",
+    "file": "services/hid/IHidServer.cpp",
+    "line": 40,
+    "body": "Result IHidServer::StopSixAxisSensor(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "hid::IHidServer"
+  },
+  {
+    "name": "IHidServer::StartLrAssignmentMode",
+    "file": "services/hid/IHidServer.cpp",
+    "line": 190,
+    "body": "Result IHidServer::StartLrAssignmentMode(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        // This isn't really necessary for us due to input preconfiguration so stub it\n        return {};\n    }",
+    "service": "hid::IHidServer"
+  },
+  {
+    "name": "IHidServer::StopLrAssignmentMode",
+    "file": "services/hid/IHidServer.cpp",
+    "line": 195,
+    "body": "Result IHidServer::StopLrAssignmentMode(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "hid::IHidServer"
+  },
+  {
+    "name": "IHidServer::SetPalmaBoostMode",
+    "file": "services/hid/IHidServer.cpp",
+    "line": 318,
+    "body": "Result IHidServer::SetPalmaBoostMode(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "hid::IHidServer"
+  },
+  {
+    "name": "IIrSensorServer::ActivateIrsensorWithFunctionLevel",
+    "file": "services/irs/IIrSensorServer.cpp",
+    "line": 46,
+    "body": "Result IIrSensorServer::ActivateIrsensorWithFunctionLevel(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "irs::IIrSensorServer"
+  },
+  {
+    "name": "ILblController::SetBrightnessReflectionDelayLevel",
+    "file": "services/lbl/ILblController.cpp",
+    "line": 9,
+    "body": "Result ILblController::SetBrightnessReflectionDelayLevel(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "lbl::ILblController"
+  },
+  {
+    "name": "ILblController::SetCurrentAmbientLightSensorMapping",
+    "file": "services/lbl/ILblController.cpp",
+    "line": 18,
+    "body": "Result ILblController::SetCurrentAmbientLightSensorMapping(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "lbl::ILblController"
+  },
+  {
+    "name": "ILblController::GetCurrentAmbientLightSensorMapping",
+    "file": "services/lbl/ILblController.cpp",
+    "line": 22,
+    "body": "Result ILblController::GetCurrentAmbientLightSensorMapping(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "lbl::ILblController"
+  },
+  {
+    "name": "IUserLocalCommunicationService::GetIpv4Address",
+    "file": "services/ldn/IUserLocalCommunicationService.cpp",
+    "line": 28,
+    "body": "Result IUserLocalCommunicationService::GetIpv4Address(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ldn::IUserLocalCommunicationService"
+  },
+  {
+    "name": "IUserLocalCommunicationService::OpenAccessPoint",
+    "file": "services/ldn/IUserLocalCommunicationService.cpp",
+    "line": 83,
+    "body": "Result IUserLocalCommunicationService::OpenAccessPoint(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ldn::IUserLocalCommunicationService"
+  },
+  {
+    "name": "IUserLocalCommunicationService::CreateNetwork",
+    "file": "services/ldn/IUserLocalCommunicationService.cpp",
+    "line": 87,
+    "body": "Result IUserLocalCommunicationService::CreateNetwork(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ldn::IUserLocalCommunicationService"
+  },
+  {
+    "name": "IUserLocalCommunicationService::CreateNetworkPrivate",
+    "file": "services/ldn/IUserLocalCommunicationService.cpp",
+    "line": 91,
+    "body": "Result IUserLocalCommunicationService::CreateNetworkPrivate(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ldn::IUserLocalCommunicationService"
+  },
+  {
+    "name": "IUserLocalCommunicationService::SetAdvertiseData",
+    "file": "services/ldn/IUserLocalCommunicationService.cpp",
+    "line": 95,
+    "body": "Result IUserLocalCommunicationService::SetAdvertiseData(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ldn::IUserLocalCommunicationService"
+  },
+  {
+    "name": "IUserLocalCommunicationService::OpenStation",
+    "file": "services/ldn/IUserLocalCommunicationService.cpp",
+    "line": 99,
+    "body": "Result IUserLocalCommunicationService::OpenStation(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ldn::IUserLocalCommunicationService"
+  },
+  {
+    "name": "ILogger::SetDestination",
+    "file": "services/lm/ILogger.cpp",
+    "line": 132,
+    "body": "Result ILogger::SetDestination(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "lm::ILogger"
+  },
+  {
+    "name": "IDatabaseService::Get",
+    "file": "services/mii/IDatabaseService.cpp",
+    "line": 14,
+    "body": "Result IDatabaseService::Get(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "mii::IDatabaseService"
+  },
+  {
+    "name": "IDatabaseService::Get1",
+    "file": "services/mii/IDatabaseService.cpp",
+    "line": 18,
+    "body": "Result IDatabaseService::Get1(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "mii::IDatabaseService"
+  },
+  {
+    "name": "IDatabaseService::BuildRandom",
+    "file": "services/mii/IDatabaseService.cpp",
+    "line": 22,
+    "body": "Result IDatabaseService::BuildRandom(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "mii::IDatabaseService"
+  },
+  {
+    "name": "IDatabaseService::BuildDefault",
+    "file": "services/mii/IDatabaseService.cpp",
+    "line": 26,
+    "body": "Result IDatabaseService::BuildDefault(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "mii::IDatabaseService"
+  },
+  {
+    "name": "IDatabaseService::SetInterfaceVersion",
+    "file": "services/mii/IDatabaseService.cpp",
+    "line": 30,
+    "body": "Result IDatabaseService::SetInterfaceVersion(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "mii::IDatabaseService"
+  },
+  {
+    "name": "IDatabaseService::DeleteFile",
+    "file": "services/mii/IDatabaseService.cpp",
+    "line": 34,
+    "body": "Result IDatabaseService::DeleteFile(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "mii::IDatabaseService"
+  },
+  {
+    "name": "IRequest::GetResult",
+    "file": "services/nifm/IRequest.cpp",
+    "line": 26,
+    "body": "Result IRequest::GetResult(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "nifm::IRequest"
+  },
+  {
+    "name": "IRequest::Cancel",
+    "file": "services/nifm/IRequest.cpp",
+    "line": 42,
+    "body": "Result IRequest::Cancel(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "nifm::IRequest"
+  },
+  {
+    "name": "IRequest::Submit",
+    "file": "services/nifm/IRequest.cpp",
+    "line": 46,
+    "body": "Result IRequest::Submit(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "nifm::IRequest"
+  },
+  {
+    "name": "IRequest::SetConnectionConfirmationOption",
+    "file": "services/nifm/IRequest.cpp",
+    "line": 50,
+    "body": "Result IRequest::SetConnectionConfirmationOption(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "nifm::IRequest"
+  },
+  {
+    "name": "INvDrvServices::DumpStatus",
+    "file": "services/nvdrv/INvDrvServices.cpp",
+    "line": 154,
+    "body": "Result INvDrvServices::DumpStatus(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "nvdrv::INvDrvServices"
+  },
+  {
+    "name": "INvDrvServices::SetGraphicsFirmwareMemoryMarginEnabled",
+    "file": "services/nvdrv/INvDrvServices.cpp",
+    "line": 158,
+    "body": "Result INvDrvServices::SetGraphicsFirmwareMemoryMarginEnabled(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "nvdrv::INvDrvServices"
+  },
+  {
+    "name": "IParentalControlService::Initialize",
+    "file": "services/pctl/IParentalControlService.cpp",
+    "line": 9,
+    "body": "Result IParentalControlService::Initialize(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "pctl::IParentalControlService"
+  },
+  {
+    "name": "IParentalControlService::CheckFreeCommunicationPermission",
+    "file": "services/pctl/IParentalControlService.cpp",
+    "line": 13,
+    "body": "Result IParentalControlService::CheckFreeCommunicationPermission(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "pctl::IParentalControlService"
+  },
+  {
+    "name": "IParentalControlService::EndFreeCommunication",
+    "file": "services/pctl/IParentalControlService.cpp",
+    "line": 21,
+    "body": "Result IParentalControlService::EndFreeCommunication(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "pctl::IParentalControlService"
+  },
+  {
+    "name": "IPrepoService::SaveReportWithUser",
+    "file": "services/prepo/IPrepoService.cpp",
+    "line": 21,
+    "body": "Result IPrepoService::SaveReportWithUser(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "prepo::IPrepoService"
+  },
+  {
+    "name": "IPrepoService::RequestImmediateTransmission",
+    "file": "services/prepo/IPrepoService.cpp",
+    "line": 25,
+    "body": "Result IPrepoService::RequestImmediateTransmission(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "prepo::IPrepoService"
+  },
+  {
+    "name": "IPsmSession::UnbindStateChangeEvent",
+    "file": "services/psm/IPsmSession.cpp",
+    "line": 18,
+    "body": "Result IPsmSession::UnbindStateChangeEvent(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "psm::IPsmSession"
+  },
+  {
+    "name": "IPsmSession::SetChargerTypeChangeEventEnabled",
+    "file": "services/psm/IPsmSession.cpp",
+    "line": 22,
+    "body": "Result IPsmSession::SetChargerTypeChangeEventEnabled(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "psm::IPsmSession"
+  },
+  {
+    "name": "IPsmSession::SetPowerSupplyChangeEventEnabled",
+    "file": "services/psm/IPsmSession.cpp",
+    "line": 26,
+    "body": "Result IPsmSession::SetPowerSupplyChangeEventEnabled(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "psm::IPsmSession"
+  },
+  {
+    "name": "IPsmSession::SetBatteryVoltageStateChangeEventEnabled",
+    "file": "services/psm/IPsmSession.cpp",
+    "line": 30,
+    "body": "Result IPsmSession::SetBatteryVoltageStateChangeEventEnabled(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "psm::IPsmSession"
+  },
+  {
+    "name": "IRoInterface::RegisterModuleInfo",
+    "file": "services/ro/IRoInterface.cpp",
+    "line": 93,
+    "body": "Result IRoInterface::RegisterModuleInfo(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ro::IRoInterface"
+  },
+  {
+    "name": "IRoInterface::UnregisterModuleInfo",
+    "file": "services/ro/IRoInterface.cpp",
+    "line": 97,
+    "body": "Result IRoInterface::UnregisterModuleInfo(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ro::IRoInterface"
+  },
+  {
+    "name": "IRoInterface::RegisterProcessHandle",
+    "file": "services/ro/IRoInterface.cpp",
+    "line": 101,
+    "body": "Result IRoInterface::RegisterProcessHandle(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ro::IRoInterface"
+  },
+  {
+    "name": "IRoInterface::RegisterProcessModuleInfo",
+    "file": "services/ro/IRoInterface.cpp",
+    "line": 105,
+    "body": "Result IRoInterface::RegisterProcessModuleInfo(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "ro::IRoInterface"
+  },
+  {
+    "name": "IUserInterface::Initialize",
+    "file": "services/sm/IUserInterface.cpp",
+    "line": 9,
+    "body": "Result IUserInterface::Initialize(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "sm::IUserInterface"
+  },
+  {
+    "name": "IClient::StartMonitoring",
+    "file": "services/socket/bsd/IClient.cpp",
+    "line": 15,
+    "body": "Result IClient::StartMonitoring(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "socket::IClient"
+  },
+  {
+    "name": "IClient::ShutdownAllSockets",
+    "file": "services/socket/bsd/IClient.cpp",
+    "line": 200,
+    "body": "Result IClient::ShutdownAllSockets(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "socket::IClient"
+  },
+  {
+    "name": "IManager::ResolveEx",
+    "file": "services/socket/nsd/IManager.cpp",
+    "line": 9,
+    "body": "Result IManager::ResolveEx(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "socket::IManager"
+  },
+  {
+    "name": "IResolver::GetHostByNameRequestWithOptions",
+    "file": "services/socket/sfdnsres/IResolver.cpp",
+    "line": 32,
+    "body": "Result IResolver::GetHostByNameRequestWithOptions(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "socket::IResolver"
+  },
+  {
+    "name": "IResolver::GetNameInfoRequestWithOptions",
+    "file": "services/socket/sfdnsres/IResolver.cpp",
+    "line": 45,
+    "body": "Result IResolver::GetNameInfoRequestWithOptions(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "socket::IResolver"
+  },
+  {
+    "name": "IManagerDisplayService::AddToLayerStack",
+    "file": "services/visrv/IManagerDisplayService.cpp",
+    "line": 28,
+    "body": "Result IManagerDisplayService::AddToLayerStack(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "visrv::IManagerDisplayService"
+  },
+  {
+    "name": "ISystemDisplayService::SetLayerZ",
+    "file": "services/visrv/ISystemDisplayService.cpp",
+    "line": 9,
+    "body": "Result ISystemDisplayService::SetLayerZ(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {\n        return {};\n    }",
+    "service": "visrv::ISystemDisplayService"
+  }
+]

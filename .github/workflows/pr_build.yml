@@ -68,14 +68,16 @@ jobs:
 
       - name: Upload Release APK
         if: ${{ vars.UPLOAD_PR_ARTIFACTS == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: strato-pr${{ github.event.number }}-release.apk
           path: strato-pr${{ github.event.number }}-release.apk
+          archive: false
+          if-no-files-found: error
 
       - name: Upload Debug APK
         if: ${{ vars.UPLOAD_PR_ARTIFACTS == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: strato-pr${{ github.event.number }}-reldebug.apk
           path: strato-pr${{ github.event.number }}-reldebug.apk
+          archive: false
+          if-no-files-found: error

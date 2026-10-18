@@ -1,0 +1,110 @@
+
+
+=== CORRECTIONS SUITE GPU — 2026-10-18 — FEU VERT REÇU ===
+Analyse préalable lue dans le journal avant modification. Trois passes de revue : logique, cas limites, compatibilité. Les résultats hôtes et les limites Android sont distingués ci-dessous.
+
+Fichier : app/src/main/cpp/skyline/gpu/command_scheduler.cpp
+Rôle : Soumission command buffers et waiter des fences.
+SHA256 final : cb9df0ba2c8072093d11c4811c7e17dc791d1ceb05a9472d4e217ba08135d101
+Relecture 1 — logique : Verrou du cycle avant transfert à la queue Vulkan ; contrôle du cycle annulé ; notification sous ce verrou.
+Relecture 2 — cas limites : Verrou relâché avant cycleQueue.Push, pour éviter un verrou circulaire quand la file est pleine. Erreur de submit ne marque pas le cycle réussi.
+Relecture 3 — compatibilité : Accès privé autorisé par friend CommandScheduler ; mutex récursif compatible avec NotifySubmitted. Contrat réel vkQueueSubmit vérifié par lecture, pas par appel Vulkan.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/fence_cycle.h
+Rôle : Attente, annulation et dépendances des cycles Vulkan.
+SHA256 final : efcf018cf141d8d2d4531c96c3640842891050d4ac6ea1b9e0bbe46706d824bb
+Relecture 1 — logique : Destructeur noexcept avec signalement ; attente explicite toujours levante ; annulation ne déclare pas fini un cycle soumis.
+Relecture 2 — cas limites : Attentes de 50 ms et contrôle du drapeau après relâchement de mutex ; test annulation avant soumission, rétention dépendance après soumission, device-lost injecté.
+Relecture 3 — compatibilité : NotifySubmitted et Cancel coordonnés avec le scheduler. Tests sur classe extraite avec faux Vulkan et mutex hôtes. Un GPU qui ne finit jamais peut toujours empêcher un drain.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+Rôle : Enregistrement, callbacks GPU, cycle de vie des workers et soumission.
+SHA256 final : 11a0394b9fe9d27ab26e306696d005d13aa759ccd3bab908b94866fbe30923c2
+Relecture 1 — logique : Workers arrêtés et joints, erreurs capturées, callbacks en échec abandonnés. Submit(wait) attend une promesse dont l’abandon réveille avec erreur.
+Relecture 2 — cas limites : Files closes dans l’ordre sortie puis entrée ; tests de sortie bloquée et entrée vide ; 10 000 callbacks drainés et erreur injectée ; retirement empêche le redémarrage du command buffer pendant teardown.
+Relecture 3 — compatibilité : TRACE GPU et pile du recorder conservés. Branche subpass morte retirée, politique de séparation inchangée. Run du recorder/ProcessSlot complet et arrêt réel Android non exécutés.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/command_executor.h
+Rôle : Déclarations des workers, slots et état de l’exécuteur.
+SHA256 final : 5a329b20379004b4554b358edc514c5dce9bef3b71b8695f78305d3d015db496
+Relecture 1 — logique : Thread de complétion déplacé après ses objets partagés ; états d’arrêt, erreur et retrait explicités ; destructeurs/Stop déclarés.
+Relecture 2 — cas limites : Flags initialisés avant le démarrage ; Stop répété couvert dans les tests. Slot retiré et Begin échoué sont des issues de WaitReady.
+Relecture 3 — compatibilité : Signatures relues avec les implémentations ; initialisation conditionnelle du poller conservée ; ABI interne modifiée, recompilation native entière nécessaire.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
+Rôle : Mapping des vues en cache et lecture CPU des constant buffers.
+SHA256 final : d6bdfcdf122c5f66323cb73fb1c07998cf9b4f6965bbcecf0b142b49bbbd0999
+Relecture 1 — logique : Callback dirty remplacé par demande de soumission si buffer écrit dans l’exécution courante.
+Relecture 2 — cas limites : Écritures d’ancien cycle attendues directement ; callback testé avec et sans flag dirty via fonctions extraites.
+Relecture 3 — compatibilité : Les catch Draw/DrawIndirect/Dispatch prennent le relais après destruction du builder partiel. Stratégie du préfixe mappé inchangée pour les autres consommateurs. Pas de lecture GPU réelle exécutée.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/common/common.h
+Rôle : Contexte et contrat partagé des ressources GPU/constant buffers.
+SHA256 final : b9f222290f42b62e0b6d6973937c581525da6421bda0198833794a44a0cf7f56
+Relecture 1 — logique : Demande de soumission typée et dérivée de std::exception, sans allocation de message.
+Relecture 2 — cas limites : what() noexcept ; rien n’indique une réussite fictive ; la demande n’est pas un résultat de lecture.
+Relecture 3 — compatibilité : Déclaration partagée utilisable par Maxwell et Kepler ; includes exception explicites ; template ConstantBuffer::Read reste inchangé.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/kepler_compute.cpp
+Rôle : Préparation et dispatch compute Kepler.
+SHA256 final : fe2f7c8dd8afa6e4bdba5ad36d2d579c27f3ca22121424b0cbfedbe3ddd55c98
+Relecture 1 — logique : Demande de readback rattrapée à la frontière Dispatch ; builder local détruit puis soumission/attente et reconstruction.
+Relecture 2 — cas limites : Une seule nouvelle tentative ; échec persistant explicite ; sorties des quirks/descripteurs non pris en charge conservées.
+Relecture 3 — compatibilité : Flush callback existant purge pipeline/constantes/textures/samplers ; barrière et dimensions du dispatch préservées. Contrat statique ; aucun shader compute exécuté sur GPU réel.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/conversion/quads.cpp
+Rôle : Génération des index triangles à partir de quads.
+SHA256 final : 6c23a802f509944b605259dab5834cb5a59a988b1427cbb56b450548fb8403f2
+Relecture 1 — logique : Deux générateurs limités aux groupes complets ; premier sommet paramétré et contrôlé ; type inconnu rejeté.
+Relecture 2 — cas limites : Tests ASan/UBSan à tailles exactes pour uint8/16/32 et groupes incomplets, premier sommet 8 et bornes UINT32_MAX.
+Relecture 3 — compatibilité : Motif 0,1,2,2,3,0 conservé ; shader/Vulkan non exécutés. Pointeurs bruts gardent le contrat de capacité, contrôlé par les appelants modifiés.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/conversion/quads.h
+Rôle : Contrat de comptage et dimensionnement des quads.
+SHA256 final : 9f0c2acb240665a94e503c2acf30e526bac06c7c81330b53b1bd9a8242cbcaf1
+Relecture 1 — logique : Nombre de groupes complets avant multiplication ; résultat u64 ; taille de destination liée au même calcul.
+Relecture 2 — cas limites : Comptes 0..19, UINT32_MAX, 715827884 et overflow size_t testés ; aucun énorme buffer alloué pour ces assertions arithmétiques.
+Relecture 3 — compatibilité : Appels inventoriés ; rétrécissement vers count Vulkan explicite et gardé dans Draw. Premier sommet par défaut nul maintient les appels simples.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
+Rôle : Préparation, conversion et émission des dessins Maxwell.
+SHA256 final : aaa852c3bb1da7694175981930250fe9f67f95c34c0e905b24a83d25289afe0c
+Relecture 1 — logique : Premier sommet conservé, count invité séparé du count converti ; base vertex nul pour le chemin non indexé ; état invalide empêche le dessin ; reprise au point de préparation.
+Relecture 2 — cas limites : Tests helper cache : croissance 4 vers 8 dans une page, changement premier sommet, ancienne allocation inchangée. Counts nuls et dépassements Vulkan/vertices rejetés avant allocation. Reprise bornée à une fois.
+Relecture 3 — compatibilité : Analyse des appels moteur confirmant vertexArrayStart ; états invalidés sur rejet ; catch avant reconstruction du builder dans Draw/DrawIndirect. Boucles complètes et images finales non testées sur Vulkan.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.h
+Rôle : Interface de préparation et cache de conversion Maxwell.
+SHA256 final : 169cdbf759d25f5d2abaef84db91d7f0a0dfeb33c846f22c31397503cb479c77
+Relecture 1 — logique : PrepareDraw retourne une validité ; cache suit premier sommet et compte initialisé.
+Relecture 2 — cas limites : Champs initialisés ; capacité physique arrondie ne signifie plus contenu généré.
+Relecture 3 — compatibilité : Deux appels PrepareDraw vérifient le retour ; déclaration du helper reste compatible avec sa définition sur Android arm64 et hôte 64 bits. Pas de build NDK.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h
+Rôle : États dynamiques dont l’état d’indexation et son accès depuis ActiveState.
+SHA256 final : c7a536e16b5a8386dbe8301c1693bb503617b487005e94f95131b7534d6db507
+Relecture 1 — logique : État valide distinct de la présence d’une ancienne liaison ; IsValid et HasValidIndexBuffer relus avec leur consommateur.
+Relecture 2 — cas limites : Initialisation false et purge explicite ; absence de vue n’est jamais une preuve de validité.
+Relecture 3 — compatibilité : Get() du wrapper dirty renvoie une référence mutable compatible ; fonctions inline internes, pas de sérialisation persistante concernée.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Fichier : app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
+Rôle : Traduction des états vertex/index, viewport et autres états dynamiques.
+SHA256 final : d2dcef8e635a8e4f034e61c434c3af798c50e1bd7be45173a1ca300c8f6df7e5
+Relecture 1 — logique : Taille inclusive corrigée ; sommes élargies ; mapping complet requis pour les indices ; validité positionnée après liaison ; swizzles vérifiés par axe.
+Relecture 2 — cas limites : Tests exact/partiel/absent, purge, Refresh et première plage 0x1000..0x10ff ; grandes bornes sans allocation géante ; source quads hors vue refusée avant lecture.
+Relecture 3 — compatibilité : Exception de readback partagée avec les trois points de reprise. Réjection des plages d’indices non contiguës reste conservatrice. États hors modifications relus dans leur contexte ; pas de rendu réel.
+Verdict : correction appliquée ; validation hôte ou statique selon le détail ci-dessus, validation Android/jeux restante.
+
+Limites transversales : N01 fallback mémoire reste ouvert ; NVDEC/VIC non implémentés ; pas de reset GPU ; drain d’un GPU bloqué non garanti. Voir BILAN_CORRECTIONS_GPU_20261018.txt pour le statut de chaque constat SUITE.

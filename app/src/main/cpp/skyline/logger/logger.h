@@ -4,6 +4,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <filesystem>
 #include <common/format.h>
 
@@ -27,6 +28,13 @@ namespace skyline {
             Disabled, // A special log level that disables all logging, must be the last log level
         };
 
+        static constexpr bool IsUnsupportedFormat(std::string_view text) {
+            return text.find("STUB")!=text.npos || text.find("stubbed")!=text.npos ||
+                   text.find("unimplemented")!=text.npos || text.find("Unimplemented")!=text.npos ||
+                   text.find("unsupported")!=text.npos || text.find("Unsupported")!=text.npos ||
+                   text.find("not implemented")!=text.npos || text.find("Not implemented")!=text.npos;
+        }
+        static void ReportUnsupported(const char *source, unsigned line, std::string_view detail) noexcept;
         constexpr static size_t LogQueueSize{1024}; //!< The size of the log message queue
 
         /**
@@ -39,7 +47,7 @@ namespace skyline {
          * @brief Finalizes the logger and flushes all pending logs
          * @details This stops the writer thread
          * @note After calling this, Initialize must be called before using the logger again
-         * @param wait If the function should wait for the writer thread to flush remaining messages and exit
+         * @param wait Retained for source compatibility. Both modes now drain and join safely.
          */
         static void Finalize(bool wait = false);
 
@@ -58,10 +66,10 @@ namespace skyline {
          * @brief Writes a log message to the log file and logcat asynchronously
          * @param function The name of the function that pushed this message, nullptr if no function should be prepended
          */
-        static void LogAsync(LogLevel level, std::string &&str, const char *function = nullptr);
+        static void LogAsync(LogLevel level, std::string &&str, const char *function = nullptr, const char *source = nullptr, unsigned line = 0);
 
         /**
-         * @brief Writes a log message to the log file and logcat synchronously
+         * @brief Writes immediately to logcat and queues the file copy; not signal-handler safe
          * @param function The name of the function that pushed this message, nullptr if no function should be prepended
          */
         static void LogSync(LogLevel level, std::string &&str, const char *function = nullptr);
@@ -71,21 +79,25 @@ namespace skyline {
     };
 }
 
-#define LOG_WRITE(level, ...)                                                               \
-        do {                                                                                \
-            if (!skyline::AsyncLogger::CheckLogLevel(level))                                \
-                break;                                                                      \
-            std::string _str = fmt::format(__VA_ARGS__);                                    \
-            skyline::AsyncLogger::LogAsync(level, std::move(_str), __builtin_FUNCTION());   \
-        } while (0)
+// Register unsupported sites even when their text log level is disabled.
+// Format strings identify the site without formatting changing addresses/arguments.
+#define LOG_WRITE(level, formatString, ...) \
+    do { \
+        if (skyline::AsyncLogger::IsUnsupportedFormat(formatString)) \
+            skyline::AsyncLogger::ReportUnsupported(__FILE__, __LINE__, formatString); \
+        if (!skyline::AsyncLogger::CheckLogLevel(level)) break; \
+        std::string _str = fmt::format(formatString __VA_OPT__(,) __VA_ARGS__); \
+        skyline::AsyncLogger::LogAsync(level, std::move(_str), __builtin_FUNCTION(), __FILE__, __LINE__); \
+    } while (0)
 
-#define LOGNF_WRITE(level, ...)                                                             \
-        do {                                                                                \
-            if (!skyline::AsyncLogger::CheckLogLevel(level))                                \
-                break;                                                                      \
-            std::string _str = fmt::format(__VA_ARGS__);                                    \
-            skyline::AsyncLogger::LogAsync(level, std::move(_str), nullptr);                \
-        } while (0)
+#define LOGNF_WRITE(level, formatString, ...) \
+    do { \
+        if (skyline::AsyncLogger::IsUnsupportedFormat(formatString)) \
+            skyline::AsyncLogger::ReportUnsupported(__FILE__, __LINE__, formatString); \
+        if (!skyline::AsyncLogger::CheckLogLevel(level)) break; \
+        std::string _str = fmt::format(formatString __VA_OPT__(,) __VA_ARGS__); \
+        skyline::AsyncLogger::LogAsync(level, std::move(_str), nullptr, __FILE__, __LINE__); \
+    } while (0)
 
 /**
  * @brief Logs an Error message, formatted using fmt::format
@@ -131,3 +143,6 @@ namespace skyline {
  * @brief Logs a Verbose message without the calling function name, formatted using fmt::format
  */
 #define LOGVNF(...) LOGNF_WRITE(skyline::AsyncLogger::LogLevel::Verbose, __VA_ARGS__)
+
+// Trace shares the persisted Verbose value: existing Android preferences remain valid.
+#define LOGT(...) LOGV(__VA_ARGS__)

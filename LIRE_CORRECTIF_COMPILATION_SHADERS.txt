@@ -1,0 +1,32 @@
+CORRECTIF DE COMPILATION — ImageNumericType — 14 octobre 2026
+
+Installation
+1. Partir du projet contenant le précédent strato_patch_rendu_video.zip et ses correctifs antérieurs.
+2. Extraire ce ZIP à la racine du projet : app/ doit fusionner avec votre dossier app/ existant.
+3. Pour GitHub Actions, inclure dans votre commit app/CMakeLists.txt, app/cmake/ApplyShaderCompilerPatches.cmake et les cinq fichiers app/patches/shader-compiler/*.patch. Le test tools/test_shader_compiler_patches.py peut être suivi avec eux.
+4. Relancer le workflow. Les messages « Applied shader compiler patch » apparaîtront lors de la première configuration d’un sous-module non corrigé. Une configuration suivante n’applique rien en double.
+
+Cause de l’échec
+textures.h inclut déjà shader_compiler/shader_info.h. Le problème n’était pas un include manquant.
+La livraison précédente modifiait directement cinq fichiers du sous-module shader-compiler, mais ces modifications ne sont pas suivies par un commit ordinaire du dépôt parent. Les deux workflows font aussi git submodule update --init --recursive --force : cela rétablit la version épinglée, qui ne définit pas Shader::ImageNumericType.
+Cette erreur de livraison est corrigée en conservant les cinq diffs dans le dépôt principal et en les appliquant avant add_subdirectory du compilateur de shaders. Les adaptations SPIR-V sont livrées ensemble avec l’enum : ajouter uniquement la déclaration aurait laissé le backend incohérent.
+
+Comportement
+- Détecte les fichiers déjà corrigés, y compris après copie partielle de l’ancien ZIP.
+- Vérifie tous les patches avant de modifier le sous-module ; en cas de conflit, arrête CMake avec le nom du patch concerné sans réinitialiser les modifications locales.
+- Surveille les sources et patches pour provoquer une nouvelle configuration avec Ninja après une remise à zéro du sous-module.
+- Git doit être disponible pendant la configuration CMake, comme dans les workflows existants.
+- Le commit shader-compiler de référence est 8717c8f6d7deab58032e042b027ed84838833824. Un changement de version incompatible doit être résolu explicitement, jamais masqué.
+
+Vérification effectuée
+Neuf scénarios d’intégration passent, dont la commande réelle submodule update --init --recursive --force sur un sous-module temporaire, puis la reconfiguration automatique d’un build Ninja en cache.
+Une compilation C++ ciblée reproduit l’absence de ImageNumericType sur l’en-tête d’origine puis réussit après configuration.
+Les cinq fichiers reconstruits sont identiques aux versions précédemment relues. Les véritables émetteurs SPIR-V et Sirit compilent ; leurs tests de types numériques, bitcasts et descripteurs atomiques passent.
+Commande du test reproductible sans Android : python tools/test_shader_compiler_patches.py
+
+Limites
+Pas de compilation complète APK/NDK ici, pas de spirv-val disponible, pas de test sur téléphone ni dans les jeux. Ce correctif traite l’erreur de compilation montrée, pas les crashes 3D ni le décodage des cinématiques. D’autres erreurs peuvent apparaître plus loin dans le build.
+Les avertissements de conversion dans diagnostic_device_fault.h, diagnostic_recorder.cpp et diagnostic_crash.cpp ne sont pas la cause de cet arrêt ; ils ne sont pas modifiés par ce correctif. Aucun keystore ni réglage de sécurité modifié.
+
+Suivi
+Les analyses et verdicts actualisés sont inclus. Pour chaque écriture de fichier projet, une analyse précède l’édition et trois lectures intégrales automatisées vérifient le contenu UTF-8 et son empreinte. Elles ne sont pas présentées comme trois audits manuels indépendants.

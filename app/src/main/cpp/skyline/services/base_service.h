@@ -3,11 +3,11 @@
 // Modified 2024: Strato Revival Project — added graceful stub fallback
 
 #pragma once
+#include <common/diagnostic_recorder.h>
+
 
 #include <kernel/ipc.h>
 #include <cxxabi.h>
-#include <mutex>
-#include <unordered_set>
 #include <string>
 
 constexpr static skyline::u32 TipcFunctionIdFlag{1U << 31}; //!< Flag applied to the stored service function ID to differentiate between TIPC and HIPC functions
@@ -33,7 +33,7 @@ constexpr static skyline::u32 TipcFunctionIdFlag{1U << 31}; //!< Flag applied to
             u32 key{(isTipc ? TipcFunctionIdFlag : 0U) | id}; \
             auto it{functions.find(key)}; \
             if (it == functions.end()) [[unlikely]] { \
-                if (BaseService::ShouldLogStubCall(GetName(), id)) LOGW("[STUB] Missing function in service '{}': cmdId=0x{:X} (tipc={}) — further calls to this cmdId will not be logged", GetName(), id, isTipc); \
+                if (BaseService::ShouldLogStubCall(GetName(), id)) LOGW("[STUB] Missing function in service '{}': cmdId=0x{:X} (tipc={})", GetName(), id, isTipc); \
                 return ServiceFunctionDescriptor{ \
                     reinterpret_cast<DerivedService*>(this), \
                     reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(&BaseService::StubFunction), \
@@ -99,21 +99,10 @@ namespace skyline::service {
         }
 
       public:
-        /**
-         * @brief Returns true only the first time it's called for a given (service, cmdId)
-         *        pair. Used to avoid the logcat I/O cost of logging on every single call to
-         *        a missing/stubbed IPC function — some games poll unimplemented functions
-         *        every frame, and unconditional per-call logging there was measurably
-         *        causing frame pacing stutter despite a stable average FPS.
-         */
+        // Every call is counted; the bounded logger handles text rate limiting per site.
         static bool ShouldLogStubCall(std::string_view serviceName, u32 cmdId) {
-            static std::mutex mtx;
-            static std::unordered_set<std::string> logged;
-            std::string key{serviceName};
-            key += ':';
-            key += std::to_string(cmdId);
-            std::scoped_lock lock{mtx};
-            return logged.insert(std::move(key)).second;
+            diagnostics::Unsupported(serviceName, cmdId, "service command stub");
+            return true;
         }
 
       public:
@@ -126,7 +115,7 @@ namespace skyline::service {
 
         virtual ServiceFunctionDescriptor GetServiceFunction(u32 id, bool isTipc) {
             if (ShouldLogStubCall(GetName(), id))
-                LOGW("[STUB] {}::GetServiceFunction not implemented (cmdId=0x{:X}, tipc={}) — further calls to this cmdId will not be logged", GetName(), id, isTipc);
+                LOGW("[STUB] {}::GetServiceFunction not implemented (cmdId=0x{:X}, tipc={})", GetName(), id, isTipc);
             return ServiceFunctionDescriptor{
                 reinterpret_cast<DerivedService*>(this),
                 reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(&BaseService::StubFunction),

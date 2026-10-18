@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <exception>
 #include <boost/container/stable_vector.hpp>
 #include <renderdoc_app.h>
 #include <common/linear_allocator.h>
@@ -48,6 +49,8 @@ namespace skyline::gpu::interconnect {
             bool ready{}; //!< If this slot's command buffer has had 'beginCommandBuffer' called and is ready to have commands recorded into it
             bool capture{}; //!< If this slot's Vulkan commands should be captured using the renderdoc API
             bool didWait{}; //!< If a wait of time longer than GrowThresholdNs occured when this slot was acquired
+            bool retired{}; //!< Protected by beginLock; prevents restarting commands during teardown
+            std::exception_ptr beginFailure;
 
             Slot(GPU &gpu);
 
@@ -73,7 +76,8 @@ namespace skyline::gpu::interconnect {
         CircularQueue<Slot *> incoming; //!< Slots pending recording
         CircularQueue<Slot *> outgoing; //!< Slots that have been submitted, may still be active on the GPU
         std::list<Slot> slots;
-        std::atomic<bool> idle;
+        std::atomic<bool> idle{};
+        std::atomic<bool> stopping{};
 
         std::thread thread;
 
@@ -83,6 +87,8 @@ namespace skyline::gpu::interconnect {
 
       public:
         CommandRecordThread(const DeviceState &state);
+        ~CommandRecordThread();
+        void Stop();
 
         bool IsIdle() const;
 
@@ -103,16 +109,20 @@ namespace skyline::gpu::interconnect {
     class ExecutionWaiterThread {
       private:
         const DeviceState &state;
-        std::thread thread;
         SpinLock mutex;
         std::condition_variable_any condition;
         std::queue<std::pair<std::shared_ptr<FenceCycle>, std::function<void()>>> pendingSignalQueue; //!< Queue of callbacks to be executed when their coressponding fence is signalled
         std::atomic<bool> idle{};
+        bool stopping{}; //!< Protected by mutex
+        std::exception_ptr failure; //!< Protected by mutex
+        std::thread thread; //!< Start only after all worker state has been constructed
 
         void Run();
 
       public:
         ExecutionWaiterThread(const DeviceState &state);
+        ~ExecutionWaiterThread();
+        void Stop();
 
         bool IsIdle() const;
 
@@ -128,12 +138,14 @@ namespace skyline::gpu::interconnect {
     class CheckpointPollerThread {
       private:
         const DeviceState &state;
+        std::atomic<bool> stopping{};
         std::thread thread;
 
         void Run();
 
       public:
         CheckpointPollerThread(const DeviceState &state);
+        ~CheckpointPollerThread();
     };
 
     /**

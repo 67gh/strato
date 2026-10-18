@@ -5,6 +5,6 @@
 #include "smmu.h"
 
 namespace skyline {
-    template class FlatAddressSpaceMap<u32, 0, u8 *, nullptr, true, soc::SmmuAddressSpaceBits>;
-    template class FlatMemoryManager<u32, 0, soc::SmmuAddressSpaceBits, soc::SmmuPageSizeBits, soc::SmmuL2PageSizeBits>;
+    template class FlatAddressSpaceMap<u64, 0, u8 *, nullptr, true, soc::SmmuAddressSpaceBits, MemoryManagerBlockInfo>;
+    template class FlatMemoryManager<u64, 0, soc::SmmuAddressSpaceBits, soc::SmmuPageSizeBits, soc::SmmuL2PageSizeBits>;
 }

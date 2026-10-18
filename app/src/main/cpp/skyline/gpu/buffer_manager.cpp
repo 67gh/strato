@@ -34,9 +34,13 @@ namespace skyline::gpu {
 
         // If we cannot find the buffer quickly, do a binary search to find all overlapping buffers
         auto entryIt{std::lower_bound(bufferMappings.begin(), bufferMappings.end(), range.end().base(), BufferLessThan)};
-        while (entryIt != bufferMappings.begin() && (*--entryIt)->guest->begin() <= range.end())
-            if ((*entryIt)->guest->end() > range.begin())
-                overlaps.emplace_back(*entryIt, tag);
+        // Mappings are disjoint: FindOrCreate coalesces every overlapping entry.
+        while (entryIt != bufferMappings.begin()) {
+            --entryIt;
+            if ((*entryIt)->guest->end() <= range.begin())
+                break;
+            overlaps.emplace_back(*entryIt, tag);
+        }
 
         return overlaps;
     }
@@ -131,7 +135,8 @@ namespace skyline::gpu {
                 } else if (srcBuffer->directTrackedShadowActive) {
                     newBuffer->EnableTrackedShadowDirect();
                     copyBuffer(*newBuffer->guest, *srcBuffer->guest, newBuffer->directTrackedShadow.data(), srcBuffer->directTrackedShadow.data());
-                    newBuffer->directTrackedWrites.Merge(srcBuffer->directTrackedWrites);
+                    newBuffer->directTrackedWrites.Merge(srcBuffer->directTrackedWrites,
+                        static_cast<size_t>(srcBuffer->guest->begin() - newBuffer->guest->begin()));
                 }
             }
 

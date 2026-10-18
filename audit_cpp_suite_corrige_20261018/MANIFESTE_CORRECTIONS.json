@@ -1,0 +1,80 @@
+[
+  {
+    "file": "app/src/main/cpp/skyline/gpu/command_scheduler.cpp",
+    "before": "2a471e0f1c10a6d6d3cc7430e16b7a2614cdb043310debee1f18fbae6c48ef62",
+    "after": "cb9df0ba2c8072093d11c4811c7e17dc791d1ceb05a9472d4e217ba08135d101",
+    "lines": 134
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/fence_cycle.h",
+    "before": "1caaad9edcf3405245995c61e84b5a29605a3dc63551bf06d78da2043c866277",
+    "after": "efcf018cf141d8d2d4531c96c3640842891050d4ac6ea1b9e0bbe46706d824bb",
+    "lines": 314
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp",
+    "before": "7aa7024b4a09c7bfa132dcfd8901b44ea36d4819e3f7681a4b4fda09d58d956a",
+    "after": "11a0394b9fe9d27ab26e306696d005d13aa759ccd3bab908b94866fbe30923c2",
+    "lines": 827
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/command_executor.h",
+    "before": "fbba31a3b184e7b9f88a6d7045e487e70c135aa9a5cf05f7634e4d07fc0b1f82",
+    "after": "5a329b20379004b4554b358edc514c5dce9bef3b71b8695f78305d3d015db496",
+    "lines": 406
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp",
+    "before": "0701e654c8fd088db66123baa1d878065d1527383d44ca052895bf78bb0020bc",
+    "after": "d6bdfcdf122c5f66323cb73fb1c07998cf9b4f6965bbcecf0b142b49bbbd0999",
+    "lines": 76
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/common/common.h",
+    "before": "abdedfd3110aa996335d1d5df4e48b1e1f09266126a72208007d6d3e20ee1b80",
+    "after": "b9f222290f42b62e0b6d6973937c581525da6421bda0198833794a44a0cf7f56",
+    "lines": 124
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/kepler_compute.cpp",
+    "before": "58a232b9b7d3703690f824cd01b39c456e8312e9821a24f9fd9feb4318ceb770",
+    "after": "fe2f7c8dd8afa6e4bdba5ad36d2d579c27f3ca22121424b0cbfedbe3ddd55c98",
+    "lines": 115
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/conversion/quads.cpp",
+    "before": "f8c0c644ae35776fd1f9dad994842437e2082977c5c27d79bf7ed0cc14cdfaab",
+    "after": "6c23a802f509944b605259dab5834cb5a59a988b1427cbb56b450548fb8403f2",
+    "lines": 60
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/conversion/quads.h",
+    "before": "3f42916ae8d5893b08f1622d9c7659cc8fcf42f769f086e7fb89741d3d29301d",
+    "after": "9f0c2acb240665a94e503c2acf30e526bac06c7c81330b53b1bd9a8242cbcaf1",
+    "lines": 47
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp",
+    "before": "39696d7a719f49e2de806d6e4d9c60a02f6dccf609ba1b54e153f4927a1fba9b",
+    "after": "aaa852c3bb1da7694175981930250fe9f67f95c34c0e905b24a83d25289afe0c",
+    "lines": 508
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.h",
+    "before": "a061bcaa85cb72d00f4ecbf96bdfc39e54239d29c8ea7c2424ba60c7dc00bbe1",
+    "after": "169cdbf759d25f5d2abaef84db91d7f0a0dfeb33c846f22c31397503cb479c77",
+    "lines": 121
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h",
+    "before": "2e70f0a6dfe94709a6b5f158f9039e3ce302c669891b108352ec0f02a2ca1004",
+    "after": "c7a536e16b5a8386dbe8301c1693bb503617b487005e94f95131b7534d6db507",
+    "lines": 284
+  },
+  {
+    "file": "app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp",
+    "before": "d808b1c1e68ba240800c27dc4368fd21f0fd553f5a07c092359b839814ffa1a2",
+    "after": "d2dcef8e635a8e4f034e61c434c3af798c50e1bd7be45173a1ca300c8f6df7e5",
+    "lines": 495
+  }
+]

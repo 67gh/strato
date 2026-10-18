@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <common/diagnostic_recorder.h>
+#include <common/diagnostic_session.h>
 #include <fstream>
 #include <sstream>
 #include <chrono>
@@ -32,13 +34,13 @@ namespace skyline::nce {
      * Guest threads (HOS-N) above HotThreadCpuPercent are interrupted with SIGUSR2 to read where they are (PC, LR, call stack, callee-saved registers) and the
      * instructions and memory those registers point to, which for a spin-wait shows the lock word they wait for.
      * A "full report" is written on the first hot period and every 6th one after it (or at the 6th period and every 12th after it when nothing is spinning):
-     *  - every guest thread with its priority, core, affinity, scheduling and wait state (T<id> matches the HOS-<id> thread name)
+     *  - every guest thread with its immutable identity and atomic priorities (T<id> matches the HOS-<id> thread name)
      *  - the run queue of every scheduler core (the first thread of a queue is the one that owns the core)
      *  - the threads waiting on address arbiter / condition variable keys, with the key address
      *  - the call stack (host and guest frames) of every guest thread that isn't spinning, the GPU thread and the main thread, which for a thread blocked in a SVC
      *    shows which game function called it and what it is waiting on
      * Everything is read without stopping the emulation, so values can be momentarily inconsistent, but locks are only ever try-locked and memory is read through
-     * /proc/self/mem so the watchdog cannot deadlock or fault the process. Header-only, the only changes elsewhere are two friend declarations.
+     * /proc/self/mem to avoid direct reads of sampled addresses. Stack addresses are retained raw for offline symbol resolution. Header-only, the only changes elsewhere are two friend declarations.
      */
     class HangWatchdog {
       private:
@@ -66,7 +68,6 @@ namespace skyline::nce {
             bool guest;
             u64 pc, lr, sp, fp;
             u64 saved[10]; //!< X19-X28, callee-saved registers which usually hold the pointers a loop works on (e.g. a lock word)
-            kernel::type::KThread *thread; //!< The KThread of the interrupted thread, only set for guest threads
         };
 
         static inline Capture capture{};
@@ -99,7 +100,6 @@ namespace skyline::nce {
          * @brief Called when the signal interrupts guest code, the guest TLS has already been swapped for the host one by the caller
          */
         static void GuestSampleHandler(int, siginfo *, ucontext *context, void **) {
-            capture.thread = DeviceState::thread.get();
             Record(context, true);
         }
 
@@ -107,7 +107,6 @@ namespace skyline::nce {
          * @brief Called when the signal interrupts host code (e.g. inside a SVC), the TLS may not be valid so stack protector is disabled and nothing but stores is done
          */
         static void __attribute__((no_stack_protector)) HostSampleHandler(int, siginfo *, ucontext *context) {
-            capture.thread = nullptr;
             Record(context, false);
         }
 
@@ -211,49 +210,42 @@ namespace skyline::nce {
             return frames;
         }
 
-        static std::string Symbolize(const DeviceState &state, const std::vector<void *> &frames) {
-            try {
-                return state.loader->GetStackTrace(frames);
-            } catch (...) {
-                return "\n* (symbol resolution failed)";
-            }
+        static std::string Symbolize(const DeviceState &, const std::vector<void *> &frames) {
+            // Live guest symbol tables may be unmapped or concurrently changed.
+            // Keep raw addresses; resolve them offline against exact Build IDs.
+            std::string result;
+            for (const auto frame : frames)
+                result += fmt::format("\n* 0x{:X}", reinterpret_cast<uintptr_t>(frame));
+            return result;
         }
 
         /**
-         * @brief A one line description of the scheduling state of a guest thread, fields are read without synchronization so they can be momentarily inconsistent
+         * @brief A one line description of stable thread identity and atomic priorities; live wait relationships are omitted
          */
         static std::string DescribeThread(kernel::type::KThread *thread, const std::string &host = {}) {
             if (!thread)
                 return "(unknown)";
-            return fmt::format("T{:<3} handle 0x{:X} prio {}/{} core {} ideal {} aff 0x{:X} | running {} ready {} killed {} paused {} preempted {} yield {}{} | waitMutex 0x{:X} waitThread {} waiters {} condSignalled {} wakeObject {} cancellable {} | host {}",
-                               thread->id, thread->handle, static_cast<int>(thread->priority.load()), static_cast<int>(thread->basePriority.load()), thread->coreId, thread->idealCore,
-                               thread->affinityMask.to_ullong(), thread->running, thread->ready, thread->killed, thread->isPaused, thread->isPreempted, thread->pendingYield, thread->forceYield ? "+force" : "",
-                               reinterpret_cast<u64>(thread->waitMutex), thread->waitThread ? fmt::format("T{}", thread->waitThread->id) : "-", thread->waiters.size(), thread->waitSignalled,
-                               thread->wakeObject ? "yes" : "no", thread->isCancellable, host.empty() ? "?" : host);
+            // The caller owns the thread through the process thread list.
+            // Only immutable identity and atomic priorities are sampled here.
+            // Mutable wait owners/lists must not be dereferenced without their locks.
+            return fmt::format("T{:<3} handle 0x{:X} prio {}/{} | host {} | wait details: see locked scheduler/waiter snapshots",
+                               thread->id, thread->handle, static_cast<int>(thread->priority.load()),
+                               static_cast<int>(thread->basePriority.load()), host.empty() ? "?" : host);
         }
 
         /**
-         * @brief Describes what the saved registers point to, which for a lock-wait loop reveals the lock word, its value and (if the value is a thread handle) its owner
+         * @brief Describes sampled register memory through fault-tolerant reads, without following live thread owners
          */
-        static std::string DescribeRegisters(const DeviceState &state, kernel::type::KThread *self, bool withMemory) {
-            constexpr u32 HandleWaitersBit{1U << 30}; // Set in a guest mutex value when other threads are waiting on it, the rest is the owner's handle
-            std::string out{fmt::format("\n  this thread: {}", DescribeThread(self))};
+        static std::string DescribeRegisters(bool withMemory) {
+            std::string out;
             for (size_t i{}; i < 10; i++) {
                 u64 value{capture.saved[i]};
                 u32 word{};
                 if (value < 0x10000 || value >= (1ULL << 39) || (value & 3) || !ReadWord(value, word))
                     continue;
-
                 out += fmt::format("\n  X{} = 0x{:X} -> [0x{:X}] = 0x{:X}", 19 + i, value, value, word);
                 if (withMemory && value >= 0x10020)
                     out += DumpQwords(value - 0x20, 12);
-                if (u32 owner{word & ~HandleWaitersBit}; owner) {
-                    try {
-                        auto thread{state.process->GetHandle<kernel::type::KThread>(owner)};
-                        out += fmt::format("\n    if this is a lock, owner handle 0x{:X} = {}", owner, DescribeThread(thread.get()));
-                    } catch (...) {
-                    }
-                }
             }
             return out;
         }
@@ -349,7 +341,7 @@ namespace skyline::nce {
                     if (SampleThread(tid)) {
                         if (full && !detailed && capture.guest) {
                             detailed = true;
-                            report += fmt::format("\n  code at PC 0x{:X}:{}\n  code before LR 0x{:X}:{}{}", capture.pc, DumpWords(capture.pc, 16, 16), capture.lr, DumpWords(capture.lr, 16, 4), DescribeRegisters(state, capture.thread, true));
+                            report += fmt::format("\n  code at PC 0x{:X}:{}\n  code before LR 0x{:X}:{}{}", capture.pc, DumpWords(capture.pc, 16, 16), capture.lr, DumpWords(capture.lr, 16, 4), DescribeRegisters(true));
                         }
                         report += fmt::format("\n  sample {} [{}] SP 0x{:X} FP 0x{:X}{}", i + 1, capture.guest ? "guest" : "host", capture.sp, capture.fp, Symbolize(state, CollectFrames()));
                     } else {
@@ -382,7 +374,9 @@ namespace skyline::nce {
             const long ticksPerSecond{sysconf(_SC_CLK_TCK)};
             const long pageSize{sysconf(_SC_PAGESIZE)};
             std::unordered_map<int, Sample> previous;
-            u64 index{}, hotPeriods{};
+            u64 index{}, hotPeriods{}, stalePeriods{}, lastCapture{};
+            auto previousProgress = diagnostics::GetProgress();
+            auto lastHang = std::chrono::steady_clock::now() - std::chrono::seconds(30);
 
             std::unique_lock lock{mutex};
             while (!stop) {
@@ -457,14 +451,53 @@ namespace skyline::nce {
                 }
 
                 index++;
-                LOGINF("Watchdog #{}: RSS {} MiB, threads: {} running, {} sleeping, {} disk-wait, {} other{}", index, rssPages * pageSize / (1024 * 1024), running, sleeping, disk, other, details);
+                if (index % 5 == 0) LOGINF("Watchdog #{}: RSS {} MiB, threads: {} running, {} sleeping, {} disk-wait, {} other{}", index, rssPages * pageSize / (1024 * 1024), running, sleeping, disk, other, details);
 
-                bool full{!hotThreads.empty() ? (hotPeriods++ % 6) == 0 : (index == 6 || (index > 6 && index % 12 == 0))};
+                const auto progress = diagnostics::GetProgress();
+                const bool advanced = progress.frames != previousProgress.frames || progress.completed != previousProgress.completed;
+                stalePeriods = advanced || diagnostics::IsPaused() ? 0 : stalePeriods + 1;
+                const auto request = diagnostics::CaptureRequest();
+                const bool manual = request != lastCapture;
+                const auto now = std::chrono::steady_clock::now();
+                const bool stalled = stalePeriods >= 5 && now - lastHang >= std::chrono::seconds(30);
+                if (manual || stalled) {
+                    lastHang = now;
+                    try {
+                        const char *suspect = progress.submitted > progress.completed ? "gpu_or_fence_wait" :
+                            ((progress.draws != previousProgress.draws || progress.dispatches != previousProgress.dispatches) ? "recording_or_submission" : "guest_wait_loading_or_idle");
+                        std::ostringstream report;
+                        report << "{\"schema_version\":1,\"request\":" << request
+                            << ",\"trigger\":\"" << (manual ? "manual" : "no_completion_or_present_10s")
+                            << "\",\"suspect\":\"" << suspect << "\",\"proven_cause\":false,\"paused\":" << (diagnostics::IsPaused() ? "true" : "false")
+                            << ",\"guest_threads\":\"" << diagnostics::JsonEscape(DumpThreadTable(*state, hostInfo))
+                            << "\",\"scheduler\":\"" << diagnostics::JsonEscape(DumpSchedulerQueues(*state))
+                            << "\",\"waiters\":\"" << diagnostics::JsonEscape(DumpSyncWaiters(*state)) << "\",\"samples\":[";
+                        size_t sampled{};
+                        for (const auto &[tid, name] : stackThreads) {
+                            if (sampled == 32) break;
+                            if (sampled++) report << ',';
+                            bool answered = samplerEnabled && SampleThread(tid);
+                            report << "{\"tid\":" << tid << ",\"name\":\"" << diagnostics::JsonEscape(name)
+                                   << "\",\"answered\":" << (answered ? "true" : "false");
+                            if (answered) report << ",\"guest\":" << (capture.guest ? "true" : "false") << ",\"pc\":" << capture.pc
+                                << ",\"lr\":" << capture.lr << ",\"sp\":" << capture.sp << ",\"fp\":" << capture.fp
+                                << ",\"stack\":\"" << diagnostics::JsonEscape(Symbolize(*state, CollectFrames())) << '"';
+                            report << '}';
+                        }
+                        report << "],\"sample_limit\":32,\"thread_candidates\":" << stackThreads.size()
+                               << ",\"consistency\":\"live_advisory_trylocks_may_skip\"}";
+                        if (diagnostics::WriteJson("hang_snapshot.json", report.str()) && diagnostics::FlushRecorder(manual ? "manual" : "stall"))
+                            lastCapture = request;
+                    } catch (...) { diagnostics::Event("watchdog_snapshot_failed"); }
+                }
+                previousProgress = progress;
+
+                bool full{index % 5 == 0 && (!hotThreads.empty() ? (hotPeriods++ % 6) == 0 : (index == 30 || (index > 30 && index % 60 == 0)))};
                 if (full) {
                     LOGINF("Watchdog #{}: FULL REPORT ({} spinning guest threads)\n guest threads:{}\n scheduler queues:{}\n address arbiter / condition variable waiters:{}", index, hotThreads.size(), DumpThreadTable(*state, hostInfo), DumpSchedulerQueues(*state), DumpSyncWaiters(*state));
                 }
 
-                if (!hotThreads.empty())
+                if (!hotThreads.empty() && index % 5 == 0)
                     SampleHotThreads(*state, index, hotThreads, full);
 
                 if (full && samplerEnabled) {
@@ -478,7 +511,7 @@ namespace skyline::nce {
         }
 
       public:
-        static void Start(const DeviceState &state, std::chrono::seconds period = std::chrono::seconds{10}) {
+        static void Start(const DeviceState &state, std::chrono::seconds period = std::chrono::seconds{2}) {
             std::scoped_lock lock{mutex};
             if (thread.joinable())
                 return;
@@ -493,6 +526,7 @@ namespace skyline::nce {
 
             stop = false;
             thread = std::thread{&HangWatchdog::Run, &state, period};
+            diagnostics::Feature("watchdog", samplerEnabled ? "active; progress and manual snapshots; bounded raw PC/LR samples; offline symbols required" : "active; PC/LR sampling unavailable; scheduler/waiter snapshots only");
         }
 
         /**

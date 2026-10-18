@@ -4,6 +4,8 @@
 #pragma once
 
 #include <common/base.h>
+#include <limits>
+#include <stdexcept>
 
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -15,8 +17,9 @@ namespace skyline::gpu::interconnect::conversion::quads {
     /**
      * @return The amount of indices emitted converting a buffer with the supplied element count
      */
-    constexpr u32 GetIndexCount(u32 count) {
-        return (count * EmittedIndexCount) / QuadVertexCount;
+    constexpr u64 GetIndexCount(u32 count) {
+        // Incomplete primitives emit nothing. Widen before multiplying.
+        return static_cast<u64>(count / QuadVertexCount) * EmittedIndexCount;
     }
 
     /**
@@ -24,14 +27,17 @@ namespace skyline::gpu::interconnect::conversion::quads {
      * @param indexSize The size of an element in the index buffer in bytes
      */
     constexpr size_t GetRequiredBufferSize(u32 count, size_t indexSize) {
-        return GetIndexCount(count) * indexSize;
+        auto indices{GetIndexCount(count)};
+        if (indexSize && indices > std::numeric_limits<size_t>::max() / indexSize)
+            throw std::length_error("Quad conversion buffer size overflow");
+        return static_cast<size_t>(indices) * indexSize;
     }
 
     /**
      * @brief Create an index buffer that repeats quad vertices to generate a triangle list
      * @note The size of the supplied buffer should be at least the size returned by GetRequiredBufferSize()
      */
-    void GenerateQuadListConversionBuffer(u32 *dest, u32 vertexCount);
+    void GenerateQuadListConversionBuffer(u32 *dest, u32 vertexCount, u32 firstVertex = 0);
 
     /**
      * @brief Create an index buffer that repeats quad vertices from the source buffer to generate a triangle list

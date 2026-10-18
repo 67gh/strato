@@ -74,7 +74,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
     }
 
     /* Index Buffer Helpers */
-    static vk::DeviceSize GetIndexBufferSize(engine::IndexBuffer::IndexSize indexSize, u32 elementCount) {
+    static vk::DeviceSize GetIndexBufferSize(engine::IndexBuffer::IndexSize indexSize, u64 elementCount) {
         switch (indexSize) {
             case engine::IndexBuffer::IndexSize::OneByte:
                 return elementCount * 1;
@@ -101,16 +101,20 @@ namespace skyline::gpu::interconnect::maxwell3d {
     }
 
     static BufferBinding GenerateQuadConversionIndexBuffer(InterconnectContext &ctx, engine::IndexBuffer::IndexSize indexType, BufferView &view, u32 firstIndex, u32 elementCount) {
-        auto viewSpan{view.GetReadOnlyBackingSpan(false /* We attach above so always false */, []() {
-            // TODO: see Read()
-            LOGE("Dirty index buffer reads for attached buffers are unimplemented");
+        const auto offset{GetIndexBufferSize(indexType, firstIndex)};
+        const auto bytes{GetIndexBufferSize(indexType, elementCount - elementCount % conversion::quads::QuadVertexCount)};
+        if (!view || offset > view.size || bytes > view.size - offset)
+            throw exception("Quad index source outside mapped buffer: offset {}, bytes {}, available {}", offset, bytes, view.size);
+        auto viewSpan{view.GetReadOnlyBackingSpan(false /* We attach above so always false */, [&view]() {
+            if (view.GetBuffer()->IsCurrentExecutionGpuDirty())
+                throw BufferReadNeedsSubmission{};
         })};
 
         size_t indexSize{1U << static_cast<u32>(indexType)};
         vk::DeviceSize indexBufferSize{conversion::quads::GetRequiredBufferSize(elementCount, indexSize)};
         auto quadConversionAllocation{ctx.gpu.megaBufferAllocator.Allocate(ctx.executor.cycle, indexBufferSize)};
 
-        conversion::quads::GenerateIndexedQuadConversionBuffer(quadConversionAllocation.region.data(), viewSpan.subspan(GetIndexBufferSize(indexType, firstIndex)).data(), elementCount, ConvertIndexType(indexType));
+        conversion::quads::GenerateIndexedQuadConversionBuffer(quadConversionAllocation.region.data(), viewSpan.subspan(offset, bytes).data(), elementCount, ConvertIndexType(indexType));
 
         return {quadConversionAllocation.buffer, quadConversionAllocation.offset, indexBufferSize};
     }
@@ -123,21 +127,28 @@ namespace skyline::gpu::interconnect::maxwell3d {
     IndexBufferState::IndexBufferState(dirty::Handle dirtyHandle, DirtyManager &manager, const EngineRegisters &engine) : engine{manager, dirtyHandle, engine} {}
 
     void IndexBufferState::Flush(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool quadConversion, bool estimateSize, u32 firstIndex, u32 elementCount) {
+        valid = false;
+        megaBufferBinding = {};
         didEstimateSize = estimateSize;
         usedElementCount = elementCount;
         usedFirstIndex = firstIndex;
         usedQuadConversion = quadConversion;
 
-        size_t size{[&] () {
-            if (estimateSize)
-                return engine->indexBuffer.address - engine->indexBuffer.limit + 1;
+        u64 size{[&] () -> u64 {
+            if (estimateSize) {
+                if (engine->indexBuffer.limit < engine->indexBuffer.address)
+                    return 0;
+                auto distance{engine->indexBuffer.limit - engine->indexBuffer.address};
+                return distance == std::numeric_limits<u64>::max() ? 0 : distance + 1;
+            }
             else
-                return GetIndexBufferSize(engine->indexBuffer.indexSize, firstIndex + elementCount);
+                return GetIndexBufferSize(engine->indexBuffer.indexSize, static_cast<u64>(firstIndex) + elementCount);
         }()};
 
         view.Update(ctx, engine->indexBuffer.address, size, !estimateSize);
-        if (!*view) {
-            LOGW("Unmapped index buffer: 0x{:X}", engine->indexBuffer.address);
+        if (!size || !*view || view->size < size || (quadConversion && !conversion::quads::GetIndexCount(elementCount))) {
+            LOGW("Invalid index buffer at 0x{:X}: requested {}, mapped {}", engine->indexBuffer.address, size, view->size);
+            skyline::diagnostics::Event("index_buffer_invalid", engine->indexBuffer.address, size, view->size);
             return;
         }
 
@@ -155,13 +166,16 @@ namespace skyline::gpu::interconnect::maxwell3d {
             builder.SetIndexBuffer(megaBufferBinding, indexType);
         else
             builder.SetIndexBuffer(*view, indexType);
+        valid = true;
     }
 
     bool IndexBufferState::Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool quadConversion, bool estimateSize, u32 firstIndex, u32 elementCount) {
+        if (!valid || !*view)
+            return true;
         if (*view)
             view->GetBuffer()->PopulateReadBarrier(vk::PipelineStageFlagBits::eVertexInput, srcStageMask, dstStageMask);
 
-        if (didEstimateSize != estimateSize || (elementCount + firstIndex > usedElementCount + usedFirstIndex) || quadConversion != usedQuadConversion)
+        if (didEstimateSize != estimateSize || (static_cast<u64>(elementCount) + firstIndex > static_cast<u64>(usedElementCount) + usedFirstIndex) || quadConversion != usedQuadConversion)
             return true;
 
         // TODO: optimise this to use buffer sequencing to avoid needing to regenerate the quad buffer every time. We can't use as it is rn though because sequences aren't globally unique and may conflict after buffer recreation
@@ -184,6 +198,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
     }
 
     void IndexBufferState::PurgeCaches() {
+        valid = false;
         view.PurgeCaches();
         megaBufferBinding = {};
     }
@@ -257,9 +272,9 @@ namespace skyline::gpu::interconnect::maxwell3d {
         vkViewport.height = viewport.scaleY * 2.0f; // Counteract the division of the height (p_y) by 2 for the host scale
 
         using CoordinateSwizzle = engine::Viewport::CoordinateSwizzle;
-        if (viewport.swizzle.x != CoordinateSwizzle::PosX &&
-            viewport.swizzle.y != CoordinateSwizzle::PosY && viewport.swizzle.y != CoordinateSwizzle::NegY &&
-            viewport.swizzle.z != CoordinateSwizzle::PosZ &&
+        if (viewport.swizzle.x != CoordinateSwizzle::PosX ||
+            (viewport.swizzle.y != CoordinateSwizzle::PosY && viewport.swizzle.y != CoordinateSwizzle::NegY) ||
+            viewport.swizzle.z != CoordinateSwizzle::PosZ ||
             viewport.swizzle.w != CoordinateSwizzle::PosW)
             throw exception("Unsupported viewport swizzle: {}x{}x{}x{}", engine::Viewport::ToString(viewport.swizzle.x),
                             engine::Viewport::ToString(viewport.swizzle.y),

@@ -1,0 +1,1284 @@
+--- a/app/src/main/cpp/skyline/gpu/command_scheduler.cpp
++++ b/app/src/main/cpp/skyline/gpu/command_scheduler.cpp
+@@ -82,6 +82,12 @@
+     }
+ 
+     void CommandScheduler::SubmitCommandBuffer(const vk::raii::CommandBuffer &commandBuffer, std::shared_ptr<FenceCycle> cycle, span<vk::Semaphore> waitSemaphores, span<vk::Semaphore> signalSemaphores) {
++        // Keep cancellation and ownership transfer to the Vulkan queue atomic.
++        // NotifySubmitted alone is too late: a Cancel between submit() and that
++        // notification would otherwise release resources already in GPU use.
++        std::unique_lock cycleLock{cycle->mutex};
++        if (cycle->signalled.test(std::memory_order_acquire))
++            throw exception("Cannot submit a cancelled fence cycle");
+         skyline::diagnostics::Scope scope(cycle->diagnosticId);
+         skyline::diagnostics::Event("submit_begin", cycle->diagnosticId, waitSemaphores.size(), signalSemaphores.size());
+         boost::container::small_vector<vk::Semaphore, 3> fullWaitSemaphores{waitSemaphores.begin(), waitSemaphores.end()};
+@@ -122,6 +128,7 @@
+         }
+ 
+         cycle->NotifySubmitted();
++        cycleLock.unlock(); // Never hold this lock while a full cycleQueue blocks.
+         cycleQueue.Push(cycle);
+     }
+ }
+--- a/app/src/main/cpp/skyline/gpu/fence_cycle.h
++++ b/app/src/main/cpp/skyline/gpu/fence_cycle.h
+@@ -5,6 +5,7 @@
+ 
+ #include <common/diagnostic_recorder.h>
+ #include <condition_variable>
++#include <thread>
+ #include <vulkan/vulkan_raii.hpp>
+ #include <common.h>
+ #include <common/spin_lock.h>
+@@ -67,17 +68,29 @@
+             device.resetFences(fence);
+         }
+ 
+-        ~FenceCycle() {
+-            Wait();
+-        }
+-
+-        /**
+-         * @brief Signals this fence regardless of if the underlying fence has been signalled or not
++        ~FenceCycle() noexcept {
++            try {
++                Wait();
++            } catch (const std::exception &e) {
++                // Explicit waits still propagate errors; destruction must not throw.
++                try { LOGE("Fence destruction after GPU failure: {}", e.what()); } catch (...) {}
++            } catch (...) {
++                try { LOGE("Fence destruction after unknown GPU failure"); } catch (...) {}
++            }
++        }
++
++        /**
++         * @brief Cancels unsubmitted work; submitted work must drain before resources can be released
+          */
+         void Cancel() {
+-            skyline::diagnostics::Event("fence_cancelled", diagnosticId);
+             {
+                 std::scoped_lock lock{mutex};
++                // Cancellation is safe only before a queue owns the resources.
++                if (submitted) {
++                    skyline::diagnostics::Event("fence_cancel_deferred", diagnosticId);
++                    return;
++                }
++                skyline::diagnostics::Event("fence_cancelled", diagnosticId);
+                 signalled.test_and_set(std::memory_order_release);
+             }
+             submitCondition.notify_all();
+@@ -170,7 +183,17 @@
+             }
+ 
+             vk::Result waitResult;
+-            while ((waitResult = (*device).waitForFences(1, &fence, false, std::numeric_limits<u64>::max(), *device.getDispatcher())) != vk::Result::eSuccess) {
++            while ((waitResult = (*device).waitForFences(1, &fence, false, 50'000'000ULL, *device.getDispatcher())) != vk::Result::eSuccess) {
++                // Let status/teardown operations observe the cycle between driver waits.
++                lock.unlock();
++                std::this_thread::yield();
++                lock.lock();
++                // Another waiter may have completed this cycle while unlocked;
++                // its fence may already have been reset for the next cycle.
++                if (signalled.test(std::memory_order_acquire)) {
++                    if (shouldDestroy) DestroyDependencies();
++                    return;
++                }
+                 if (waitResult == vk::Result::eTimeout)
+                     // Retry if the waiting time out
+                     continue;
+--- a/app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
++++ b/app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+@@ -6,6 +6,7 @@
+ #include <chrono>
+ #include <condition_variable>
+ #include <mutex>
++#include <future>
+ #include <range/v3/view.hpp>
+ #include <adrenotools/driver.h>
+ #include <common/settings.h>
+@@ -34,6 +35,7 @@
+     CommandRecordThread::Slot::ScopedBegin::ScopedBegin(CommandRecordThread::Slot &slot) : slot{slot} {}
+ 
+     CommandRecordThread::Slot::ScopedBegin::~ScopedBegin() {
++        // Begin stores any exception and wakes WaitReady; never throw from a destructor.
+         slot.Begin();
+     }
+ 
+@@ -88,16 +90,26 @@
+ 
+     void CommandRecordThread::Slot::WaitReady() {
+         std::unique_lock lock{beginLock};
+-        beginCondition.wait(lock, [this] { return ready; });
++        beginCondition.wait(lock, [this] { return ready || retired || beginFailure; });
++        if (beginFailure)
++            std::rethrow_exception(beginFailure);
++        if (retired)
++            throw exception("Command slot retired before recording");
+         cycle->AttachObject(std::make_shared<ScopedBegin>(*this));
+     }
+ 
+     void CommandRecordThread::Slot::Begin() {
+         std::unique_lock lock{beginLock};
+-        commandBuffer.begin(vk::CommandBufferBeginInfo{
+-            .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+-        });
+-        ready = true;
++        if (retired)
++            return;
++        try {
++            commandBuffer.begin(vk::CommandBufferBeginInfo{
++                .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
++            });
++            ready = true;
++        } catch (...) {
++            beginFailure = std::current_exception();
++        }
+         beginCondition.notify_all();
+     }
+ 
+@@ -176,27 +188,27 @@
+     }
+ 
+     void CommandRecordThread::Run() {
+-        auto &gpu{*state.gpu};
+-
+-        RENDERDOC_API_1_4_2 *renderDocApi{};
+-        if (void *mod{dlopen("libVkLayer_GLES_RenderDoc.so", RTLD_NOW | RTLD_NOLOAD)}) {
+-            auto *pfnGetApi{reinterpret_cast<pRENDERDOC_GetAPI>(dlsym(mod, "RENDERDOC_GetAPI"))};
+-            if (int ret{pfnGetApi ? pfnGetApi(eRENDERDOC_API_Version_1_4_2, (void **)&renderDocApi) : 0}; ret != 1)
+-                LOGW("Failed to intialise RenderDoc API: {}", ret);
+-        }
+-
+-        skyline::diagnostics::Feature("renderdoc", renderDocApi ? "available; captures one executor command batch on request" : "unavailable; launch with RenderDoc injected; no capture produced");
+-        if (renderDocApi) {
+-            auto capturePath = skyline::diagnostics::OutputPath("frame", {});
+-            if (!capturePath.empty()) renderDocApi->SetCaptureFilePathTemplate(capturePath.c_str());
+-        }
+-        outgoing.Push(&slots.emplace_back(gpu));
+-
+-        if (int result{pthread_setname_np(pthread_self(), "Sky-CmdRecord")})
+-            LOGW("Failed to set the thread name: {}", strerror(result));
+-        AsyncLogger::UpdateTag();
+-
+         try {
++            auto &gpu{*state.gpu};
++
++            RENDERDOC_API_1_4_2 *renderDocApi{};
++            if (void *mod{dlopen("libVkLayer_GLES_RenderDoc.so", RTLD_NOW | RTLD_NOLOAD)}) {
++                auto *pfnGetApi{reinterpret_cast<pRENDERDOC_GetAPI>(dlsym(mod, "RENDERDOC_GetAPI"))};
++                if (int ret{pfnGetApi ? pfnGetApi(eRENDERDOC_API_Version_1_4_2, (void **)&renderDocApi) : 0}; ret != 1)
++                    LOGW("Failed to intialise RenderDoc API: {}", ret);
++            }
++
++            skyline::diagnostics::Feature("renderdoc", renderDocApi ? "available; captures one executor command batch on request" : "unavailable; launch with RenderDoc injected; no capture produced");
++            if (renderDocApi) {
++                auto capturePath = skyline::diagnostics::OutputPath("frame", {});
++                if (!capturePath.empty()) renderDocApi->SetCaptureFilePathTemplate(capturePath.c_str());
++            }
++            outgoing.Push(&slots.emplace_back(gpu));
++
++            if (int result{pthread_setname_np(pthread_self(), "Sky-CmdRecord")})
++                LOGW("Failed to set the thread name: {}", strerror(result));
++            AsyncLogger::UpdateTag();
++
+             incoming.Process([this, renderDocApi, &gpu](Slot *slot) {
+                 idle = false;
+                 VkInstance instance{*gpu.vkInstance};
+@@ -229,18 +241,43 @@
+                 outgoing.Push(slot);
+                 idle = true;
+             }, [] {});
+-        } catch (const signal::SignalException &e) {
+-            LOGE("{}\nStack Trace:{}", e.what(), state.loader->GetStackTrace(e.frames));
+-            if (state.process)
+-                state.process->Kill(false);
+-            else
+-                std::rethrow_exception(std::current_exception());
+-        } catch (const std::exception &e) {
+-            LOGE("{}", e.what());
+-            if (state.process)
+-                state.process->Kill(false);
+-            else
+-                std::rethrow_exception(std::current_exception());
++        } catch (...) {
++            if (!stopping.load()) {
++                try {
++                    try { throw; }
++                    catch (const signal::SignalException &e) {
++                        LOGE("{}\nStack Trace:{}", e.what(), state.loader->GetStackTrace(e.frames));
++                    }
++                    catch (const std::exception &e) { LOGE("GPU command recorder failed: {}", e.what()); }
++                    catch (...) { LOGE("GPU command recorder failed with an unknown exception"); }
++                    if (state.process) state.process->Kill(false);
++                } catch (...) {}
++            }
++        }
++        // Release a producer waiting for a slot even when initialization/recording failed.
++        outgoing.Close();
++        incoming.Close();
++        idle = true;
++    }
++
++    CommandRecordThread::~CommandRecordThread() { Stop(); }
++
++    void CommandRecordThread::Stop() {
++        stopping = true;
++        // A recorder may be blocked publishing an outgoing slot while holding the
++        // incoming consumer lock. Wake it before closing the incoming queue.
++        outgoing.Close();
++        incoming.Close();
++        if (thread.joinable()) thread.join();
++        for (auto &entry : slots) {
++            {
++                std::scoped_lock lock{entry.beginLock};
++                entry.retired = true;
++                entry.beginCondition.notify_all();
++            }
++            entry.cycle->Cancel(); // No-op for submitted work; never release GPU-owned objects.
++            try { entry.cycle->Wait(true); }
++            catch (const std::exception &e) { LOGE("GPU slot drain failed: {}", e.what()); }
+         }
+     }
+ 
+@@ -262,52 +299,68 @@
+     }
+ 
+     void ExecutionWaiterThread::Run() {
+-        // Enable turbo clocks to begin with if requested
+-        if (*state.settings->forceMaxGpuClocks)
+-            adrenotools_set_turbo(true);
+-
+-        while (true) {
+-            std::pair<std::shared_ptr<FenceCycle>, std::function<void()>> item{};
+-            {
+-                std::unique_lock lock{mutex};
+-                if (pendingSignalQueue.empty()) {
+-                    idle = true;
+-
+-                    // Don't force turbo clocks when the GPU is idle
+-                    if (*state.settings->forceMaxGpuClocks)
++        try {
++            while (true) {
++                std::pair<std::shared_ptr<FenceCycle>, std::function<void()>> item;
++                {
++                    std::unique_lock lock{mutex};
++                    idle = pendingSignalQueue.empty();
++                    if (idle && *state.settings->forceMaxGpuClocks)
+                         adrenotools_set_turbo(false);
+-
+-                    condition.wait(lock, [this] { return !pendingSignalQueue.empty(); });
+-
+-                    // Once we have work to do, force turbo clocks is enabled
+-                    if (*state.settings->forceMaxGpuClocks)
+-                        adrenotools_set_turbo(true);
+-
++                    condition.wait(lock, [this] { return stopping || !pendingSignalQueue.empty(); });
++                    if (pendingSignalQueue.empty()) break; // Stop drains already accepted work.
++                    item = std::move(pendingSignalQueue.front());
++                    pendingSignalQueue.pop();
+                     idle = false;
+                 }
+-                item = std::move(pendingSignalQueue.front());
+-                pendingSignalQueue.pop();
+-            }
++                if (*state.settings->forceMaxGpuClocks)
++                    adrenotools_set_turbo(true);
++                {
++                    TRACE_EVENT("gpu", "GPU");
++                    if (item.first) item.first->Wait();
++                }
++                if (item.second) item.second();
++            }
++        } catch (...) {
++            auto error{std::current_exception()};
++            std::queue<std::pair<std::shared_ptr<FenceCycle>, std::function<void()>>> abandoned;
+             {
+-                TRACE_EVENT("gpu", "GPU");
+-                if (item.first)
+-                    item.first->Wait();
+-            }
+-
+-            if (item.second)
+-                item.second();
+-        }
++                std::scoped_lock lock{mutex};
++                failure = error;
++                stopping = true;
++                // Discard callbacks; a completion promise becomes broken rather
++                // than telling the guest that failed GPU work succeeded.
++                abandoned.swap(pendingSignalQueue);
++            }
++            condition.notify_all();
++            try {
++                try { std::rethrow_exception(error); }
++                catch (const std::exception &e) { LOGE("GPU completion worker failed: {}", e.what()); }
++                catch (...) { LOGE("GPU completion worker failed with an unknown exception"); }
++                if (state.process) state.process->Kill(false);
++            } catch (...) {}
++        }
++        idle = true;
++        if (*state.settings->forceMaxGpuClocks) adrenotools_set_turbo(false);
+     }
+ 
+     ExecutionWaiterThread::ExecutionWaiterThread(const DeviceState &state) : state{state}, thread{&ExecutionWaiterThread::Run, this} {}
+ 
+-    bool ExecutionWaiterThread::IsIdle() const {
+-        return idle;
+-    }
++    ExecutionWaiterThread::~ExecutionWaiterThread() { Stop(); }
++
++    void ExecutionWaiterThread::Stop() {
++        { std::scoped_lock lock{mutex}; stopping = true; }
++        condition.notify_all();
++        if (thread.joinable()) thread.join();
++    }
++
++    bool ExecutionWaiterThread::IsIdle() const { return idle; }
+ 
+     void ExecutionWaiterThread::Queue(std::shared_ptr<FenceCycle> cycle, std::function<void()> &&callback) {
+         {
+             std::unique_lock lock{mutex};
++            if (failure) std::rethrow_exception(failure);
++            if (stopping) throw exception("GPU completion worker has stopped");
+             pendingSignalQueue.push({std::move(cycle), std::move(callback)});
+         }
+         condition.notify_all();
+@@ -315,13 +368,13 @@
+ 
+     void CheckpointPollerThread::Run() {
+         u32 prevCheckpoint{};
+-        for (size_t iteration{}; true; iteration++) {
++        for (size_t iteration{}; !stopping.load(); iteration++) {
+             u32 curCheckpoint{state.gpu->debugTracingBuffer.as<u32>()};
+ 
+             if ((iteration % 1024) == 0)
+                 LOGI("Current Checkpoint: {}", curCheckpoint);
+ 
+-            while (prevCheckpoint != curCheckpoint) {
++            while (prevCheckpoint != curCheckpoint && !stopping.load()) {
+                 // Make sure to report an event for every checkpoint inbetween the previous and current values, to ensure the perfetto trace is consistent
+                 prevCheckpoint++;
+                 TRACE_EVENT_INSTANT("gpu", "Checkpoint", "id", prevCheckpoint, [&](perfetto::EventContext ctx) {
+@@ -335,6 +388,11 @@
+     }
+ 
+     CheckpointPollerThread::CheckpointPollerThread(const DeviceState &state) : state{state}, thread{&CheckpointPollerThread::Run, this} {}
++
++    CheckpointPollerThread::~CheckpointPollerThread() {
++        stopping = true;
++        if (thread.joinable()) thread.join();
++    }
+ 
+     CommandExecutor::CommandExecutor(const DeviceState &state)
+         : state{state},
+@@ -347,7 +405,10 @@
+     }
+ 
+     CommandExecutor::~CommandExecutor() {
+-        cycle->Cancel();
++        // Retire record slots first, while the completion worker and GPU still exist.
++        // Stop also cancels the current, never-submitted slot and drains submitted ones.
++        recordThread.Stop();
++        waiterThread.Stop();
+     }
+ 
+     void CommandExecutor::RotateRecordSlot() {
+@@ -388,7 +449,9 @@
+             !ranges::all_of(outputAttachmentViews, [this] (auto view) { return !view || view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget); }) ||
+             !ranges::all_of(sampledImages, [this] (auto view) { return view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled); })};
+ 
+-        bool gotoNext{};
++        // Attachment changes always split passes in this backend, including when
++        // noSubpassCreation is false. Keep this conservative driver policy explicit.
++        (void)noSubpassCreation;
+         if (splitRenderPass) {
+             // We need to create a render pass if one doesn't already exist or the current one isn't compatible
+             if (renderPass != nullptr) {
+@@ -400,11 +463,6 @@
+             renderPassIt = std::prev(slot->nodes.end());
+             addSubpass();
+             subpassCount = 1;
+-        } else if (!attachmentsMatch) {
+-            // The last subpass had different attachments, so we need to create a new one
+-            addSubpass();
+-            subpassCount++;
+-            gotoNext = true;
+         }
+ 
+         renderPass->UpdateDependency(srcStageMask, dstStageMask);
+@@ -416,7 +474,7 @@
+         for (auto view : sampledImages)
+             view->texture->UpdateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled);
+ 
+-        return gotoNext;
++        return false;
+     }
+ 
+     void CommandExecutor::FinishRenderPass() {
+@@ -728,18 +786,14 @@
+         if (wait) {
+             usageTracker.dirtyIntervals.Clear();
+ 
+-            std::condition_variable cv;
+-            std::mutex mutex;
+-            bool gpuDone{};
+-
+-            waiterThread.Queue(nullptr, [&cv, &mutex, &gpuDone] {
+-                std::scoped_lock lock{mutex};
+-                gpuDone = true;
+-                cv.notify_one();
+-            });
+-
+-            std::unique_lock lock{mutex};
+-            cv.wait(lock, [&gpuDone] { return gpuDone; });
++            std::future<void> completion;
++            {
++                auto signal{std::make_shared<std::promise<void>>()};
++                completion = signal->get_future();
++                waiterThread.Queue(nullptr, [signal] { signal->set_value(); });
++            } // Only the queued callback owns the promise now.
++            completion.get(); // A discarded callback wakes us with broken_promise.
++
+         }
+     }
+ 
+--- a/app/src/main/cpp/skyline/gpu/interconnect/command_executor.h
++++ b/app/src/main/cpp/skyline/gpu/interconnect/command_executor.h
+@@ -3,6 +3,7 @@
+ 
+ #pragma once
+ 
++#include <exception>
+ #include <boost/container/stable_vector.hpp>
+ #include <renderdoc_app.h>
+ #include <common/linear_allocator.h>
+@@ -48,6 +49,8 @@
+             bool ready{}; //!< If this slot's command buffer has had 'beginCommandBuffer' called and is ready to have commands recorded into it
+             bool capture{}; //!< If this slot's Vulkan commands should be captured using the renderdoc API
+             bool didWait{}; //!< If a wait of time longer than GrowThresholdNs occured when this slot was acquired
++            bool retired{}; //!< Protected by beginLock; prevents restarting commands during teardown
++            std::exception_ptr beginFailure;
+ 
+             Slot(GPU &gpu);
+ 
+@@ -73,7 +76,8 @@
+         CircularQueue<Slot *> incoming; //!< Slots pending recording
+         CircularQueue<Slot *> outgoing; //!< Slots that have been submitted, may still be active on the GPU
+         std::list<Slot> slots;
+-        std::atomic<bool> idle;
++        std::atomic<bool> idle{};
++        std::atomic<bool> stopping{};
+ 
+         std::thread thread;
+ 
+@@ -83,6 +87,8 @@
+ 
+       public:
+         CommandRecordThread(const DeviceState &state);
++        ~CommandRecordThread();
++        void Stop();
+ 
+         bool IsIdle() const;
+ 
+@@ -103,16 +109,20 @@
+     class ExecutionWaiterThread {
+       private:
+         const DeviceState &state;
+-        std::thread thread;
+         SpinLock mutex;
+         std::condition_variable_any condition;
+         std::queue<std::pair<std::shared_ptr<FenceCycle>, std::function<void()>>> pendingSignalQueue; //!< Queue of callbacks to be executed when their coressponding fence is signalled
+         std::atomic<bool> idle{};
++        bool stopping{}; //!< Protected by mutex
++        std::exception_ptr failure; //!< Protected by mutex
++        std::thread thread; //!< Start only after all worker state has been constructed
+ 
+         void Run();
+ 
+       public:
+         ExecutionWaiterThread(const DeviceState &state);
++        ~ExecutionWaiterThread();
++        void Stop();
+ 
+         bool IsIdle() const;
+ 
+@@ -128,12 +138,14 @@
+     class CheckpointPollerThread {
+       private:
+         const DeviceState &state;
++        std::atomic<bool> stopping{};
+         std::thread thread;
+ 
+         void Run();
+ 
+       public:
+         CheckpointPollerThread(const DeviceState &state);
++        ~CheckpointPollerThread();
+     };
+ 
+     /**
+--- a/app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
++++ b/app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
+@@ -65,13 +65,12 @@
+         blockMappingEndAddr = 0; // Will force a retranslate of `blockMapping` on the next `Update()` call
+     }
+ 
+-    static void FlushHostCallback() {
+-        // TODO: here we should trigger `Execute()`, however that doesn't currently work due to Read being called mid-draw and attached objects not handling this case
+-        LOGW("GPU dirty buffer reads for attached buffers are unimplemented");
+-    }
+-
+     void ConstantBuffer::Read(CommandExecutor &executor, span<u8> dstBuffer, size_t srcOffset) {
+         ContextLock lock{executor.tag, view};
+-        view.Read(lock.IsFirstUsage(), FlushHostCallback, dstBuffer, srcOffset);
++        view.Read(lock.IsFirstUsage(), [this] {
++            if (view.GetBuffer()->IsCurrentExecutionGpuDirty())
++                throw BufferReadNeedsSubmission{};
++            // Writes from an older, already submitted batch can be waited on directly.
++        }, dstBuffer, srcOffset);
+     }
+ }
+--- a/app/src/main/cpp/skyline/gpu/interconnect/common/common.h
++++ b/app/src/main/cpp/skyline/gpu/interconnect/common/common.h
+@@ -4,6 +4,7 @@
+ #pragma once
+ 
+ #include <common/dirty_tracking.h>
++#include <exception>
+ #include <vulkan/vulkan_raii.hpp>
+ #include <gpu/buffer.h>
+ #include <soc/gm20b/engines/engine.h>
+@@ -88,6 +89,13 @@
+ 
+     class StateUpdateBuilder;
+ 
++    // Unwind preparation before submitting: a mid-draw submit would invalidate
++    // its allocator, descriptor state and attached locks. The draw/dispatch
++    // boundary catches this request, submits prior work, then rebuilds once.
++    struct BufferReadNeedsSubmission : std::exception {
++        const char *what() const noexcept override { return "GPU buffer read requires prior command submission"; }
++    };
++
+     struct TexelBufferBinding {
+         BufferView view;
+         vk::Format format;
+--- a/app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/kepler_compute.cpp
++++ b/app/src/main/cpp/skyline/gpu/interconnect/kepler_compute/kepler_compute.cpp
+@@ -39,65 +39,77 @@
+ 
+         TRACE_EVENT("gpu", "KeplerCompute::Dispatch");
+ 
+-        StateUpdateBuilder builder{*ctx.executor.allocator};
++        for (unsigned attempt{}; ; ++attempt) {
++            try {
++                StateUpdateBuilder builder{*ctx.executor.allocator};
+ 
+-        constantBuffers.Update(ctx, qmd);
+-        samplers.Update(ctx, qmd.samplerIndex == soc::gm20b::engine::kepler_compute::QMD::SamplerIndex::ViaHeaderIndex);
+-        auto *pipeline{pipelineState.Update(ctx, builder, textures, constantBuffers.boundConstantBuffers, qmd)};
++                constantBuffers.Update(ctx, qmd);
++                samplers.Update(ctx, qmd.samplerIndex == soc::gm20b::engine::kepler_compute::QMD::SamplerIndex::ViaHeaderIndex);
++                auto *pipeline{pipelineState.Update(ctx, builder, textures, constantBuffers.boundConstantBuffers, qmd)};
+ 
+-        // A shader that reads storage images or texel buffers that were never bound hangs the GPU (VK_ERROR_DEVICE_LOST on Adreno), so the dispatch is dropped
+-        // The effect it would have had is missing from the frame, which is better than the whole emulation dying
+-        skyline::diagnostics::correlation.pipeline = reinterpret_cast<uintptr_t>(pipeline);
+-        skyline::diagnostics::Event("compute_pipeline", reinterpret_cast<uintptr_t>(pipeline));
+-        if (pipeline->HasUnsupportedDescriptors()) {
+-            skyline::diagnostics::Unsupported("compute", reinterpret_cast<uintptr_t>(pipeline), "unwritten descriptors; dispatch skipped");
+-            if (pipeline->ShouldReportSkip()) {
+-                LOGW("Skipping compute dispatches of pipeline {}: its shader uses storage images or texel buffers which aren't supported", fmt::ptr(pipeline));
+-                diagnostics::Record("compute", fmt::format("skipping dispatches of pipeline {} (storage images/texel buffers are unsupported)", fmt::ptr(pipeline)));
+-            }
+-            return;
+-        }
++                // A shader that reads storage images or texel buffers that were never bound hangs the GPU (VK_ERROR_DEVICE_LOST on Adreno), so the dispatch is dropped
++                // The effect it would have had is missing from the frame, which is better than the whole emulation dying
++                skyline::diagnostics::correlation.pipeline = reinterpret_cast<uintptr_t>(pipeline);
++                skyline::diagnostics::Event("compute_pipeline", reinterpret_cast<uintptr_t>(pipeline));
++                if (pipeline->HasUnsupportedDescriptors()) {
++                    skyline::diagnostics::Unsupported("compute", reinterpret_cast<uintptr_t>(pipeline), "unwritten descriptors; dispatch skipped");
++                    if (pipeline->ShouldReportSkip()) {
++                        LOGW("Skipping compute dispatches of pipeline {}: its shader uses storage images or texel buffers which aren't supported", fmt::ptr(pipeline));
++                        diagnostics::Record("compute", fmt::format("skipping dispatches of pipeline {} (storage images/texel buffers are unsupported)", fmt::ptr(pipeline)));
++                    }
++                    return;
++                }
+ 
+-        vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
+-        auto *descUpdateInfo{pipeline->SyncDescriptors(ctx, constantBuffers.boundConstantBuffers, samplers, textures, srcStageMask, dstStageMask)};
+-        builder.SetPipeline(*pipeline->compiledPipeline.pipeline, vk::PipelineBindPoint::eCompute);
++                vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
++                auto *descUpdateInfo{pipeline->SyncDescriptors(ctx, constantBuffers.boundConstantBuffers, samplers, textures, srcStageMask, dstStageMask)};
++                builder.SetPipeline(*pipeline->compiledPipeline.pipeline, vk::PipelineBindPoint::eCompute);
+ 
+-        if (descUpdateInfo) {
+-            if (ctx.gpu.traits.supportsPushDescriptors) {
+-                builder.SetDescriptorSetWithPush(descUpdateInfo);
+-            } else {
+-                auto set{std::make_shared<DescriptorAllocator::ActiveDescriptorSet>(ctx.gpu.descriptor.AllocateSet(descUpdateInfo->descriptorSetLayout))};
++                if (descUpdateInfo) {
++                    if (ctx.gpu.traits.supportsPushDescriptors) {
++                        builder.SetDescriptorSetWithPush(descUpdateInfo);
++                    } else {
++                        auto set{std::make_shared<DescriptorAllocator::ActiveDescriptorSet>(ctx.gpu.descriptor.AllocateSet(descUpdateInfo->descriptorSetLayout))};
+ 
+-                builder.SetDescriptorSetWithUpdate(descUpdateInfo, set.get(), nullptr);
+-                ctx.executor.AttachDependency(set);
++                        builder.SetDescriptorSetWithUpdate(descUpdateInfo, set.get(), nullptr);
++                        ctx.executor.AttachDependency(set);
++                    }
++                }
++
++                auto stateUpdater{builder.Build()};
++
++                /**
++                 * @brief Struct that can be linearly allocated, holding all state for the draw to avoid a dynamic allocation with lambda captures
++                 */
++                struct DrawParams {
++                    StateUpdater stateUpdater;
++                    std::array<u32, 3> dimensions;
++                    vk::PipelineStageFlags srcStageMask, dstStageMask;
++                };
++                auto *drawParams{ctx.executor.allocator->EmplaceUntracked<DrawParams>(DrawParams{stateUpdater, {qmd.ctaRasterWidth, qmd.ctaRasterHeight, qmd.ctaRasterDepth}, srcStageMask, dstStageMask})};
++
++
++                ctx.executor.AddCheckpoint("Before dispatch");
++                ctx.executor.AddOutsideRpCommand([drawParams](vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &, GPU &gpu) {
++                    drawParams->stateUpdater.RecordAll(gpu, commandBuffer);
++
++                    if (drawParams->srcStageMask && drawParams->dstStageMask)
++                        commandBuffer.pipelineBarrier(drawParams->srcStageMask, drawParams->dstStageMask, {}, {vk::MemoryBarrier{
++                            .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
++                            .dstAccessMask = vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
++                        }}, {}, {});
++
++                    commandBuffer.dispatch(drawParams->dimensions[0], drawParams->dimensions[1], drawParams->dimensions[2]);
++                });
++                ctx.executor.AddCheckpoint("After dispatch");
++                return;
++            } catch (const BufferReadNeedsSubmission &) {
++                if (attempt != 0)
++                    throw exception("GPU buffer read still requires submission after retry");
++                skyline::diagnostics::Event("buffer_readback_retry", ctx.executor.cycle->diagnosticId);
++                // The partial builder is gone. Flush callbacks invalidate all cached
++                // state, and the next attempt uses the new command allocator/cycle.
++                ctx.executor.Submit({}, true);
+             }
+         }
+-
+-        auto stateUpdater{builder.Build()};
+-
+-        /**
+-         * @brief Struct that can be linearly allocated, holding all state for the draw to avoid a dynamic allocation with lambda captures
+-         */
+-        struct DrawParams {
+-            StateUpdater stateUpdater;
+-            std::array<u32, 3> dimensions;
+-            vk::PipelineStageFlags srcStageMask, dstStageMask;
+-        };
+-        auto *drawParams{ctx.executor.allocator->EmplaceUntracked<DrawParams>(DrawParams{stateUpdater, {qmd.ctaRasterWidth, qmd.ctaRasterHeight, qmd.ctaRasterDepth}, srcStageMask, dstStageMask})};
+-
+-
+-        ctx.executor.AddCheckpoint("Before dispatch");
+-        ctx.executor.AddOutsideRpCommand([drawParams](vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &, GPU &gpu) {
+-            drawParams->stateUpdater.RecordAll(gpu, commandBuffer);
+-
+-            if (drawParams->srcStageMask && drawParams->dstStageMask)
+-                commandBuffer.pipelineBarrier(drawParams->srcStageMask, drawParams->dstStageMask, {}, {vk::MemoryBarrier{
+-                    .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
+-                    .dstAccessMask = vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
+-                }}, {}, {});
+-
+-            commandBuffer.dispatch(drawParams->dimensions[0], drawParams->dimensions[1], drawParams->dimensions[2]);
+-        });
+-        ctx.executor.AddCheckpoint("After dispatch");
+     }
+ }
+--- a/app/src/main/cpp/skyline/gpu/interconnect/conversion/quads.cpp
++++ b/app/src/main/cpp/skyline/gpu/interconnect/conversion/quads.cpp
+@@ -4,9 +4,13 @@
+ #include "quads.h"
+ 
+ namespace skyline::gpu::interconnect::conversion::quads {
+-    void GenerateQuadListConversionBuffer(u32 *dest, u32 vertexCount) {
++    void GenerateQuadListConversionBuffer(u32 *dest, u32 vertexCount, u32 firstVertex) {
++        const u32 completeCount{vertexCount - vertexCount % QuadVertexCount};
++        if (completeCount && firstVertex > std::numeric_limits<u32>::max() - (completeCount - 1))
++            throw std::out_of_range("Quad vertex range overflow");
+         #pragma clang loop vectorize(enable) interleave(enable) unroll(enable)
+-        for (u32 i{}; i < vertexCount; i += 4) {
++        for (u32 offset{}; offset < completeCount; offset += QuadVertexCount) {
++            const u32 i{firstVertex + offset};
+             // Given a quad ABCD, we want to generate triangles ABC & CDA
+             // Triangle ABC
+             *(dest++) = i + 0;
+@@ -22,8 +26,9 @@
+ 
+     template<typename S>
+     static void GenerateQuadIndexConversionBufferImpl(S *__restrict__ dest, S *__restrict__ source, u32 indexCount) {
++        const u32 completeCount{indexCount - indexCount % QuadVertexCount};
+         #pragma clang loop vectorize(enable) interleave(enable) unroll(enable)
+-        for (size_t i{}; i < indexCount; i += 4, source += 4) {
++        for (size_t i{}; i < completeCount; i += QuadVertexCount, source += QuadVertexCount) {
+             // Given a quad ABCD, we want to generate triangles ABC & CDA
+             // Triangle ABC
+             *(dest++) = *(source + 0);
+@@ -49,7 +54,7 @@
+                 GenerateQuadIndexConversionBufferImpl(dest, source, indexCount);
+                 break;
+             default:
+-                break;
++                throw std::invalid_argument("Unsupported quad index type");
+         }
+     }
+ }
+--- a/app/src/main/cpp/skyline/gpu/interconnect/conversion/quads.h
++++ b/app/src/main/cpp/skyline/gpu/interconnect/conversion/quads.h
+@@ -4,6 +4,8 @@
+ #pragma once
+ 
+ #include <common/base.h>
++#include <limits>
++#include <stdexcept>
+ 
+ #include <vulkan/vulkan.hpp>
+ #include <vulkan/vulkan_enums.hpp>
+@@ -15,8 +17,9 @@
+     /**
+      * @return The amount of indices emitted converting a buffer with the supplied element count
+      */
+-    constexpr u32 GetIndexCount(u32 count) {
+-        return (count * EmittedIndexCount) / QuadVertexCount;
++    constexpr u64 GetIndexCount(u32 count) {
++        // Incomplete primitives emit nothing. Widen before multiplying.
++        return static_cast<u64>(count / QuadVertexCount) * EmittedIndexCount;
+     }
+ 
+     /**
+@@ -24,14 +27,17 @@
+      * @param indexSize The size of an element in the index buffer in bytes
+      */
+     constexpr size_t GetRequiredBufferSize(u32 count, size_t indexSize) {
+-        return GetIndexCount(count) * indexSize;
++        auto indices{GetIndexCount(count)};
++        if (indexSize && indices > std::numeric_limits<size_t>::max() / indexSize)
++            throw std::length_error("Quad conversion buffer size overflow");
++        return static_cast<size_t>(indices) * indexSize;
+     }
+ 
+     /**
+      * @brief Create an index buffer that repeats quad vertices to generate a triangle list
+      * @note The size of the supplied buffer should be at least the size returned by GetRequiredBufferSize()
+      */
+-    void GenerateQuadListConversionBuffer(u32 *dest, u32 vertexCount);
++    void GenerateQuadListConversionBuffer(u32 *dest, u32 vertexCount, u32 firstVertex = 0);
+ 
+     /**
+      * @brief Create an index buffer that repeats quad vertices from the source buffer to generate a triangle list
+--- a/app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
++++ b/app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
+@@ -50,12 +50,13 @@
+     }
+ 
+     vk::DeviceSize Maxwell3D::UpdateQuadConversionBuffer(u32 count, u32 firstVertex) {
+-        vk::DeviceSize offset{conversion::quads::GetRequiredBufferSize(firstVertex, sizeof(u32))};
+-        vk::DeviceSize size{conversion::quads::GetRequiredBufferSize(count, sizeof(u32)) + offset};
+-
+-        if (!quadConversionBuffer || quadConversionBuffer->size_bytes() < size) {
++        vk::DeviceSize size{conversion::quads::GetRequiredBufferSize(count, sizeof(u32))};
++
++        if (!quadConversionBuffer || quadConversionVertexCount < count || quadConversionFirstVertex != firstVertex) {
+             quadConversionBuffer = std::make_shared<memory::Buffer>(ctx.gpu.memory.AllocateBuffer(util::AlignUp(size, PAGE_SIZE)));
+-            conversion::quads::GenerateQuadListConversionBuffer(quadConversionBuffer->cast<u32>().data(), firstVertex + count);
++            conversion::quads::GenerateQuadListConversionBuffer(quadConversionBuffer->cast<u32>().data(), count, firstVertex);
++            quadConversionFirstVertex = firstVertex;
++            quadConversionVertexCount = count;
+             quadConversionBufferAttached = false;
+         }
+ 
+@@ -64,7 +65,7 @@
+             quadConversionBufferAttached = true;
+         }
+ 
+-        return offset;
++        return 0;
+     }
+ 
+     vk::Rect2D Maxwell3D::GetClearScissor() {
+@@ -133,7 +134,7 @@
+         return scissor;
+     }
+ 
+-     void Maxwell3D::PrepareDraw(StateUpdateBuilder &builder,
++     bool Maxwell3D::PrepareDraw(StateUpdateBuilder &builder,
+                                  engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
+                                  vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
+          Pipeline *oldPipeline{activeState.GetPipeline()};
+@@ -142,6 +143,12 @@
+                             builder,
+                             indexed, topology, estimateIndexBufferSize, firstIndex, count,
+                             srcStageMask, dstStageMask);
++         if (indexed && !activeState.HasValidIndexBuffer()) {
++             skyline::diagnostics::Event("draw_rejected_index_buffer", firstIndex, count, estimateIndexBufferSize);
++             activeState.MarkAllDirty();
++             constantBuffers.DisableQuickBind();
++             return false;
++         }
+          Pipeline *pipeline{activeState.GetPipeline()};
+          skyline::diagnostics::correlation.pipeline = reinterpret_cast<uintptr_t>(pipeline);
+          skyline::diagnostics::Event("graphics_pipeline", reinterpret_cast<uintptr_t>(pipeline));
+@@ -193,6 +200,7 @@
+                  }
+              }
+          }
++         return true;
+     }
+ 
+     void Maxwell3D::LoadConstantBuffer(span<u32> data, u32 offset) {
+@@ -302,67 +310,99 @@
+     }
+ 
+     void Maxwell3D::Draw(engine::DrawTopology topology, bool transformFeedbackEnable, bool indexed, u32 count, u32 first, u32 instanceCount, u32 vertexOffset, u32 firstInstance) {
++        if (!count || !instanceCount)
++            return;
++        if (topology == engine::DrawTopology::Quads) {
++            const auto indices{conversion::quads::GetIndexCount(count)};
++            const u32 completeCount{count - count % conversion::quads::QuadVertexCount};
++            if (!indices || indices > std::numeric_limits<u32>::max() ||
++                (!indexed && first > std::numeric_limits<u32>::max() - (completeCount - 1))) {
++                LOGW("Quad draw rejected: count {}, first {}", count, first);
++                return;
++            }
++        }
+         skyline::diagnostics::Scope diagnosticScope(ctx.executor.cycle->diagnosticId);
+         skyline::diagnostics::CountDraw();
+         skyline::diagnostics::Event("draw_attempt", indexed, count, instanceCount);
+         TRACE_EVENT("gpu", "Draw", "indexed", indexed, "count", count, "instanceCount", instanceCount);
+ 
+-        StateUpdateBuilder builder{*ctx.executor.allocator};
+-        vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
+-
+-        PrepareDraw(builder, topology, indexed, false, first, count, srcStageMask, dstStageMask);
+-
+-        if (directState.inputAssembly.NeedsQuadConversion()) {
+-            count = conversion::quads::GetIndexCount(count);
+-            first = 0;
+-
+-            if (!indexed) {
+-                // Use an index buffer to emulate quad lists with a triangle list input topology
+-                vk::DeviceSize offset{UpdateQuadConversionBuffer(count, first)};
+-                builder.SetIndexBuffer(BufferBinding{quadConversionBuffer->vkBuffer, offset}, vk::IndexType::eUint32);
+-                indexed = true;
+-            }
+-        }
+-
+-        auto stateUpdater{builder.Build()};
+-
+-        /**
+-         * @brief Struct that can be linearly allocated, holding all state for the draw to avoid a dynamic allocation with lambda captures
+-         */
+-        struct DrawParams {
+-            StateUpdater stateUpdater;
+-            u32 count;
+-            u32 first;
+-            u32 instanceCount;
+-            u32 vertexOffset;
+-            u32 firstInstance;
+-            bool indexed;
+-            bool transformFeedbackEnable;
+-        };
+-        auto *drawParams{ctx.executor.allocator->EmplaceUntracked<DrawParams>(DrawParams{stateUpdater,
+-                                                                                         count, first, instanceCount, vertexOffset, firstInstance, indexed,
+-                                                                                         ctx.gpu.traits.supportsTransformFeedback ? transformFeedbackEnable : false})};
+-
+-        vk::Rect2D scissor{GetDrawScissor()};
+-
+-
+-        constantBuffers.ResetQuickBind();
+-        ctx.executor.AddCheckpoint("Before draw");
+-        ctx.executor.AddSubpass([drawParams](vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &, GPU &gpu, vk::RenderPass, u32) {
+-            drawParams->stateUpdater.RecordAll(gpu, commandBuffer);
+-
+-            if (drawParams->transformFeedbackEnable)
+-                commandBuffer.beginTransformFeedbackEXT(0, {}, {});
+-
+-            if (drawParams->indexed)
+-                commandBuffer.drawIndexed(drawParams->count, drawParams->instanceCount, drawParams->first, static_cast<i32>(drawParams->vertexOffset), drawParams->firstInstance);
+-            else
+-                commandBuffer.draw(drawParams->count, drawParams->instanceCount, drawParams->first, drawParams->firstInstance);
+-
+-            if (drawParams->transformFeedbackEnable)
+-                commandBuffer.endTransformFeedbackEXT(0, {}, {});
+-        }, scissor, activeDescriptorSetSampledImages, {}, activeState.GetColorAttachments(), activeState.GetDepthAttachment(), !ctx.gpu.traits.quirks.relaxedRenderPassCompatibility, srcStageMask, dstStageMask);
+-        ctx.executor.AddCheckpoint("After draw");
++        for (unsigned attempt{}; ; ++attempt) {
++            try {
++                StateUpdateBuilder builder{*ctx.executor.allocator};
++                vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
++
++                if (!PrepareDraw(builder, topology, indexed, false, first, count, srcStageMask, dstStageMask))
++                    return;
++
++                if (directState.inputAssembly.NeedsQuadConversion()) {
++                    auto convertedCount{conversion::quads::GetIndexCount(count)};
++                    if (!convertedCount || convertedCount > std::numeric_limits<u32>::max()) {
++                        LOGW("Quad draw rejected: converted index count {}", convertedCount);
++                        activeState.MarkAllDirty();
++                        constantBuffers.DisableQuickBind();
++                        return;
++                    }
++
++                    if (!indexed) {
++                        // Use an index buffer to emulate quad lists with a triangle list input topology
++                        vk::DeviceSize offset{UpdateQuadConversionBuffer(count, first)};
++                        builder.SetIndexBuffer(BufferBinding{quadConversionBuffer->vkBuffer, offset}, vk::IndexType::eUint32);
++                        vertexOffset = 0; // Non-indexed draws have no guest base-vertex adjustment.
++                        indexed = true;
++                    }
++                    count = static_cast<u32>(convertedCount);
++                    first = 0;
++                }
++
++                auto stateUpdater{builder.Build()};
++
++                /**
++                 * @brief Struct that can be linearly allocated, holding all state for the draw to avoid a dynamic allocation with lambda captures
++                 */
++                struct DrawParams {
++                    StateUpdater stateUpdater;
++                    u32 count;
++                    u32 first;
++                    u32 instanceCount;
++                    u32 vertexOffset;
++                    u32 firstInstance;
++                    bool indexed;
++                    bool transformFeedbackEnable;
++                };
++                auto *drawParams{ctx.executor.allocator->EmplaceUntracked<DrawParams>(DrawParams{stateUpdater,
++                                                                                                 count, first, instanceCount, vertexOffset, firstInstance, indexed,
++                                                                                                 ctx.gpu.traits.supportsTransformFeedback ? transformFeedbackEnable : false})};
++
++                vk::Rect2D scissor{GetDrawScissor()};
++
++
++                constantBuffers.ResetQuickBind();
++                ctx.executor.AddCheckpoint("Before draw");
++                ctx.executor.AddSubpass([drawParams](vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &, GPU &gpu, vk::RenderPass, u32) {
++                    drawParams->stateUpdater.RecordAll(gpu, commandBuffer);
++
++                    if (drawParams->transformFeedbackEnable)
++                        commandBuffer.beginTransformFeedbackEXT(0, {}, {});
++
++                    if (drawParams->indexed)
++                        commandBuffer.drawIndexed(drawParams->count, drawParams->instanceCount, drawParams->first, static_cast<i32>(drawParams->vertexOffset), drawParams->firstInstance);
++                    else
++                        commandBuffer.draw(drawParams->count, drawParams->instanceCount, drawParams->first, drawParams->firstInstance);
++
++                    if (drawParams->transformFeedbackEnable)
++                        commandBuffer.endTransformFeedbackEXT(0, {}, {});
++                }, scissor, activeDescriptorSetSampledImages, {}, activeState.GetColorAttachments(), activeState.GetDepthAttachment(), !ctx.gpu.traits.quirks.relaxedRenderPassCompatibility, srcStageMask, dstStageMask);
++                ctx.executor.AddCheckpoint("After draw");
++                return;
++            } catch (const BufferReadNeedsSubmission &) {
++                if (attempt != 0)
++                    throw exception("GPU buffer read still requires submission after retry");
++                skyline::diagnostics::Event("buffer_readback_retry", ctx.executor.cycle->diagnosticId);
++                // The partial builder is gone. Flush callbacks invalidate all cached
++                // state, and the next attempt uses the new command allocator/cycle.
++                ctx.executor.Submit({}, true);
++            }
++        }
+     }
+ 
+     void Maxwell3D::DrawIndirect(engine::DrawTopology topology, bool transformFeedbackEnable, bool indexed, span<u8> indirectBuffer, u32 count, u32 stride) {
+@@ -374,61 +414,74 @@
+ 
+         TRACE_EVENT("gpu", "Indirect Draw", "buffer", reinterpret_cast<uintptr_t>(indirectBuffer.data()));
+ 
+-        StateUpdateBuilder builder{*ctx.executor.allocator};
+-        vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
+-
+-        PrepareDraw(builder, topology, indexed, true, 0, 0, srcStageMask, dstStageMask);
+-
+-        if (directState.inputAssembly.NeedsQuadConversion())
+-            throw exception("Quad conversion is not supported for indirect draws!");
+-
+-        if (indirectBufferView)
+-            indirectBufferView = indirectBufferView.GetBuffer()->TryGetView(indirectBuffer);
+-        if (!indirectBufferView)
+-            indirectBufferView = ctx.gpu.buffer.FindOrCreate(indirectBuffer, ctx.executor.tag, [this](std::shared_ptr<Buffer> buffer, ContextLock<Buffer> &&lock) {
+-                ctx.executor.AttachLockedBuffer(buffer, std::move(lock));
+-            });
+-
+-        indirectBufferView.GetBuffer()->BlockSequencedCpuBackingWrites();
+-
+-        auto stateUpdater{builder.Build()};
+-
+-        /**
+-         * @brief Struct that can be linearly allocated, holding all state for the draw to avoid a dynamic allocation with lambda captures
+-         */
+-        struct DrawParams {
+-            StateUpdater stateUpdater;
+-            BufferView indirectBuffer;
+-            u32 count;
+-            u32 stride;
+-            bool indexed;
+-            bool transformFeedbackEnable;
+-        };
+-        auto *drawParams{ctx.executor.allocator->EmplaceUntracked<DrawParams>(DrawParams{stateUpdater,
+-                                                                                         indirectBufferView,
+-                                                                                         count, stride, indexed,
+-                                                                                         ctx.gpu.traits.supportsTransformFeedback ? transformFeedbackEnable : false})};
+-
+-        auto scissor{GetDrawScissor()};
+-        constantBuffers.ResetQuickBind();
+-
+-        ctx.executor.AddCheckpoint("Before indirect draw");
+-        ctx.executor.AddSubpass([drawParams](vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &, GPU &gpu, vk::RenderPass, u32) {
+-            drawParams->stateUpdater.RecordAll(gpu, commandBuffer);
+-
+-            if (drawParams->transformFeedbackEnable)
+-                commandBuffer.beginTransformFeedbackEXT(0, {}, {});
+-
+-            auto indirectBinding{drawParams->indirectBuffer.GetBinding(gpu)};
+-            if (drawParams->indexed)
+-                commandBuffer.drawIndexedIndirect(indirectBinding.buffer, indirectBinding.offset, drawParams->count, drawParams->stride);
+-            else
+-                commandBuffer.drawIndirect(indirectBinding.buffer,  indirectBinding.offset, drawParams->count, drawParams->stride);
+-
+-            if (drawParams->transformFeedbackEnable)
+-                commandBuffer.endTransformFeedbackEXT(0, {}, {});
+-        }, scissor, activeDescriptorSetSampledImages, {}, activeState.GetColorAttachments(), activeState.GetDepthAttachment(), !ctx.gpu.traits.quirks.relaxedRenderPassCompatibility, srcStageMask, dstStageMask);
+-        ctx.executor.AddCheckpoint("After indirect draw");
++        for (unsigned attempt{}; ; ++attempt) {
++            try {
++                StateUpdateBuilder builder{*ctx.executor.allocator};
++                vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
++
++                if (!PrepareDraw(builder, topology, indexed, true, 0, 0, srcStageMask, dstStageMask))
++                    return;
++
++                if (directState.inputAssembly.NeedsQuadConversion())
++                    throw exception("Quad conversion is not supported for indirect draws!");
++
++                if (indirectBufferView)
++                    indirectBufferView = indirectBufferView.GetBuffer()->TryGetView(indirectBuffer);
++                if (!indirectBufferView)
++                    indirectBufferView = ctx.gpu.buffer.FindOrCreate(indirectBuffer, ctx.executor.tag, [this](std::shared_ptr<Buffer> buffer, ContextLock<Buffer> &&lock) {
++                        ctx.executor.AttachLockedBuffer(buffer, std::move(lock));
++                    });
++
++                indirectBufferView.GetBuffer()->BlockSequencedCpuBackingWrites();
++
++                auto stateUpdater{builder.Build()};
++
++                /**
++                 * @brief Struct that can be linearly allocated, holding all state for the draw to avoid a dynamic allocation with lambda captures
++                 */
++                struct DrawParams {
++                    StateUpdater stateUpdater;
++                    BufferView indirectBuffer;
++                    u32 count;
++                    u32 stride;
++                    bool indexed;
++                    bool transformFeedbackEnable;
++                };
++                auto *drawParams{ctx.executor.allocator->EmplaceUntracked<DrawParams>(DrawParams{stateUpdater,
++                                                                                                 indirectBufferView,
++                                                                                                 count, stride, indexed,
++                                                                                                 ctx.gpu.traits.supportsTransformFeedback ? transformFeedbackEnable : false})};
++
++                auto scissor{GetDrawScissor()};
++                constantBuffers.ResetQuickBind();
++
++                ctx.executor.AddCheckpoint("Before indirect draw");
++                ctx.executor.AddSubpass([drawParams](vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &, GPU &gpu, vk::RenderPass, u32) {
++                    drawParams->stateUpdater.RecordAll(gpu, commandBuffer);
++
++                    if (drawParams->transformFeedbackEnable)
++                        commandBuffer.beginTransformFeedbackEXT(0, {}, {});
++
++                    auto indirectBinding{drawParams->indirectBuffer.GetBinding(gpu)};
++                    if (drawParams->indexed)
++                        commandBuffer.drawIndexedIndirect(indirectBinding.buffer, indirectBinding.offset, drawParams->count, drawParams->stride);
++                    else
++                        commandBuffer.drawIndirect(indirectBinding.buffer,  indirectBinding.offset, drawParams->count, drawParams->stride);
++
++                    if (drawParams->transformFeedbackEnable)
++                        commandBuffer.endTransformFeedbackEXT(0, {}, {});
++                }, scissor, activeDescriptorSetSampledImages, {}, activeState.GetColorAttachments(), activeState.GetDepthAttachment(), !ctx.gpu.traits.quirks.relaxedRenderPassCompatibility, srcStageMask, dstStageMask);
++                ctx.executor.AddCheckpoint("After indirect draw");
++                return;
++            } catch (const BufferReadNeedsSubmission &) {
++                if (attempt != 0)
++                    throw exception("GPU buffer read still requires submission after retry");
++                skyline::diagnostics::Event("buffer_readback_retry", ctx.executor.cycle->diagnosticId);
++                // The partial builder is gone. Flush callbacks invalidate all cached
++                // state, and the next attempt uses the new command allocator/cycle.
++                ctx.executor.Submit({}, true);
++            }
++        }
+     }
+ 
+     void Maxwell3D::Query(soc::gm20b::IOVA address, engine::SemaphoreInfo::CounterType type, std::optional<u64> timestamp) {
+@@ -452,4 +505,4 @@
+     bool Maxwell3D::QueryPresentAtAddress(soc::gm20b::IOVA address) {
+         return queries.QueryPresentAtAddress(address);
+     }
+-}+}
+--- a/app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.h
++++ b/app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.h
+@@ -52,6 +52,8 @@
+         Textures textures;
+         std::shared_ptr<memory::Buffer> quadConversionBuffer{};
+         bool quadConversionBufferAttached{};
++        u32 quadConversionFirstVertex{};
++        u32 quadConversionVertexCount{};
+         BufferView indirectBufferView;
+         Queries queries;
+ 
+@@ -75,7 +77,7 @@
+         /**
+          * @brief Performs operations common across indirect and regular draws
+          */
+-        void PrepareDraw(StateUpdateBuilder &builder,
++        bool PrepareDraw(StateUpdateBuilder &builder,
+                          engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
+                          vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
+ 
+--- a/app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h
++++ b/app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h
+@@ -51,9 +51,12 @@
+         u32 usedElementCount{};
+         u32 usedFirstIndex{};
+         bool usedQuadConversion{};
++        bool valid{};
+ 
+       public:
+         IndexBufferState(dirty::Handle dirtyHandle, DirtyManager &manager, const EngineRegisters &engine);
++
++        bool IsValid() const { return valid; }
+ 
+         void Flush(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool quadConversion, bool estimateSize, u32 firstIndex, u32 elementCount);
+ 
+@@ -268,6 +271,8 @@
+ 
+         Pipeline *GetPipeline();
+ 
++        bool HasValidIndexBuffer() { return indexBuffer.Get().IsValid(); }
++
+         span<TextureView *> GetColorAttachments();
+ 
+         TextureView *GetDepthAttachment();
+--- a/app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
++++ b/app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
+@@ -74,7 +74,7 @@
+     }
+ 
+     /* Index Buffer Helpers */
+-    static vk::DeviceSize GetIndexBufferSize(engine::IndexBuffer::IndexSize indexSize, u32 elementCount) {
++    static vk::DeviceSize GetIndexBufferSize(engine::IndexBuffer::IndexSize indexSize, u64 elementCount) {
+         switch (indexSize) {
+             case engine::IndexBuffer::IndexSize::OneByte:
+                 return elementCount * 1;
+@@ -101,16 +101,20 @@
+     }
+ 
+     static BufferBinding GenerateQuadConversionIndexBuffer(InterconnectContext &ctx, engine::IndexBuffer::IndexSize indexType, BufferView &view, u32 firstIndex, u32 elementCount) {
+-        auto viewSpan{view.GetReadOnlyBackingSpan(false /* We attach above so always false */, []() {
+-            // TODO: see Read()
+-            LOGE("Dirty index buffer reads for attached buffers are unimplemented");
++        const auto offset{GetIndexBufferSize(indexType, firstIndex)};
++        const auto bytes{GetIndexBufferSize(indexType, elementCount - elementCount % conversion::quads::QuadVertexCount)};
++        if (!view || offset > view.size || bytes > view.size - offset)
++            throw exception("Quad index source outside mapped buffer: offset {}, bytes {}, available {}", offset, bytes, view.size);
++        auto viewSpan{view.GetReadOnlyBackingSpan(false /* We attach above so always false */, [&view]() {
++            if (view.GetBuffer()->IsCurrentExecutionGpuDirty())
++                throw BufferReadNeedsSubmission{};
+         })};
+ 
+         size_t indexSize{1U << static_cast<u32>(indexType)};
+         vk::DeviceSize indexBufferSize{conversion::quads::GetRequiredBufferSize(elementCount, indexSize)};
+         auto quadConversionAllocation{ctx.gpu.megaBufferAllocator.Allocate(ctx.executor.cycle, indexBufferSize)};
+ 
+-        conversion::quads::GenerateIndexedQuadConversionBuffer(quadConversionAllocation.region.data(), viewSpan.subspan(GetIndexBufferSize(indexType, firstIndex)).data(), elementCount, ConvertIndexType(indexType));
++        conversion::quads::GenerateIndexedQuadConversionBuffer(quadConversionAllocation.region.data(), viewSpan.subspan(offset, bytes).data(), elementCount, ConvertIndexType(indexType));
+ 
+         return {quadConversionAllocation.buffer, quadConversionAllocation.offset, indexBufferSize};
+     }
+@@ -123,21 +127,28 @@
+     IndexBufferState::IndexBufferState(dirty::Handle dirtyHandle, DirtyManager &manager, const EngineRegisters &engine) : engine{manager, dirtyHandle, engine} {}
+ 
+     void IndexBufferState::Flush(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool quadConversion, bool estimateSize, u32 firstIndex, u32 elementCount) {
++        valid = false;
++        megaBufferBinding = {};
+         didEstimateSize = estimateSize;
+         usedElementCount = elementCount;
+         usedFirstIndex = firstIndex;
+         usedQuadConversion = quadConversion;
+ 
+-        size_t size{[&] () {
+-            if (estimateSize)
+-                return engine->indexBuffer.address - engine->indexBuffer.limit + 1;
++        u64 size{[&] () -> u64 {
++            if (estimateSize) {
++                if (engine->indexBuffer.limit < engine->indexBuffer.address)
++                    return 0;
++                auto distance{engine->indexBuffer.limit - engine->indexBuffer.address};
++                return distance == std::numeric_limits<u64>::max() ? 0 : distance + 1;
++            }
+             else
+-                return GetIndexBufferSize(engine->indexBuffer.indexSize, firstIndex + elementCount);
++                return GetIndexBufferSize(engine->indexBuffer.indexSize, static_cast<u64>(firstIndex) + elementCount);
+         }()};
+ 
+         view.Update(ctx, engine->indexBuffer.address, size, !estimateSize);
+-        if (!*view) {
+-            LOGW("Unmapped index buffer: 0x{:X}", engine->indexBuffer.address);
++        if (!size || !*view || view->size < size || (quadConversion && !conversion::quads::GetIndexCount(elementCount))) {
++            LOGW("Invalid index buffer at 0x{:X}: requested {}, mapped {}", engine->indexBuffer.address, size, view->size);
++            skyline::diagnostics::Event("index_buffer_invalid", engine->indexBuffer.address, size, view->size);
+             return;
+         }
+ 
+@@ -155,13 +166,16 @@
+             builder.SetIndexBuffer(megaBufferBinding, indexType);
+         else
+             builder.SetIndexBuffer(*view, indexType);
++        valid = true;
+     }
+ 
+     bool IndexBufferState::Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool quadConversion, bool estimateSize, u32 firstIndex, u32 elementCount) {
++        if (!valid || !*view)
++            return true;
+         if (*view)
+             view->GetBuffer()->PopulateReadBarrier(vk::PipelineStageFlagBits::eVertexInput, srcStageMask, dstStageMask);
+ 
+-        if (didEstimateSize != estimateSize || (elementCount + firstIndex > usedElementCount + usedFirstIndex) || quadConversion != usedQuadConversion)
++        if (didEstimateSize != estimateSize || (static_cast<u64>(elementCount) + firstIndex > static_cast<u64>(usedElementCount) + usedFirstIndex) || quadConversion != usedQuadConversion)
+             return true;
+ 
+         // TODO: optimise this to use buffer sequencing to avoid needing to regenerate the quad buffer every time. We can't use as it is rn though because sequences aren't globally unique and may conflict after buffer recreation
+@@ -184,6 +198,7 @@
+     }
+ 
+     void IndexBufferState::PurgeCaches() {
++        valid = false;
+         view.PurgeCaches();
+         megaBufferBinding = {};
+     }
+@@ -257,9 +272,9 @@
+         vkViewport.height = viewport.scaleY * 2.0f; // Counteract the division of the height (p_y) by 2 for the host scale
+ 
+         using CoordinateSwizzle = engine::Viewport::CoordinateSwizzle;
+-        if (viewport.swizzle.x != CoordinateSwizzle::PosX &&
+-            viewport.swizzle.y != CoordinateSwizzle::PosY && viewport.swizzle.y != CoordinateSwizzle::NegY &&
+-            viewport.swizzle.z != CoordinateSwizzle::PosZ &&
++        if (viewport.swizzle.x != CoordinateSwizzle::PosX ||
++            (viewport.swizzle.y != CoordinateSwizzle::PosY && viewport.swizzle.y != CoordinateSwizzle::NegY) ||
++            viewport.swizzle.z != CoordinateSwizzle::PosZ ||
+             viewport.swizzle.w != CoordinateSwizzle::PosW)
+             throw exception("Unsupported viewport swizzle: {}x{}x{}x{}", engine::Viewport::ToString(viewport.swizzle.x),
+                             engine::Viewport::ToString(viewport.swizzle.y),

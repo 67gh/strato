@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
+#include <common/diagnostic_session.h>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <future>
 #include <range/v3/view.hpp>
 #include <adrenotools/driver.h>
 #include <common/settings.h>
@@ -32,6 +35,7 @@ namespace skyline::gpu::interconnect {
     CommandRecordThread::Slot::ScopedBegin::ScopedBegin(CommandRecordThread::Slot &slot) : slot{slot} {}
 
     CommandRecordThread::Slot::ScopedBegin::~ScopedBegin() {
+        // Begin stores any exception and wakes WaitReady; never throw from a destructor.
         slot.Begin();
     }
 
@@ -86,20 +90,32 @@ namespace skyline::gpu::interconnect {
 
     void CommandRecordThread::Slot::WaitReady() {
         std::unique_lock lock{beginLock};
-        beginCondition.wait(lock, [this] { return ready; });
+        beginCondition.wait(lock, [this] { return ready || retired || beginFailure; });
+        if (beginFailure)
+            std::rethrow_exception(beginFailure);
+        if (retired)
+            throw exception("Command slot retired before recording");
         cycle->AttachObject(std::make_shared<ScopedBegin>(*this));
     }
 
     void CommandRecordThread::Slot::Begin() {
         std::unique_lock lock{beginLock};
-        commandBuffer.begin(vk::CommandBufferBeginInfo{
-            .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
-        });
-        ready = true;
+        if (retired)
+            return;
+        try {
+            commandBuffer.begin(vk::CommandBufferBeginInfo{
+                .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+            });
+            ready = true;
+        } catch (...) {
+            beginFailure = std::current_exception();
+        }
         beginCondition.notify_all();
     }
 
     void CommandRecordThread::ProcessSlot(Slot *slot) {
+        skyline::diagnostics::Scope diagnosticScope(slot->cycle->diagnosticId);
+        skyline::diagnostics::Event("record_batch_begin", slot->cycle->diagnosticId);
         TRACE_EVENT_FMT("gpu", "ProcessSlot: {}, execution: {}", fmt::ptr(slot), u64{slot->executionTag});
         auto &gpu{*state.gpu};
 
@@ -172,32 +188,48 @@ namespace skyline::gpu::interconnect {
     }
 
     void CommandRecordThread::Run() {
-        auto &gpu{*state.gpu};
-
-        RENDERDOC_API_1_4_2 *renderDocApi{};
-        if (void *mod{dlopen("libVkLayer_GLES_RenderDoc.so", RTLD_NOW | RTLD_NOLOAD)}) {
-            auto *pfnGetApi{reinterpret_cast<pRENDERDOC_GetAPI>(dlsym(mod, "RENDERDOC_GetAPI"))};
-            if (int ret{pfnGetApi(eRENDERDOC_API_Version_1_4_2, (void **)&renderDocApi)}; ret != 1)
-                LOGW("Failed to intialise RenderDoc API: {}", ret);
-        }
-
-        outgoing.Push(&slots.emplace_back(gpu));
-
-        if (int result{pthread_setname_np(pthread_self(), "Sky-CmdRecord")})
-            LOGW("Failed to set the thread name: {}", strerror(result));
-        AsyncLogger::UpdateTag();
-
         try {
+            auto &gpu{*state.gpu};
+
+            RENDERDOC_API_1_4_2 *renderDocApi{};
+            if (void *mod{dlopen("libVkLayer_GLES_RenderDoc.so", RTLD_NOW | RTLD_NOLOAD)}) {
+                auto *pfnGetApi{reinterpret_cast<pRENDERDOC_GetAPI>(dlsym(mod, "RENDERDOC_GetAPI"))};
+                if (int ret{pfnGetApi ? pfnGetApi(eRENDERDOC_API_Version_1_4_2, (void **)&renderDocApi) : 0}; ret != 1)
+                    LOGW("Failed to intialise RenderDoc API: {}", ret);
+            }
+
+            skyline::diagnostics::Feature("renderdoc", renderDocApi ? "available; captures one executor command batch on request" : "unavailable; launch with RenderDoc injected; no capture produced");
+            if (renderDocApi) {
+                auto capturePath = skyline::diagnostics::OutputPath("frame", {});
+                if (!capturePath.empty()) renderDocApi->SetCaptureFilePathTemplate(capturePath.c_str());
+            }
+            outgoing.Push(&slots.emplace_back(gpu));
+
+            if (int result{pthread_setname_np(pthread_self(), "Sky-CmdRecord")})
+                LOGW("Failed to set the thread name: {}", strerror(result));
+            AsyncLogger::UpdateTag();
+
             incoming.Process([this, renderDocApi, &gpu](Slot *slot) {
                 idle = false;
                 VkInstance instance{*gpu.vkInstance};
-                if (renderDocApi && slot->capture)
+                slot->capture = skyline::diagnostics::ConsumeFrameCapture() || slot->capture;
+                bool ownCapture = renderDocApi && slot->capture && !renderDocApi->IsFrameCapturing();
+                if (slot->capture && !renderDocApi)
+                    skyline::diagnostics::Event("renderdoc_unavailable");
+                if (ownCapture)
                     renderDocApi->StartFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(instance), nullptr);
 
-                ProcessSlot(slot);
-
-                if (renderDocApi && slot->capture)
-                    renderDocApi->EndFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(instance), nullptr);
+                ownCapture = ownCapture && renderDocApi->IsFrameCapturing();
+                try { ProcessSlot(slot); } catch (...) {
+                    if (ownCapture) renderDocApi->DiscardFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(instance), nullptr);
+                    throw;
+                }
+                if (ownCapture) {
+                    bool captured = renderDocApi->EndFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(instance), nullptr) == 1;
+                    skyline::diagnostics::Feature("renderdoc", captured ? "command_batch_captured; inspect frame*.rdc" : "capture_failed");
+                    skyline::diagnostics::Event(captured ? "renderdoc_saved" : "renderdoc_failed", slot->cycle->diagnosticId);
+                    skyline::diagnostics::RequestCapture();
+                }
                 slot->capture = false;
 
                 if (slot->didWait && (slots.size() + 1) < (1U << *state.settings->executorSlotCountScale)) {
@@ -209,18 +241,43 @@ namespace skyline::gpu::interconnect {
                 outgoing.Push(slot);
                 idle = true;
             }, [] {});
-        } catch (const signal::SignalException &e) {
-            LOGE("{}\nStack Trace:{}", e.what(), state.loader->GetStackTrace(e.frames));
-            if (state.process)
-                state.process->Kill(false);
-            else
-                std::rethrow_exception(std::current_exception());
-        } catch (const std::exception &e) {
-            LOGE("{}", e.what());
-            if (state.process)
-                state.process->Kill(false);
-            else
-                std::rethrow_exception(std::current_exception());
+        } catch (...) {
+            if (!stopping.load()) {
+                try {
+                    try { throw; }
+                    catch (const signal::SignalException &e) {
+                        LOGE("{}\nStack Trace:{}", e.what(), state.loader->GetStackTrace(e.frames));
+                    }
+                    catch (const std::exception &e) { LOGE("GPU command recorder failed: {}", e.what()); }
+                    catch (...) { LOGE("GPU command recorder failed with an unknown exception"); }
+                    if (state.process) state.process->Kill(false);
+                } catch (...) {}
+            }
+        }
+        // Release a producer waiting for a slot even when initialization/recording failed.
+        outgoing.Close();
+        incoming.Close();
+        idle = true;
+    }
+
+    CommandRecordThread::~CommandRecordThread() { Stop(); }
+
+    void CommandRecordThread::Stop() {
+        stopping = true;
+        // A recorder may be blocked publishing an outgoing slot while holding the
+        // incoming consumer lock. Wake it before closing the incoming queue.
+        outgoing.Close();
+        incoming.Close();
+        if (thread.joinable()) thread.join();
+        for (auto &entry : slots) {
+            {
+                std::scoped_lock lock{entry.beginLock};
+                entry.retired = true;
+                entry.beginCondition.notify_all();
+            }
+            entry.cycle->Cancel(); // No-op for submitted work; never release GPU-owned objects.
+            try { entry.cycle->Wait(true); }
+            catch (const std::exception &e) { LOGE("GPU slot drain failed: {}", e.what()); }
         }
     }
 
@@ -242,52 +299,68 @@ namespace skyline::gpu::interconnect {
     }
 
     void ExecutionWaiterThread::Run() {
-        // Enable turbo clocks to begin with if requested
-        if (*state.settings->forceMaxGpuClocks)
-            adrenotools_set_turbo(true);
-
-        while (true) {
-            std::pair<std::shared_ptr<FenceCycle>, std::function<void()>> item{};
-            {
-                std::unique_lock lock{mutex};
-                if (pendingSignalQueue.empty()) {
-                    idle = true;
-
-                    // Don't force turbo clocks when the GPU is idle
-                    if (*state.settings->forceMaxGpuClocks)
+        try {
+            while (true) {
+                std::pair<std::shared_ptr<FenceCycle>, std::function<void()>> item;
+                {
+                    std::unique_lock lock{mutex};
+                    idle = pendingSignalQueue.empty();
+                    if (idle && *state.settings->forceMaxGpuClocks)
                         adrenotools_set_turbo(false);
-
-                    condition.wait(lock, [this] { return !pendingSignalQueue.empty(); });
-
-                    // Once we have work to do, force turbo clocks is enabled
-                    if (*state.settings->forceMaxGpuClocks)
-                        adrenotools_set_turbo(true);
-
+                    condition.wait(lock, [this] { return stopping || !pendingSignalQueue.empty(); });
+                    if (pendingSignalQueue.empty()) break; // Stop drains already accepted work.
+                    item = std::move(pendingSignalQueue.front());
+                    pendingSignalQueue.pop();
                     idle = false;
                 }
-                item = std::move(pendingSignalQueue.front());
-                pendingSignalQueue.pop();
+                if (*state.settings->forceMaxGpuClocks)
+                    adrenotools_set_turbo(true);
+                {
+                    TRACE_EVENT("gpu", "GPU");
+                    if (item.first) item.first->Wait();
+                }
+                if (item.second) item.second();
             }
+        } catch (...) {
+            auto error{std::current_exception()};
+            std::queue<std::pair<std::shared_ptr<FenceCycle>, std::function<void()>>> abandoned;
             {
-                TRACE_EVENT("gpu", "GPU");
-                if (item.first)
-                    item.first->Wait();
+                std::scoped_lock lock{mutex};
+                failure = error;
+                stopping = true;
+                // Discard callbacks; a completion promise becomes broken rather
+                // than telling the guest that failed GPU work succeeded.
+                abandoned.swap(pendingSignalQueue);
             }
-
-            if (item.second)
-                item.second();
+            condition.notify_all();
+            try {
+                try { std::rethrow_exception(error); }
+                catch (const std::exception &e) { LOGE("GPU completion worker failed: {}", e.what()); }
+                catch (...) { LOGE("GPU completion worker failed with an unknown exception"); }
+                if (state.process) state.process->Kill(false);
+            } catch (...) {}
         }
+        idle = true;
+        if (*state.settings->forceMaxGpuClocks) adrenotools_set_turbo(false);
     }
 
     ExecutionWaiterThread::ExecutionWaiterThread(const DeviceState &state) : state{state}, thread{&ExecutionWaiterThread::Run, this} {}
 
-    bool ExecutionWaiterThread::IsIdle() const {
-        return idle;
+    ExecutionWaiterThread::~ExecutionWaiterThread() { Stop(); }
+
+    void ExecutionWaiterThread::Stop() {
+        { std::scoped_lock lock{mutex}; stopping = true; }
+        condition.notify_all();
+        if (thread.joinable()) thread.join();
     }
+
+    bool ExecutionWaiterThread::IsIdle() const { return idle; }
 
     void ExecutionWaiterThread::Queue(std::shared_ptr<FenceCycle> cycle, std::function<void()> &&callback) {
         {
             std::unique_lock lock{mutex};
+            if (failure) std::rethrow_exception(failure);
+            if (stopping) throw exception("GPU completion worker has stopped");
             pendingSignalQueue.push({std::move(cycle), std::move(callback)});
         }
         condition.notify_all();
@@ -295,13 +368,13 @@ namespace skyline::gpu::interconnect {
 
     void CheckpointPollerThread::Run() {
         u32 prevCheckpoint{};
-        for (size_t iteration{}; true; iteration++) {
+        for (size_t iteration{}; !stopping.load(); iteration++) {
             u32 curCheckpoint{state.gpu->debugTracingBuffer.as<u32>()};
 
             if ((iteration % 1024) == 0)
                 LOGI("Current Checkpoint: {}", curCheckpoint);
 
-            while (prevCheckpoint != curCheckpoint) {
+            while (prevCheckpoint != curCheckpoint && !stopping.load()) {
                 // Make sure to report an event for every checkpoint inbetween the previous and current values, to ensure the perfetto trace is consistent
                 prevCheckpoint++;
                 TRACE_EVENT_INSTANT("gpu", "Checkpoint", "id", prevCheckpoint, [&](perfetto::EventContext ctx) {
@@ -316,6 +389,11 @@ namespace skyline::gpu::interconnect {
 
     CheckpointPollerThread::CheckpointPollerThread(const DeviceState &state) : state{state}, thread{&CheckpointPollerThread::Run, this} {}
 
+    CheckpointPollerThread::~CheckpointPollerThread() {
+        stopping = true;
+        if (thread.joinable()) thread.join();
+    }
+
     CommandExecutor::CommandExecutor(const DeviceState &state)
         : state{state},
           gpu{*state.gpu},
@@ -327,7 +405,10 @@ namespace skyline::gpu::interconnect {
     }
 
     CommandExecutor::~CommandExecutor() {
-        cycle->Cancel();
+        // Retire record slots first, while the completion worker and GPU still exist.
+        // Stop also cancels the current, never-submitted slot and drains submitted ones.
+        recordThread.Stop();
+        waiterThread.Stop();
     }
 
     void CommandExecutor::RotateRecordSlot() {
@@ -368,7 +449,9 @@ namespace skyline::gpu::interconnect {
             !ranges::all_of(outputAttachmentViews, [this] (auto view) { return !view || view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget); }) ||
             !ranges::all_of(sampledImages, [this] (auto view) { return view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled); })};
 
-        bool gotoNext{};
+        // Attachment changes always split passes in this backend, including when
+        // noSubpassCreation is false. Keep this conservative driver policy explicit.
+        (void)noSubpassCreation;
         if (splitRenderPass) {
             // We need to create a render pass if one doesn't already exist or the current one isn't compatible
             if (renderPass != nullptr) {
@@ -380,11 +463,6 @@ namespace skyline::gpu::interconnect {
             renderPassIt = std::prev(slot->nodes.end());
             addSubpass();
             subpassCount = 1;
-        } else if (!attachmentsMatch) {
-            // The last subpass had different attachments, so we need to create a new one
-            addSubpass();
-            subpassCount++;
-            gotoNext = true;
         }
 
         renderPass->UpdateDependency(srcStageMask, dstStageMask);
@@ -396,7 +474,7 @@ namespace skyline::gpu::interconnect {
         for (auto view : sampledImages)
             view->texture->UpdateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled);
 
-        return gotoNext;
+        return false;
     }
 
     void CommandExecutor::FinishRenderPass() {
@@ -708,18 +786,14 @@ namespace skyline::gpu::interconnect {
         if (wait) {
             usageTracker.dirtyIntervals.Clear();
 
-            std::condition_variable cv;
-            std::mutex mutex;
-            bool gpuDone{};
+            std::future<void> completion;
+            {
+                auto signal{std::make_shared<std::promise<void>>()};
+                completion = signal->get_future();
+                waiterThread.Queue(nullptr, [signal] { signal->set_value(); });
+            } // Only the queued callback owns the promise now.
+            completion.get(); // A discarded callback wakes us with broken_promise.
 
-            waiterThread.Queue(nullptr, [&cv, &mutex, &gpuDone] {
-                std::scoped_lock lock{mutex};
-                gpuDone = true;
-                cv.notify_one();
-            });
-
-            std::unique_lock lock{mutex};
-            cv.wait(lock, [&gpuDone] { return gpuDone; });
         }
     }
 

@@ -52,6 +52,8 @@ namespace skyline::gpu::interconnect::maxwell3d {
         Textures textures;
         std::shared_ptr<memory::Buffer> quadConversionBuffer{};
         bool quadConversionBufferAttached{};
+        u32 quadConversionFirstVertex{};
+        u32 quadConversionVertexCount{};
         BufferView indirectBufferView;
         Queries queries;
 
@@ -75,7 +77,7 @@ namespace skyline::gpu::interconnect::maxwell3d {
         /**
          * @brief Performs operations common across indirect and regular draws
          */
-        void PrepareDraw(StateUpdateBuilder &builder,
+        bool PrepareDraw(StateUpdateBuilder &builder,
                          engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
                          vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
 

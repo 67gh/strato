@@ -1,0 +1,14 @@
+[
+  {
+    "test": "test_quads",
+    "exit": 0
+  },
+  {
+    "test": "test_gpu_workers",
+    "exit": 0
+  },
+  {
+    "test": "test_index_state",
+    "exit": 0
+  }
+]

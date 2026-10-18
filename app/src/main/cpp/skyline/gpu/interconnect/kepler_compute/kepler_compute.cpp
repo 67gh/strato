@@ -29,65 +29,87 @@ namespace skyline::gpu::interconnect::kepler_compute {
     }
 
     void KeplerCompute::Dispatch(const QMD &qmd) {
-        if (ctx.gpu.traits.quirks.brokenComputeShaders)
+        skyline::diagnostics::Scope diagnosticScope(ctx.executor.cycle->diagnosticId);
+        skyline::diagnostics::CountDraw(true);
+        skyline::diagnostics::Event("dispatch_attempt", qmd.ctaRasterWidth, qmd.ctaRasterHeight, qmd.ctaRasterDepth);
+        if (ctx.gpu.traits.quirks.brokenComputeShaders) {
+            skyline::diagnostics::Unsupported("compute", 0, "disabled by brokenComputeShaders driver quirk");
             return;
+        }
 
         TRACE_EVENT("gpu", "KeplerCompute::Dispatch");
 
-        StateUpdateBuilder builder{*ctx.executor.allocator};
+        for (unsigned attempt{}; ; ++attempt) {
+            try {
+                StateUpdateBuilder builder{*ctx.executor.allocator};
 
-        constantBuffers.Update(ctx, qmd);
-        samplers.Update(ctx, qmd.samplerIndex == soc::gm20b::engine::kepler_compute::QMD::SamplerIndex::ViaHeaderIndex);
-        auto *pipeline{pipelineState.Update(ctx, builder, textures, constantBuffers.boundConstantBuffers, qmd)};
+                constantBuffers.Update(ctx, qmd);
+                samplers.Update(ctx, qmd.samplerIndex == soc::gm20b::engine::kepler_compute::QMD::SamplerIndex::ViaHeaderIndex);
+                auto *pipeline{pipelineState.Update(ctx, builder, textures, constantBuffers.boundConstantBuffers, qmd)};
 
-        // A shader that reads storage images or texel buffers that were never bound hangs the GPU (VK_ERROR_DEVICE_LOST on Adreno), so the dispatch is dropped
-        // The effect it would have had is missing from the frame, which is better than the whole emulation dying
-        if (pipeline->HasUnsupportedDescriptors()) {
-            if (pipeline->ShouldReportSkip()) {
-                LOGW("Skipping compute dispatches of pipeline {}: its shader uses storage images or texel buffers which aren't supported", fmt::ptr(pipeline));
-                diagnostics::Record("compute", fmt::format("skipping dispatches of pipeline {} (storage images/texel buffers are unsupported)", fmt::ptr(pipeline)));
+                // A shader that reads storage images or texel buffers that were never bound hangs the GPU (VK_ERROR_DEVICE_LOST on Adreno), so the dispatch is dropped
+                // The effect it would have had is missing from the frame, which is better than the whole emulation dying
+                skyline::diagnostics::correlation.pipeline = reinterpret_cast<uintptr_t>(pipeline);
+                skyline::diagnostics::Event("compute_pipeline", reinterpret_cast<uintptr_t>(pipeline));
+                if (pipeline->HasUnsupportedDescriptors()) {
+                    skyline::diagnostics::Unsupported("compute", reinterpret_cast<uintptr_t>(pipeline), "unwritten descriptors; dispatch skipped");
+                    if (pipeline->ShouldReportSkip()) {
+                        LOGW("Skipping compute dispatches of pipeline {}: its shader uses storage images or texel buffers which aren't supported", fmt::ptr(pipeline));
+                        diagnostics::Record("compute", fmt::format("skipping dispatches of pipeline {} (storage images/texel buffers are unsupported)", fmt::ptr(pipeline)));
+                    }
+                    return;
+                }
+
+                vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
+                auto *descUpdateInfo{pipeline->SyncDescriptors(ctx, constantBuffers.boundConstantBuffers, samplers, textures, srcStageMask, dstStageMask)};
+                builder.SetPipeline(*pipeline->compiledPipeline.pipeline, vk::PipelineBindPoint::eCompute);
+
+                if (descUpdateInfo) {
+                    if (ctx.gpu.traits.supportsPushDescriptors) {
+                        builder.SetDescriptorSetWithPush(descUpdateInfo);
+                    } else {
+                        auto set{std::make_shared<DescriptorAllocator::ActiveDescriptorSet>(ctx.gpu.descriptor.AllocateSet(descUpdateInfo->descriptorSetLayout))};
+
+                        builder.SetDescriptorSetWithUpdate(descUpdateInfo, set.get(), nullptr);
+                        ctx.executor.AttachDependency(set);
+                    }
+                }
+
+                auto stateUpdater{builder.Build()};
+
+                /**
+                 * @brief Struct that can be linearly allocated, holding all state for the draw to avoid a dynamic allocation with lambda captures
+                 */
+                struct DrawParams {
+                    StateUpdater stateUpdater;
+                    std::array<u32, 3> dimensions;
+                    vk::PipelineStageFlags srcStageMask, dstStageMask;
+                };
+                auto *drawParams{ctx.executor.allocator->EmplaceUntracked<DrawParams>(DrawParams{stateUpdater, {qmd.ctaRasterWidth, qmd.ctaRasterHeight, qmd.ctaRasterDepth}, srcStageMask, dstStageMask})};
+
+
+                ctx.executor.AddCheckpoint("Before dispatch");
+                ctx.executor.AddOutsideRpCommand([drawParams](vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &, GPU &gpu) {
+                    drawParams->stateUpdater.RecordAll(gpu, commandBuffer);
+
+                    if (drawParams->srcStageMask && drawParams->dstStageMask)
+                        commandBuffer.pipelineBarrier(drawParams->srcStageMask, drawParams->dstStageMask, {}, {vk::MemoryBarrier{
+                            .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
+                            .dstAccessMask = vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
+                        }}, {}, {});
+
+                    commandBuffer.dispatch(drawParams->dimensions[0], drawParams->dimensions[1], drawParams->dimensions[2]);
+                });
+                ctx.executor.AddCheckpoint("After dispatch");
+                return;
+            } catch (const BufferReadNeedsSubmission &) {
+                if (attempt != 0)
+                    throw exception("GPU buffer read still requires submission after retry");
+                skyline::diagnostics::Event("buffer_readback_retry", ctx.executor.cycle->diagnosticId);
+                // The partial builder is gone. Flush callbacks invalidate all cached
+                // state, and the next attempt uses the new command allocator/cycle.
+                ctx.executor.Submit({}, true);
             }
-            return;
         }
-
-        vk::PipelineStageFlags srcStageMask{}, dstStageMask{};
-        auto *descUpdateInfo{pipeline->SyncDescriptors(ctx, constantBuffers.boundConstantBuffers, samplers, textures, srcStageMask, dstStageMask)};
-        builder.SetPipeline(*pipeline->compiledPipeline.pipeline, vk::PipelineBindPoint::eCompute);
-
-        if (ctx.gpu.traits.supportsPushDescriptors) {
-            builder.SetDescriptorSetWithPush(descUpdateInfo);
-        } else {
-            auto set{std::make_shared<DescriptorAllocator::ActiveDescriptorSet>(ctx.gpu.descriptor.AllocateSet(descUpdateInfo->descriptorSetLayout))};
-
-            builder.SetDescriptorSetWithUpdate(descUpdateInfo, set.get(), nullptr);
-            ctx.executor.AttachDependency(set);
-        }
-
-        auto stateUpdater{builder.Build()};
-
-        /**
-         * @brief Struct that can be linearly allocated, holding all state for the draw to avoid a dynamic allocation with lambda captures
-         */
-        struct DrawParams {
-            StateUpdater stateUpdater;
-            std::array<u32, 3> dimensions;
-            vk::PipelineStageFlags srcStageMask, dstStageMask;
-        };
-        auto *drawParams{ctx.executor.allocator->EmplaceUntracked<DrawParams>(DrawParams{stateUpdater, {qmd.ctaRasterWidth, qmd.ctaRasterHeight, qmd.ctaRasterDepth}, srcStageMask, dstStageMask})};
-
-
-        ctx.executor.AddCheckpoint("Before dispatch");
-        ctx.executor.AddOutsideRpCommand([drawParams](vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &, GPU &gpu) {
-            drawParams->stateUpdater.RecordAll(gpu, commandBuffer);
-
-            if (drawParams->srcStageMask && drawParams->dstStageMask)
-                commandBuffer.pipelineBarrier(drawParams->srcStageMask, drawParams->dstStageMask, {}, {vk::MemoryBarrier{
-                    .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
-                    .dstAccessMask = vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite
-                }}, {}, {});
-
-            commandBuffer.dispatch(drawParams->dimensions[0], drawParams->dimensions[1], drawParams->dimensions[2]);
-        });
-        ctx.executor.AddCheckpoint("After dispatch");
     }
 }

@@ -51,9 +51,12 @@ namespace skyline::gpu::interconnect::maxwell3d {
         u32 usedElementCount{};
         u32 usedFirstIndex{};
         bool usedQuadConversion{};
+        bool valid{};
 
       public:
         IndexBufferState(dirty::Handle dirtyHandle, DirtyManager &manager, const EngineRegisters &engine);
+
+        bool IsValid() const { return valid; }
 
         void Flush(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool quadConversion, bool estimateSize, u32 firstIndex, u32 elementCount);
 
@@ -267,6 +270,8 @@ namespace skyline::gpu::interconnect::maxwell3d {
                     vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
 
         Pipeline *GetPipeline();
+
+        bool HasValidIndexBuffer() { return indexBuffer.Get().IsValid(); }
 
         span<TextureView *> GetColorAttachments();
 

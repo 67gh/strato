@@ -1,0 +1,1757 @@
+--- avant/audio.cpp
++++ apres/audio.cpp
+@@ -10,19 +10,19 @@
+ 
+ namespace AudioCore::Log {
+     void Debug(const std::string &message) {
+-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Debug, std::move(const_cast<std::string &>(message)));
++        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Debug, std::string{message});
+     }
+ 
+     void Info(const std::string &message) {
+-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Info, std::move(const_cast<std::string &>(message)));
++        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Info, std::string{message});
+     }
+ 
+     void Warn(const std::string &message) {
+-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Warning, std::move(const_cast<std::string &>(message)));
++        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Warning, std::string{message});
+     }
+ 
+     void Error(const std::string &message) {
+-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Error, std::move(const_cast<std::string &>(message)));
++        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Error, std::string{message});
+     }
+ }
+ 
+--- avant/common/circular_queue.h
++++ apres/common/circular_queue.h
+@@ -20,6 +20,7 @@
+         const size_t capacity;
+         Type *storage; //!< Aligned uninitialized storage; only queued items are alive
+         std::atomic<Type *> start; //!< Sentinel before the oldest item
++        std::atomic<bool> closed{};
+         std::atomic<Type *> end; //!< Newest item
+         SpinLock consumptionMutex;
+         std::condition_variable_any consumeCondition;
+@@ -54,6 +55,13 @@
+         /**
+          * @return Whether the queue is empty
+          */
++        // Call before joining consumers; existing items are drained by Process.
++        void Close() {
++            { std::scoped_lock lock{productionMutex, consumptionMutex}; closed = true; }
++            produceCondition.notify_all();
++            consumeCondition.notify_all();
++        }
++
+         bool Empty() {
+             return start == end;
+         }
+@@ -64,7 +72,7 @@
+          * @param preWait An optional function that's called prior to waiting on more items to be queued
+          */
+         template<typename F1, typename F2>
+-        [[noreturn]] void Process(F1 function, F2 preWait) {
++        void Process(F1 function, F2 preWait) {
+             TRACE_EVENT_BEGIN("containers", "CircularQueue::Process");
+ 
+             while (true) {
+@@ -72,7 +80,9 @@
+                     std::unique_lock productionLock{productionMutex};
+                     TRACE_EVENT_END("containers");
+                     preWait();
+-                    produceCondition.wait(productionLock, [this]() { return start != end; });
++                    produceCondition.wait(productionLock, [this]() { return closed || start != end; });
++                    if (closed && start == end)
++                        return;
+                     TRACE_EVENT_BEGIN("containers", "CircularQueue::Process");
+                 }
+ 
+@@ -85,26 +95,29 @@
+                     start = next;
+                 }
+ 
+-                consumeCondition.notify_one();
++                consumeCondition.notify_all();
+             }
+         }
+ 
+         Type Pop() {
+-            {
+-                std::unique_lock productionLock{productionMutex};
+-                produceCondition.wait(productionLock, [this]() { return start != end; });
+-            }
+-
+-            std::scoped_lock comsumptionLock{consumptionMutex};
+-            auto next{start + 1};
+-            next = (next == storage + capacity) ? storage : next;
+-            Type item{std::move(*next)};
+-            std::destroy_at(next);
+-            start = next;
+-
+-            consumeCondition.notify_one();
+-
+-            return item;
++            for (;;) {
++                {
++                    std::unique_lock productionLock{productionMutex};
++                    produceCondition.wait(productionLock, [this]() { return closed || start != end; });
++                    if (closed && start == end)
++                        throw std::runtime_error("Pop on closed circular queue");
++                }
++                std::scoped_lock consumptionLock{consumptionMutex};
++                if (start == end)
++                    continue; // Another consumer won; never move an unconstructed slot.
++                auto next{start + 1};
++                next = (next == storage + capacity) ? storage : next;
++                Type item{std::move(*next)};
++                std::destroy_at(next);
++                start = next;
++                consumeCondition.notify_all();
++                return item;
++            }
+         }
+ 
+         void Push(const Type &item) {
+@@ -115,12 +128,14 @@
+                 if (waitNext) {
+                     std::unique_lock consumeLock{consumptionMutex};
+ 
+-                    consumeCondition.wait(consumeLock, [=, this]() { return waitNext != start || waitEnd != end; });
++                    consumeCondition.wait(consumeLock, [=, this]() { return closed || waitNext != start || waitEnd != end; });
+                     waitNext = nullptr;
+                     waitEnd = nullptr;
+                 }
+ 
+                 std::scoped_lock lock{productionMutex};
++                if (closed)
++                    throw std::runtime_error("Push on closed circular queue");
+                 auto next{end + 1};
+                 next = (next == storage + capacity) ? storage : next;
+                 if (next == start) {
+@@ -143,12 +158,14 @@
+                 if (waitNext) {
+                     std::unique_lock consumeLock{consumptionMutex};
+ 
+-                    consumeCondition.wait(consumeLock, [=, this]() { return waitNext != start || waitEnd != end; });
++                    consumeCondition.wait(consumeLock, [=, this]() { return closed || waitNext != start || waitEnd != end; });
+                     waitNext = nullptr;
+                     waitEnd = nullptr;
+                 }
+ 
+                 std::scoped_lock lock{productionMutex};
++                if (closed)
++                    throw std::runtime_error("Push on closed circular queue");
+                 auto next{end + 1};
+                 next = (next == storage + capacity) ? storage : next;
+                 if (next == start) {
+@@ -172,12 +189,14 @@
+                 if (waitNext) {
+                     std::unique_lock consumeLock{consumptionMutex};
+ 
+-                    consumeCondition.wait(consumeLock, [=, this]() { return waitNext != start || waitEnd != end; });
++                    consumeCondition.wait(consumeLock, [=, this]() { return closed || waitNext != start || waitEnd != end; });
+                     waitNext = nullptr;
+                     waitEnd = nullptr;
+                 }
+ 
+                 std::scoped_lock lock{productionMutex};
++                if (closed)
++                    throw std::runtime_error("Push on closed circular queue");
+                 auto next{end + 1};
+                 next = (next == storage + capacity) ? storage : next;
+                 if (next == start) {
+--- avant/common/diagnostic_crash.cpp
++++ apres/common/diagnostic_crash.cpp
+@@ -55,8 +55,10 @@
+ }
+ void SnapshotModules() noexcept {
+     try {std::ostringstream modules;int result=dl_iterate_phdr(Module,&modules);
+-        WriteJson("native_modules.json","{\"schema_version\":1,\"complete\":"+std::string(result==0?"true":"false")+",\"modules\":["+modules.str()+"]}");
+-    } catch (...) {}
++        if (result != 0) Event("native_modules_incomplete");
++        if (!WriteJson("native_modules.json","{\"schema_version\":1,\"complete\":"+std::string(result==0?"true":"false")+",\"modules\":["+modules.str()+"]}"))
++            Event("native_modules_write_failed");
++    } catch (...) { Event("native_modules_capture_failed"); }
+ }
+ void InitializeCrashCapture() noexcept {
+     CloseCrashCapture();captured.clear();
+@@ -73,7 +75,7 @@
+     Record record{0x3152434f54415253ULL,1,static_cast<std::uint64_t>(signal),static_cast<std::uint64_t>(syscall(SYS_gettid)),
+         static_cast<std::uint64_t>(ts.tv_sec)*1000000000ULL+static_cast<std::uint64_t>(ts.tv_nsec),fault,pc,lr,sp,fp,guest,0};
+     const auto *bytes=reinterpret_cast<const char *>(&record);size_t done=0;
+-    while(done<sizeof(record)) {auto n=write(fd,bytes+done,sizeof(record)-done);if(n<0&&errno==EINTR)continue;if(n<=0)break;done+=n;}
++    while(done<sizeof(record)) {auto n=write(fd,bytes+done,sizeof(record)-done);if(n<0&&errno==EINTR)continue;if(n<=0)break;done+=static_cast<size_t>(n);}
+     errno=savedErrno;
+ }
+ }
+--- avant/common/diagnostic_recorder.cpp
++++ apres/common/diagnostic_recorder.cpp
+@@ -2,6 +2,7 @@
+ #include "diagnostic_recorder.h"
+ #include "diagnostic_session.h"
+ #include <thread>
++#include <deque>
+ #include <condition_variable>
+ #include <chrono>
+ #include <array>
+@@ -17,7 +18,18 @@
+ #include <time.h>
+ 
+ namespace skyline::diagnostics {
++static void WriteArtifact(std::string_view kind, Id shader, const void *bytes, std::size_t size, std::string_view extension) noexcept;
+ namespace {
++    struct Histogram { std::array<std::atomic<Id>, 64> buckets{}; std::atomic<Id> samples{}, sum{}; };
++    std::array<Histogram, static_cast<unsigned>(Timing::Count)> histograms{};
++    std::atomic<Id> lastPresent{};
++    struct Artifact { std::string kind, extension; Id shader; std::vector<unsigned char> bytes; };
++    std::mutex pendingMutex;
++    std::deque<Artifact> pendingArtifacts;
++    size_t pendingBytes{};
++    constexpr size_t PendingLimit{8 * 1024 * 1024};
++    void DrainArtifacts() noexcept;
++
+     constexpr std::size_t Capacity = 8192, IpcCapacity = 2048, MaxMappings = 65536, MaxUnsupported = 512;
+     constexpr std::size_t ArtifactBudget = 32 * 1024 * 1024, ArtifactLimit = 4 * 1024 * 1024;
+     struct Entry {
+@@ -28,6 +40,14 @@
+     std::array<Entry, IpcCapacity> ipcRing{}; // IPC traffic cannot evict rendering evidence.
+     std::atomic_flag ringLock = ATOMIC_FLAG_INIT;
+     std::atomic<Id> dropped{}, total{}, captures{}, artifactDrops{}, mappingDrops{}, registryDrops{};
++    void DrainArtifacts() noexcept {
++        // Snapshot the bounded queue, so a busy producer cannot starve periodic exports.
++        try {
++            std::deque<Artifact> batch;
++            { std::lock_guard lock(pendingMutex); batch.swap(pendingArtifacts); pendingBytes=0; }
++            for (auto &a : batch) WriteArtifact(a.kind,a.shader,a.bytes.data(),a.bytes.size(),a.extension);
++        } catch (...) { ++artifactDrops; }
++    }
+     std::atomic<Id> draws{}, dispatches{}, submitted{}, completed{}, frames{};
+     std::atomic<bool> enabled{}, paused{}, frameCapture{};
+     int validationMode{};
+@@ -51,6 +71,7 @@
+                 auto nextFlush=std::chrono::steady_clock::now();
+                 std::unique_lock lock(mutex);
+                 while(!cv.wait_for(lock,std::chrono::seconds(1),[this]{return stop;})) {
++                    DrainArtifacts();
+                     const auto request=CaptureRequest();const auto now=std::chrono::steady_clock::now();
+                     if(request!=lastRequest || now>=nextFlush) {
+                         if(FlushRecorder(request!=lastRequest?"manual_evidence":"periodic"))lastRequest=request;
+@@ -68,7 +89,7 @@
+     Pump pump; // Destroy before the maps and their mutexes.
+     Id Now() noexcept {
+         timespec ts{};clock_gettime(CLOCK_MONOTONIC, &ts);
+-        return static_cast<Id>(ts.tv_sec) * 1000000000ULL + ts.tv_nsec;
++        return static_cast<Id>(ts.tv_sec) * 1000000000ULL + static_cast<Id>(ts.tv_nsec);
+     }
+     template<std::size_t N> void Copy(char (&dst)[N], std::string_view text) noexcept {
+         auto n = std::min(text.size(), N - 1);if(n) std::memcpy(dst, text.data(), n);dst[n] = 0;
+@@ -76,18 +97,34 @@
+     std::string Quote(std::string_view s) { return "\"" + JsonEscape(s) + "\""; }
+ }
+ 
++Operation::Operation(const char *name, Id resource, Timing timing) noexcept
++    : kind{name}, resource{resource}, id{NewId()}, timing{timing}, start{std::chrono::steady_clock::now()} {
++    Event(kind,id,resource,0,"begin");
++}
++Operation::~Operation() { if(!finished) Finish(UINT64_MAX,"failed_or_abandoned"); }
++void Operation::Finish(Id result, std::string_view detail) noexcept {
++    if(finished)return;finished=true;
++    const auto ns=static_cast<Id>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count());
++    RecordDuration(timing,ns);Event(kind,id,ns,result,detail.empty()?"end":detail);
++}
++void RecordDuration(Timing kind, Id ns) noexcept {
++    if(!RecorderEnabled())return;
++    auto index=static_cast<unsigned>(kind);if(index>=histograms.size())return;
++    unsigned bucket=0;for(Id v=ns;v>1 && bucket<63;v>>=1)++bucket;
++    auto &h=histograms[index];++h.buckets[bucket];h.sum.fetch_add(ns,std::memory_order_relaxed);++h.samples;
++}
+ bool RecorderEnabled() noexcept { return enabled.load(std::memory_order_relaxed); }
+ int ValidationMode() noexcept { return validationMode; }
+ bool ShaderCaptureEnabled() noexcept { return RecorderEnabled() && shaderCapture; }
+ void Event(std::string_view kind, Id resource, Id address, Id size, std::string_view text) noexcept {
+     if (!RecorderEnabled()) return;
+     if (ringLock.test_and_set(std::memory_order_acquire)) { ++dropped;return; }
+-    const bool ipc = kind == "ipc_request";
++    const bool ipc = kind.starts_with("ipc_") || kind.starts_with("svc_");
+     auto &targetHead = ipc ? ipcHead : head;
+     auto &targetCount = ipc ? ipcCount : count;
+     const auto capacity = ipc ? IpcCapacity : Capacity;
+     auto &e = ipc ? ipcRing[targetHead] : ring[targetHead];e = {};
+-    e.sequence = ++total;e.ns = Now();e.tid = syscall(SYS_gettid);e.frame = frames.load();
++    e.sequence = ++total;e.ns = Now();e.tid = static_cast<Id>(syscall(SYS_gettid));e.frame = frames.load();
+     e.operation = correlation.operation;e.submission = correlation.submission;e.pipeline = correlation.pipeline;
+     e.resource = resource;e.address = address;e.size = size;Copy(e.kind,kind);Copy(e.text,text);
+     targetHead = (targetHead + 1) % capacity;targetCount = std::min(targetCount + 1, capacity);
+@@ -97,8 +134,11 @@
+ void Submitted(Id cycle) noexcept { ++submitted;Event("submit_accepted",cycle); }
+ void Completed(Id cycle) noexcept { ++completed;Event("fence_completed",cycle); }
+ Progress GetProgress() noexcept { return {draws.load(), dispatches.load(), submitted.load(), completed.load(), frames.load()}; }
+-void Presented() noexcept { ++frames;Event("present_accepted"); }
+-void SetPaused(bool value) noexcept { paused = value;Event(value ? "paused" : "resumed"); }
++void Presented() noexcept {
++    ++frames;Event("present_accepted");
++    if (RecorderEnabled() && !IsPaused()) { auto now=Now();auto previous=lastPresent.exchange(now);if(previous && now>=previous)RecordDuration(Timing::Frame,now-previous); }
++}
++void SetPaused(bool value) noexcept { paused = value;lastPresent=0;Event(value ? "paused" : "resumed"); }
+ bool IsPaused() noexcept { return paused.load(); }
+ Id RequestCapture() noexcept { auto id = ++captures;Event("capture_requested",id);return id; }
+ Id CaptureRequest() noexcept { return captures.load(); }
+@@ -158,6 +198,17 @@
+ void SaveArtifact(std::string_view kind, Id shader, const void *bytes, std::size_t size, std::string_view extension) noexcept {
+     if (!RecorderEnabled() || (kind != "validation" && !ShaderCaptureEnabled()) || !bytes || !size) return;
+     try {
++        if (size > ArtifactLimit || !detail::IsFileName(kind) || !detail::IsFileName(extension)) { ++artifactDrops;return; }
++        std::unique_lock lock(pendingMutex,std::try_to_lock);
++        if (!lock || pendingArtifacts.size()>=64 || size>PendingLimit-pendingBytes) { ++artifactDrops;return; }
++        auto data=static_cast<const unsigned char *>(bytes);
++        pendingArtifacts.push_back({std::string(kind),std::string(extension),shader,{data,data+size}});
++        pendingBytes+=size;
++    } catch (...) { ++artifactDrops; }
++}
++static void WriteArtifact(std::string_view kind, Id shader, const void *bytes, std::size_t size, std::string_view extension) noexcept {
++    if (!RecorderEnabled() || (kind != "validation" && !ShaderCaptureEnabled()) || !bytes || !size) return;
++    try {
+         std::lock_guard lock(artifactMutex);
+         if(size>ArtifactLimit) { ++artifactDrops;return; }
+         if(!detail::IsFileName(kind) || !detail::IsFileName(extension)) return;
+@@ -168,7 +219,7 @@
+         if(std::filesystem::exists(path)){Event("shader_artifact_reuse",shader,hash,size,name.str());return;}
+         if(size>ArtifactBudget-artifactBytes || artifactCount>=512) { ++artifactDrops;return; }
+         auto temp=path+".tmp";
+-        {std::ofstream file(temp,std::ios::binary|std::ios::trunc);file.write(static_cast<const char*>(bytes),size);file.close();if(!file){++artifactDrops;return;}}
++        {std::ofstream file(temp,std::ios::binary|std::ios::trunc);file.write(static_cast<const char*>(bytes),static_cast<std::streamsize>(size));file.close();if(!file){++artifactDrops;return;}}
+         if(rename(temp.c_str(),path.c_str())!=0){++artifactDrops;return;}
+         artifactBytes+=size;++artifactCount;Event("shader_artifact",shader,hash,size,name.str());
+     } catch (...) { ++artifactDrops; }
+@@ -200,9 +251,19 @@
+             comma=false;for(auto &[key,m]:missing){if(comma)unsupported<<',';comma=true;unsupported<<"{\"component\":"<<Quote(m.component)<<",\"opcode\":"<<m.opcode<<",\"detail\":"<<Quote(m.detail)<<",\"count\":"<<m.count<<",\"first_ns\":"<<m.first<<",\"last_ns\":"<<m.last<<",\"first_operation\":"<<m.context.operation<<",\"first_submission\":"<<m.context.submission<<'}';}
+             comma=false;for(auto &[name,status]:features){if(comma)feature<<',';comma=true;feature<<Quote(name)<<':'<<Quote(status);}
+         }
+-        map<<"],\"dropped_updates\":"<<mappingDrops.load()<<'}';
++        map<<"],\"dropped_updates\":"<<mappingDrops.load()<<",\"observed_updates_complete\":"<<(mappingDrops.load()==0?"true":"false")<<",\"scope\":\"observed mapping hooks only; not a validation of all guest memory\"}";
+         unsupported<<"],\"dropped_updates\":"<<registryDrops.load()<<'}';feature<<'}';
+         ok=WriteJson("gpu_mappings.json",map.str())&&ok;ok=WriteJson("unsupported.json",unsupported.str())&&ok;ok=WriteJson("diagnostic_features.json",feature.str())&&ok;
++        std::ostringstream timings;timings<<"{\"units\":\"nanoseconds\",\"clock\":\"CPU monotonic wall time\",\"percentiles\":\"log2 bucket upper estimates\",\"metrics\":[";
++        constexpr const char *names[]={"frame_interval","shader","pipeline","fence_wait","ipc","svc"};
++        for(size_t k=0;k<histograms.size();++k) {
++            auto &h=histograms[k];std::array<Id,64> buckets{};Id samples=0;
++            for(size_t i=0;i<64;++i){buckets[i]=h.buckets[i].load();samples+=buckets[i];}
++            auto percentile=[&](Id percent){if(!samples)return Id{};Id target=(samples*percent+99)/100,seen=0;for(unsigned i=0;i<64;++i){seen+=buckets[i];if(seen>=target)return i==63?UINT64_MAX:((Id{1}<<(i+1))-1);}return UINT64_MAX;};
++            if(k)timings<<',';
++            timings<<"{\"name\":\""<<names[k]<<"\",\"samples\":"<<samples<<",\"total_ns\":"<<h.sum.load()<<",\"p50_ns_upper\":"<<percentile(50)<<",\"p95_ns_upper\":"<<percentile(95)<<",\"p99_ns_upper\":"<<percentile(99)<<'}';
++        }
++        timings<<"]}";ok=WriteJson("performance_summary.json",timings.str())&&ok;
+         auto p=GetProgress();std::ostringstream status;
+         status<<"{\"schema_version\":1,\"reason\":"<<Quote(reason)<<",\"capture_request\":"<<CaptureRequest()<<",\"ns\":"<<Now()<<",\"draws\":"<<p.draws<<",\"dispatches\":"<<p.dispatches<<",\"submissions\":"<<p.submitted<<",\"completions\":"<<p.completed<<",\"presents\":"<<p.frames<<",\"paused\":"<<(IsPaused()?"true":"false")<<",\"ring_capacity\":"<<(Capacity+IpcCapacity)<<",\"render_ring_capacity\":"<<Capacity<<",\"ipc_ring_capacity\":"<<IpcCapacity<<",\"retained_ipc_events\":"<<capturedIpcCount<<",\"total_events\":"<<total.load()<<",\"dropped_events\":"<<dropped.load()<<",\"overwritten_events\":"<<(snapshotTotal>n?snapshotTotal-n:0)<<",\"artifact_drops\":"<<artifactDrops.load()<<",\"frame_capture_pending\":"<<(frameCapture.load()?"true":"false")<<",\"files_written\":"<<(ok?"true":"false")<<'}';
+         return WriteJson("recorder_status.json",status.str())&&ok;
+@@ -211,6 +272,8 @@
+ void InitializeRecorder() noexcept {
+     // Called before emulation workers start; the session directory is immutable afterwards.
+     pump.Stop();
++    {std::lock_guard lock(pendingMutex);pendingArtifacts.clear();pendingBytes=0;}
++    lastPresent=0;for(auto &h:histograms){h.samples=0;h.sum=0;for(auto &b:h.buckets)b=0;}
+     enabled=false;head=count=ipcHead=ipcCount=artifactBytes=artifactCount=0;total=dropped=captures=artifactDrops=mappingDrops=registryDrops=0;
+     draws=dispatches=submitted=completed=frames=0;paused=false;frameCapture=false;validationMode=0;shaderCapture=true;
+     try {
+@@ -229,5 +292,5 @@
+         if(RecorderEnabled())pump.Start();
+     } catch (...) { enabled=false; }
+ }
+-void ShutdownRecorder() noexcept { pump.Stop();FlushRecorder("shutdown");enabled=false; }
+-}
++void ShutdownRecorder() noexcept { pump.Stop();DrainArtifacts();FlushRecorder("shutdown");enabled=false; }
++}
+--- avant/common/diagnostic_recorder.h
++++ apres/common/diagnostic_recorder.h
+@@ -1,6 +1,7 @@
+ // SPDX-License-Identifier: MPL-2.0
+ #pragma once
+ #include <atomic>
++#include <chrono>
+ #include <cstdint>
+ #include <string_view>
+ 
+@@ -16,6 +17,22 @@
+         ~Scope() { correlation = previous; }
+     };
+     struct Progress { Id draws{}, dispatches{}, submitted{}, completed{}, frames{}; };
++    enum class Timing : unsigned { Frame, Shader, Pipeline, Fence, Ipc, Svc, Count };
++    void RecordDuration(Timing kind, Id nanoseconds) noexcept;
++    // CPU wall duration, not a GPU timestamp. Unfinished scopes remain visible as failures.
++    class Operation {
++        const char *kind;
++        Id resource, id;
++        Timing timing;
++        std::chrono::steady_clock::time_point start;
++        bool finished{};
++      public:
++        Operation(const char *kind, Id resource, Timing timing) noexcept;
++        Operation(const Operation &) = delete;
++        Operation &operator=(const Operation &) = delete;
++        ~Operation();
++        void Finish(Id result = 0, std::string_view detail = {}) noexcept;
++    };
+     void InitializeRecorder() noexcept;
+     void ShutdownRecorder() noexcept;
+     bool RecorderEnabled() noexcept;
+--- avant/common/exception.h
++++ apres/common/exception.h
+@@ -5,6 +5,7 @@
+ 
+ #include <vector>
+ #include "format.h"
++#include "diagnostic_recorder.h"
+ 
+ namespace skyline {
+     /**
+@@ -21,6 +22,9 @@
+         static std::vector<void *> GetStackFrames() __attribute__((noinline));
+ 
+         template<typename... Args>
+-        exception(fmt::format_string<Args...> formatStr, Args &&... args) : runtime_error(fmt::format(formatStr, std::forward<Args>(args)...)), frames(GetStackFrames()) {}
++        exception(fmt::format_string<Args...> formatStr, Args &&... args) : runtime_error(fmt::format(formatStr, std::forward<Args>(args)...)), frames(GetStackFrames()) {
++            diagnostics::Event("exception_created", 0, 0, frames.size(), what());
++            diagnostics::ObserveLog("exception", what());
++        }
+     };
+ }
+--- avant/common/interval_list.h
++++ apres/common/interval_list.h
+@@ -46,6 +46,8 @@
+          * @brief Forces future accesses to the given interval to use the shadow copy
+         */
+         void Insert(Interval entry) {
++            if (entry.offset >= entry.end)
++                return; // Empty/reversed half-open intervals contain no bytes.
+             auto firstIt{std::lower_bound(intervals.begin(), intervals.end(), entry, [](const auto &lhs, const auto &rhs) {
+                 return lhs.end < rhs.offset;
+             })}; // Lowest offset entry that (maybe) overlaps with the new entry
+@@ -78,9 +80,16 @@
+         /**
+          * @brief Merge the given interval into the list
+          */
+-        void Merge(const IntervalList<SizeType> &list) {
+-            for (auto &entry : list.intervals)
+-                Insert(entry);
++        void Merge(const IntervalList<SizeType> &list, DifferenceType displacement = {}) {
++            if (&list == this) {
++                if (!displacement)
++                    return;
++                auto copy{list};
++                Merge(copy, displacement);
++                return;
++            }
++            for (const auto &entry : list.intervals)
++                Insert({entry.offset + displacement, entry.end + displacement});
+         }
+ 
+         /**
+@@ -88,7 +97,7 @@
+          */
+         QueryResult Query(SizeType offset) {
+             auto it{std::lower_bound(intervals.begin(), intervals.end(), offset, [](const auto &lhs, const auto &rhs) {
+-                return lhs.end < rhs;
++                return lhs.end <= rhs;
+             })}; // Lowest offset entry that (maybe) overlaps with the new entry
+ 
+             if (it == intervals.end()) // No overlaps past offset
+--- avant/gpu.cpp
++++ apres/gpu.cpp
+@@ -111,9 +111,9 @@
+             break;                                    \
+         }
+ 
+-        #define IGNORE_VALIDATION_CL(string, functionName) IGNORE_VALIDATION_C(string, { if (!functionName()) return VK_FALSE; })
+-
+-        #define IGNORE_VALIDATION(string) IGNORE_VALIDATION_C(string, { return VK_FALSE; })
++        #define IGNORE_VALIDATION_CL(string, functionName) IGNORE_VALIDATION_C(string, { if (!functionName()) { skyline::diagnostics::Event("validation_filtered", 0, 0, 0, string); return VK_FALSE; } })
++
++        #define IGNORE_VALIDATION(string) IGNORE_VALIDATION_C(string, { skyline::diagnostics::Event("validation_filtered",object,static_cast<u32>(messageCode),0,string); return VK_FALSE; })
+ 
+         #define DEBUG_VALIDATION(string) IGNORE_VALIDATION_C(string, { raise(SIGTRAP); }) // Using __builtin_debugtrap() as opposed to raise(SIGTRAP) will result in the inability to continue
+ 
+@@ -239,6 +239,7 @@
+         return VK_FALSE;
+     } catch (...) {
+         // Diagnostic failures must not unwind through the Vulkan driver's C ABI.
++        skyline::diagnostics::Event("validation_callback_failed");
+         return VK_FALSE;
+     }
+ 
+--- avant/gpu/buffer.cpp
++++ apres/gpu/buffer.cpp
+@@ -278,10 +278,11 @@
+ 
+         // If the buffer is GPU dirty do the write on the GPU and we're done
+         if (dirtyState == DirtyState::GpuDirty) {
+-            if (gpuCopyCallback)
+-                gpuCopyCallback();
+-            else
+-                return true;
++            if (!gpuCopyCallback)
++                return true;
++            gpuCopyCallback();
++            std::memcpy(mirror.data() + offset, data.data(), data.size());
++            return false; // Exactly one GPU copy; never write the in-flight backing on CPU.
+         }
+ 
+         if (dirtyState == DirtyState::CpuDirty && SequencedCpuBackingWritesBlocked())
+@@ -609,6 +610,20 @@
+                 SynchronizeGuestImmediate(isFirstUsage, flushHostCallback);
+         } else {
+             RefreshGpuWritesActiveDirect(true, flushHostCallback);
++            if (directTrackedShadowActive && RefreshGpuReadsActiveDirect()) {
++                // Keep GPU-owned mirror bytes untouched. Complete only the gaps in
++                // the CPU shadow, retaining the newer sequenced writes already there.
++                size_t offset{};
++                while (offset < mirror.size()) {
++                    auto part{directTrackedWrites.Query(offset)};
++                    auto remaining{mirror.size() - offset};
++                    auto size{part.size ? std::min(part.size, remaining) : remaining};
++                    if (!part.enclosed)
++                        std::memcpy(directTrackedShadow.data() + offset, mirror.data() + offset, size);
++                    offset += size;
++                }
++                return {directTrackedShadow.data(), directTrackedShadow.size()};
++            }
+         }
+ 
+         return mirror;
+--- avant/gpu/buffer_manager.cpp
++++ apres/gpu/buffer_manager.cpp
+@@ -34,9 +34,13 @@
+ 
+         // If we cannot find the buffer quickly, do a binary search to find all overlapping buffers
+         auto entryIt{std::lower_bound(bufferMappings.begin(), bufferMappings.end(), range.end().base(), BufferLessThan)};
+-        while (entryIt != bufferMappings.begin() && (*--entryIt)->guest->begin() <= range.end())
+-            if ((*entryIt)->guest->end() > range.begin())
+-                overlaps.emplace_back(*entryIt, tag);
++        // Mappings are disjoint: FindOrCreate coalesces every overlapping entry.
++        while (entryIt != bufferMappings.begin()) {
++            --entryIt;
++            if ((*entryIt)->guest->end() <= range.begin())
++                break;
++            overlaps.emplace_back(*entryIt, tag);
++        }
+ 
+         return overlaps;
+     }
+@@ -131,7 +135,8 @@
+                 } else if (srcBuffer->directTrackedShadowActive) {
+                     newBuffer->EnableTrackedShadowDirect();
+                     copyBuffer(*newBuffer->guest, *srcBuffer->guest, newBuffer->directTrackedShadow.data(), srcBuffer->directTrackedShadow.data());
+-                    newBuffer->directTrackedWrites.Merge(srcBuffer->directTrackedWrites);
++                    newBuffer->directTrackedWrites.Merge(srcBuffer->directTrackedWrites,
++                        static_cast<size_t>(srcBuffer->guest->begin() - newBuffer->guest->begin()));
+                 }
+             }
+ 
+--- avant/gpu/command_scheduler.cpp
++++ apres/gpu/command_scheduler.cpp
+@@ -51,6 +51,7 @@
+           }} {}
+ 
+     CommandScheduler::~CommandScheduler() {
++        cycleQueue.Close();
+         waiterThread.join();
+     }
+ 
+--- avant/gpu/diagnostic_device_fault.h
++++ apres/gpu/diagnostic_device_fault.h
+@@ -28,7 +28,7 @@
+         const auto requestedAddresses=counts.addressInfoCount, requestedVendors=counts.vendorInfoCount;
+         std::vector<VkDeviceFaultAddressInfoEXT> addresses(std::min(counts.addressInfoCount,256U));
+         std::vector<VkDeviceFaultVendorInfoEXT> vendors(std::min(counts.vendorInfoCount,64U));
+-        counts.addressInfoCount=addresses.size();counts.vendorInfoCount=vendors.size();counts.vendorBinarySize=0;
++        counts.addressInfoCount=static_cast<uint32_t>(addresses.size());counts.vendorInfoCount=static_cast<uint32_t>(vendors.size());counts.vendorBinarySize=0;
+         VkDeviceFaultInfoEXT info{};info.sType=VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
+         info.pAddressInfos=addresses.data();info.pVendorInfos=vendors.data();
+         result=faultFunction(device,&counts,&info);
+--- avant/gpu/diagnostics.cpp
++++ apres/gpu/diagnostics.cpp
+@@ -30,6 +30,7 @@
+             reported = false;
+             startTime = std::chrono::steady_clock::now();
+         } catch (...) {
++            skyline::diagnostics::Event("gpu_report_init_failed");
+         }
+     }
+ 
+@@ -43,7 +44,7 @@
+                 events.pop_front();
+             events.push_back(fmt::format("[{:>8}ms] {:<9} {}", elapsedMs, category, message));
+         } catch (...) {
+-            // In particular, memory pressure while reporting a GPU failure is non-fatal.
++            skyline::diagnostics::Event("gpu_report_event_dropped");
+         }
+     }
+ 
+@@ -52,8 +53,11 @@
+         skyline::diagnostics::RequestCapture();
+         try {
+             std::scoped_lock lock{mutex};
+-            if (reported || path.empty())
++            if (reported) return;
++            if (path.empty()) {
++                skyline::diagnostics::Event("gpu_report_path_missing");
+                 return;
++            }
+ 
+             std::string report{fmt::format("===== GPU fault: {} =====\nThe {} most recent GPU events, oldest first:\n", reason, events.size())};
+             for (const auto &event : events) {
+@@ -74,9 +78,13 @@
+                     offset += static_cast<size_t>(count);
+                 }
+                 reported = offset == report.size();
+-                close(fd);
++                if (!reported) skyline::diagnostics::Event("gpu_report_write_failed", 0, offset, report.size());
++                if (close(fd) != 0) skyline::diagnostics::Event("gpu_report_close_failed", 0, static_cast<unsigned>(errno));
++            } else {
++                skyline::diagnostics::Event("gpu_report_open_failed", 0, static_cast<unsigned>(errno));
+             }
+         } catch (...) {
++            skyline::diagnostics::Event("gpu_report_failed");
+         }
+     }
+ }
+--- avant/gpu/graphics_pipeline_assembler.cpp
++++ apres/gpu/graphics_pipeline_assembler.cpp
+@@ -2,6 +2,8 @@
+ // Copyright © 2022 Skyline Team and Contributors (https://github.com/skyline-emu/)
+ 
+ #include <boost/functional/hash.hpp>
++#include <common/diagnostic_recorder.h>
++#include <system_error>
+ #include <fstream>
+ #include <filesystem>
+ #include <gpu.h>
+@@ -87,6 +89,8 @@
+         stream.write(reinterpret_cast<char *>(&header), sizeof(PipelineCacheFileDataHeader));
+         stream.write(reinterpret_cast<char *>(data.data()), static_cast<std::streamsize>(data.size()));
+ 
++        stream.flush();
++        if (!stream) { LOGW("Vulkan pipeline cache write failed: {}",path.string()); return; }
+         LOGI("Wrote Vulkan pipeline cache to {} (size: 0x{:X} bytes)", path.string(), data.size());
+     }
+ 
+@@ -192,23 +196,36 @@
+             .pSubpasses = &subpassDescription,
+         }};
+ 
+-        auto pipeline{gpu.vkDevice.createGraphicsPipeline(vkPipelineCache, vk::GraphicsPipelineCreateInfo{
+-            .pStages = pipelineDescIt->shaderStages.data(),
+-            .stageCount = static_cast<u32>(pipelineDescIt->shaderStages.size()),
+-            .pVertexInputState = &pipelineDescIt->vertexState.get<vk::PipelineVertexInputStateCreateInfo>(),
+-            .pInputAssemblyState = &pipelineDescIt->inputAssemblyState,
+-            .pTessellationState = &pipelineDescIt->tessellationState,
+-            .pViewportState = &pipelineDescIt->viewportState,
+-            .pRasterizationState = &pipelineDescIt->rasterizationState.get<vk::PipelineRasterizationStateCreateInfo>(),
+-            .pMultisampleState = &pipelineDescIt->multisampleState,
+-            .pDepthStencilState = &pipelineDescIt->depthStencilState,
+-            .pColorBlendState = &pipelineDescIt->colorBlendState,
+-            .pDynamicState = &pipelineDescIt->dynamicState,
+-            .layout = pipelineLayout,
+-            .renderPass = *renderPass,
+-            .subpass = 0,
+-        })};
+-
++        const auto diagnosticId=skyline::diagnostics::NewId();
++        skyline::diagnostics::Operation diagnosticOperation("pipeline_compile", diagnosticId, skyline::diagnostics::Timing::Pipeline);
++        auto pipeline{[&] {
++            try {
++                return gpu.vkDevice.createGraphicsPipeline(vkPipelineCache, vk::GraphicsPipelineCreateInfo{
++                    .pStages = pipelineDescIt->shaderStages.data(),
++                    .stageCount = static_cast<u32>(pipelineDescIt->shaderStages.size()),
++                    .pVertexInputState = &pipelineDescIt->vertexState.get<vk::PipelineVertexInputStateCreateInfo>(),
++                    .pInputAssemblyState = &pipelineDescIt->inputAssemblyState,
++                    .pTessellationState = &pipelineDescIt->tessellationState,
++                    .pViewportState = &pipelineDescIt->viewportState,
++                    .pRasterizationState = &pipelineDescIt->rasterizationState.get<vk::PipelineRasterizationStateCreateInfo>(),
++                    .pMultisampleState = &pipelineDescIt->multisampleState,
++                    .pDepthStencilState = &pipelineDescIt->depthStencilState,
++                    .pColorBlendState = &pipelineDescIt->colorBlendState,
++                    .pDynamicState = &pipelineDescIt->dynamicState,
++                    .layout = pipelineLayout,
++                    .renderPass = *renderPass,
++                    .subpass = 0,
++                });
++            } catch (const std::system_error &error) {
++                skyline::diagnostics::Event("pipeline_create_failed", diagnosticId, static_cast<std::uint64_t>(error.code().value()), 0, error.what());
++                throw;
++            } catch (const std::exception &error) {
++                skyline::diagnostics::Event("pipeline_create_failed", diagnosticId, 0, 0, error.what());
++                throw;
++            }
++        }()};
++
++        diagnosticOperation.Finish(0,"graphics_pipeline_created");
+         if (pipelineDescIt->destroyShaderModules)
+             for (auto &shaderStage : pipelineDescIt->shaderStages)
+                 (*gpu.vkDevice).destroyShaderModule(shaderStage.module, nullptr,  *gpu.vkDevice.getDispatcher());
+--- avant/gpu/memory_manager.cpp
++++ apres/gpu/memory_manager.cpp
+@@ -11,6 +11,28 @@
+     void ThrowOnFail(VkResult result, const char *function = __builtin_FUNCTION()) {
+         if (result != VK_SUCCESS)
+             vk::throwResultException(vk::Result(result), function);
++    }
++
++    Buffer &Buffer::operator=(Buffer &&other) noexcept {
++        if (this != &other) {
++            Buffer replacement{std::move(other)};
++            std::swap(static_cast<span<u8> &>(*this), static_cast<span<u8> &>(replacement));
++            std::swap(vmaAllocator, replacement.vmaAllocator);
++            std::swap(vmaAllocation, replacement.vmaAllocation);
++            std::swap(vkBuffer, replacement.vkBuffer);
++        }
++        return *this;
++    }
++
++    Image &Image::operator=(Image &&other) noexcept {
++        if (this != &other) {
++            Image replacement{std::move(other)};
++            std::swap(pointer, replacement.pointer);
++            std::swap(vmaAllocator, replacement.vmaAllocator);
++            std::swap(vmaAllocation, replacement.vmaAllocation);
++            std::swap(vkImage, replacement.vkImage);
++        }
++        return *this;
+     }
+ 
+     Buffer::~Buffer() {
+--- avant/gpu/memory_manager.h
++++ apres/gpu/memory_manager.h
+@@ -32,7 +32,7 @@
+ 
+         Buffer &operator=(const Buffer &) = delete;
+ 
+-        Buffer &operator=(Buffer &&) = default;
++        Buffer &operator=(Buffer &&other) noexcept;
+ 
+         ~Buffer();
+     };
+@@ -102,7 +102,7 @@
+ 
+         Image &operator=(const Image &) = delete;
+ 
+-        Image &operator=(Image &&) = default;
++        Image &operator=(Image &&other) noexcept;
+ 
+         ~Image();
+ 
+--- avant/gpu/shader_manager.cpp
++++ apres/gpu/shader_manager.cpp
+@@ -18,15 +18,15 @@
+ 
+ namespace Shader::Log {
+     void Debug(const std::string &message) {
+-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Debug, std::move(const_cast<std::string &>(message)));
++        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Debug, std::string{message});
+     }
+ 
+     void Warn(const std::string &message) {
+-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Warning, std::move(const_cast<std::string &>(message)));
++        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Warning, std::string{message});
+     }
+ 
+     void Error(const std::string &message) {
+-        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Error, std::move(const_cast<std::string &>(message)));
++        skyline::AsyncLogger::LogAsync(skyline::AsyncLogger::LogLevel::Error, std::string{message});
+     }
+ }
+ 
+@@ -437,16 +437,24 @@
+                 skyline::diagnostics::SaveArtifact("ir", hash, ir.data(), ir.size(), "txt");
+             } catch (...) { skyline::diagnostics::Event("shader_ir_capture_failed", hash); }
+         }
++        skyline::diagnostics::Operation diagnosticOperation("shader_compile",hash,skyline::diagnostics::Timing::Shader);
+         skyline::diagnostics::Event("shader_compile_begin", hash);
+-        auto spirvEmitted{Shader::Backend::SPIRV::EmitSPIRV(profile, runtimeInfo, program, bindings)};
+-        auto spirv{ProcessShaderBinary(true, hash, span<u32>{spirvEmitted}.cast<u8>()).cast<u32>()};
+-
+-        vk::ShaderModuleCreateInfo createInfo{
+-            .pCode = spirv.data(),
+-            .codeSize = spirv.size_bytes(),
+-        };
+-
+-        return (*gpu.vkDevice).createShaderModule(createInfo, nullptr, *gpu.vkDevice.getDispatcher());
++        try {
++            auto spirvEmitted{Shader::Backend::SPIRV::EmitSPIRV(profile, runtimeInfo, program, bindings)};
++            auto spirv{ProcessShaderBinary(true, hash, span<u32>{spirvEmitted}.cast<u8>()).cast<u32>()};
++
++            vk::ShaderModuleCreateInfo createInfo{
++                .pCode = spirv.data(),
++                .codeSize = spirv.size_bytes(),
++            };
++
++            auto module=(*gpu.vkDevice).createShaderModule(createInfo, nullptr, *gpu.vkDevice.getDispatcher());
++            diagnosticOperation.Finish(0,"shader_module_created");
++            return module;
++        } catch (const std::exception &error) {
++            skyline::diagnostics::Event("shader_compile_failed",hash,0,0,error.what());
++            throw;
++        }
+     }
+ 
+     void ShaderManager::ResetPools() {
+--- avant/logger/logger.cpp
++++ apres/logger/logger.cpp
+@@ -1,248 +1,240 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+-// Copyright © 2023 Strato Team and Contributors (https://github.com/strato-emu/)
+-
++#include "logger.h"
+ #include <common/diagnostic_recorder.h>
++#include <android/log.h>
++#include <array>
+ #include <atomic>
+ #include <chrono>
++#include <condition_variable>
++#include <fstream>
++#include <map>
++#include <memory>
+ #include <mutex>
+-#include <fstream>
++#include <optional>
+ #include <pthread.h>
++#include <sys/syscall.h>
++#include <unistd.h>
+ #include <thread>
+-#include <common/base.h>
+-#include <common/circular_queue.h>
+-#include <android/log.h>
+-#include <common/format.h>
+-#include <fmt/compile.h>
+-#include "logger.h"
+ 
+ namespace skyline {
+-    constexpr size_t PrefixLength{8}; //!< The length of the prefix "emu-cpp-"
+-    constexpr size_t MaxThreadNameLength{16}; //!< The maximum length of a thread name
+-
+-    /**
+-     * @brief The logging context for the current thread
+-     */
+-    thread_local struct ThreadLogContext {
+-        /**
+-         * @brief The shared storage for the thread name and log tag
+-         */
+-        std::array<char, PrefixLength + MaxThreadNameLength> threadNameStorage{"emu-cpp-unk"};
+-
+-        /**
+-         * @returns A span of the thread name
+-         */
+-        constexpr std::span<char> GetThreadName() {
+-            return {threadNameStorage.begin() + PrefixLength, threadNameStorage.end()};
+-        }
+-
+-        constexpr std::span<const char> GetThreadName() const {
+-            return {threadNameStorage.begin() + PrefixLength, threadNameStorage.end()};
+-        }
+-
+-        /**
+-         * @return A span of the log tag
+-         */
+-        constexpr std::span<const char> GetLogTag() const {
+-            return {threadNameStorage.begin(), threadNameStorage.end()};
+-        }
+-    } threadContext;
+-
+-    using LogLevel = AsyncLogger::LogLevel;
+-
+-    using clock = std::chrono::steady_clock;
+-    using microseconds = std::chrono::microseconds;
+-    using log_time_point = std::chrono::time_point<clock>;
+-
+-    struct LogMessage {
+-        LogLevel level; //!< The level of the log message
+-        const char *function; //!< The name of the function that pushed this message
+-        std::string str; //!< The log message string
+-        log_time_point time; //!< The time when the message was pushed
+-        ThreadLogContext threadContext; //!< Owned snapshot, valid after the producer thread exits
+-
+-        LogMessage(LogLevel level, const char *function, std::string &&str, log_time_point time, const ThreadLogContext &threadContext)
+-            : level(level), function(function), str(std::move(str)), time(time), threadContext(threadContext) {}
+-
+-        // Disable copy constructor to prevent copying the string
+-        LogMessage(const LogMessage &) = delete;
+-
+-        // Disable copy assignment to prevent copying the string
+-        LogMessage &operator=(const LogMessage &) = delete;
+-
+-        LogMessage(LogMessage &&) = default;
+-
+-        LogMessage &operator=(LogMessage &&) = default;
++    namespace {
++        using Clock = std::chrono::steady_clock;
++        using Level = AsyncLogger::LogLevel;
++        constexpr size_t MaxMessageBytes{8192};
++        constexpr size_t ReservedErrors{64};
++        constexpr size_t MaxRateKeys{1024};
++        constexpr unsigned Burst{8};
++        thread_local std::array<char, 16> threadName{"unknown"};
++        thread_local long threadId{};
++        std::mutex lifecycleMutex;
++        std::atomic<Level> minimumLevel{Level::Disabled};
++        std::atomic<uint64_t> unavailableDrops{};
++        struct Message {
++            Level level;
++            std::string text, component, site, function;
++            long tid;
++            std::array<char, 16> name;
++            Clock::time_point time;
++        };
++        std::string Component(const char *file) {
++            if (!file) return "external";
++            std::string_view path{file};
++            auto start{path.find("skyline/")};
++            if (start == path.npos) return "native";
++            path.remove_prefix(start + 8);
++            auto slash{path.find('/')};
++            if (slash != path.npos) return std::string{path.substr(0, slash)};
++            return std::string{path.substr(0, path.find('.'))};
++        }
++        void Emergency(const char *message) noexcept {
++            __android_log_write(ANDROID_LOG_ERROR, "emu-cpp-logger", message);
++        }
++    }
++
++    class AsyncLogger::Impl {
++        std::mutex queueMutex;
++        std::condition_variable condition;
++        std::array<std::optional<Message>, LogQueueSize> queue;
++        size_t head{}, tail{}, count{};
++        bool stopping{};
++        std::atomic<uint64_t> dropped{}, truncated{};
++        uint64_t suppressed{}, outputErrors{};
++        bool fileFailed{};
++        std::ofstream file;
++        const Clock::time_point start{Clock::now()};
++        std::thread writer;
++        struct Rate { Clock::time_point start; unsigned emitted{}; uint64_t skipped{}; };
++        std::map<std::string, Rate> rates; // Writer-owned, bounded; no producer formatting under this lock.
++
++        void Output(const Message &m, std::string_view text) {
++            constexpr std::array<const char *, 5> levels{"VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR"};
++            constexpr std::array<int, 5> androidLevels{ANDROID_LOG_VERBOSE, ANDROID_LOG_DEBUG, ANDROID_LOG_INFO, ANDROID_LOG_WARN, ANDROID_LOG_ERROR};
++            auto index{static_cast<size_t>(m.level)};
++            auto body{fmt::format("[tid={}][{}][{}] {}{}{}", m.tid, m.component, m.site,
++                                  m.function, m.function.empty() ? "" : ": ", text)};
++            __android_log_write(androidLevels[index], "emu-cpp", body.c_str());
++            if (fileFailed) return;
++            // Keep the four existing columns and numeric level ordering for log readers.
++            file << fmt::format("{:7} | {:>10} | {:^15} | {}\n", levels[index],
++                std::chrono::duration_cast<std::chrono::microseconds>(m.time - start).count(), m.name.data(), body);
++            if (!file) FileError();
++        }
++        void FileError() noexcept {
++            if (!fileFailed) { fileFailed = true; ++outputErrors; Emergency("Log file write/open failed; continuing to logcat"); }
++        }
++        void Flush() {
++            if (!fileFailed) { file.flush(); if (!file) FileError(); }
++        }
++        void RateSummary(const std::string &key, Rate &rate) {
++            if (!rate.skipped) return;
++            Message summary{Level::Warning, {}, "logger", key, {}, syscall(SYS_gettid), {}, Clock::now()};
++            Output(summary, fmt::format("rate_limited: {} additional messages suppressed at this site", rate.skipped));
++            rate.skipped = 0;
++        }
++        void Process(Message &message) {
++            // A stable source location bounds even messages with changing addresses.
++            // Direct legacy callers fall back to function/component + a bounded text prefix.
++            auto key{fmt::format("{}:{}:{}", message.component, message.site, static_cast<int>(message.level))};
++            if (message.site == "external:0") key += ':' + message.function + ':' + message.text.substr(0, 80);
++            auto it{rates.find(key)};
++            if (it == rates.end()) {
++                if (rates.size() >= MaxRateKeys) {
++                    RateSummary(rates.begin()->first, rates.begin()->second);
++                    rates.erase(rates.begin());
++                }
++                it = rates.emplace(key, Rate{Clock::now()}).first;
++            }
++            auto &rate{it->second};
++            auto now{Clock::now()};
++            if (now - rate.start >= std::chrono::seconds(1)) {
++                RateSummary(key, rate);
++                rate = Rate{now};
++            }
++            if (rate.emitted >= Burst) { ++rate.skipped; ++suppressed; return; }
++            ++rate.emitted;
++            Output(message, message.text);
++        }
++        void Run() noexcept {
++            pthread_setname_np(pthread_self(), "Sky-Logger");
++            auto nextFlush{Clock::now() + std::chrono::milliseconds(200)};
++            try {
++                for (;;) {
++                    std::optional<Message> message;
++                    {
++                        std::unique_lock lock{queueMutex};
++                        condition.wait_until(lock, nextFlush, [this] { return stopping || count; });
++                        if (count) {
++                            message = std::move(queue[head]);
++                            queue[head].reset();
++                            head = (head + 1) % LogQueueSize;
++                            --count;
++                        } else if (stopping) break;
++                    }
++                    if (message) Process(*message);
++                    if (Clock::now() >= nextFlush) {
++                        for (auto &[key, rate] : rates)
++                            if (Clock::now() - rate.start >= std::chrono::seconds(1)) RateSummary(key, rate);
++                        Flush();
++                        nextFlush = Clock::now() + std::chrono::milliseconds(200);
++                    }
++                }
++                for (auto &[key, rate] : rates) RateSummary(key, rate);
++                Message summary{Level::Info, {}, "logger", "shutdown", {}, syscall(SYS_gettid), {}, Clock::now()};
++                Output(summary, fmt::format("logger_stats dropped={} unavailable={} suppressed={} truncated={} output_errors={}",
++                    dropped.load(), unavailableDrops.load(), suppressed, truncated.load(), outputErrors));
++                Flush();
++            } catch (...) {
++                Emergency("Logger worker failed; further queued messages will be dropped");
++                std::lock_guard lock{queueMutex}; stopping = true;
++            }
++        }
++      public:
++        explicit Impl(const std::filesystem::path &path) {
++            std::error_code error;
++            if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path(), error);
++            file.open(path, std::ios::trunc);
++            if (error || !file) FileError();
++            writer = std::thread{&Impl::Run, this};
++        }
++        ~Impl() { Stop(); }
++        void Stop() {
++            { std::lock_guard lock{queueMutex}; stopping = true; }
++            condition.notify_all();
++            if (writer.joinable()) writer.join();
++        }
++        void Push(Message message) noexcept {
++            try {
++                if (message.text.size() > MaxMessageBytes) {
++                    message.text.resize(MaxMessageBytes - 14); message.text += " [truncated]"; ++truncated;
++                }
++                std::unique_lock lock{queueMutex, std::try_to_lock};
++                if (!lock || stopping || count == LogQueueSize ||
++                    (message.level < Level::Warning && count >= LogQueueSize - ReservedErrors)) {
++                    ++dropped; return;
++                }
++                queue[tail].emplace(std::move(message));
++                tail = (tail + 1) % LogQueueSize; ++count;
++                lock.unlock(); condition.notify_one();
++            } catch (...) { ++dropped; }
++        }
+     };
+-
+-    /**
+-     * @brief The implementation class of the logger, holds instance data and the writer thread
+-     */
+-    class AsyncLogger::Impl {
+-        std::mutex fileMutex; //!< Synchronizes write operations to the log file
+-        std::ofstream logFile; //!< An output stream to the log file
+-        log_time_point start; //!< A time point when the logger was started, used as the base for all log timestamps
+-        std::atomic<log_time_point> stop; //!< A time point when the logger was stopped, used by the writer thread to know when to stop
+-
+-        LogLevel currentLevel; //!< The minimum level of logs to write
+-        CircularQueue<LogMessage> messageQueue{AsyncLogger::LogQueueSize}; //!< The queue where all log messages are sent
+-
+-        std::atomic<bool> running{true}; //!< If the logger thread should continue running
+-        std::thread thread; //!< The thread that handles writing log entries from the logger queue
+-
+-      public:
+-        /**
+-         * @brief Constructs an empty instance that does not write any logs
+-         */
+-        Impl() noexcept : currentLevel(LogLevel::Disabled) {}
+-
+-        /**
+-         * @brief Constructs an instance that writes logs to the file at the given path
+-         */
+-        Impl(AsyncLogger::LogLevel level, const std::filesystem::path &path) : currentLevel(level) {
+-            start = clock::now();
+-            std::filesystem::create_directories(path.parent_path());
+-            logFile.open(path, std::ios::trunc);
+-            thread = std::thread{&Impl::WriterThread, this};
+-        }
+-
+-        /**
+-         * @brief Finalizes the logger and flushes all pending logs
+-         * @param wait If the function should wait for the writer thread to exit
+-         */
+-        void Finalize(bool wait = false) {
+-            stop.store(clock::now(), std::memory_order_release);
+-            running.store(false, std::memory_order_release);
+-            if (wait)
+-                thread.join();
+-
+-            std::scoped_lock lock{fileMutex};
+-            logFile.close();
+-        }
+-
+-        /**
+-         * @brief The function that runs on the writer thread, polls the queue for new messages and writes them out
+-         */
+-        void WriterThread() {
+-            pthread_setname_np(pthread_self(), "Sky-Logger");
+-
+-            while (running.load(std::memory_order_acquire)) {
+-                auto message{messageQueue.Pop()};
+-                Write(message);
+-            }
+-
+-            log_time_point stopTime = stop.load(std::memory_order_acquire);
+-            // Write out remaining messages in the queue up to the stop time
+-            while (!messageQueue.Empty()) {
+-                auto message{messageQueue.Pop()};
+-                Write(message);
+-
+-                if (message.time > stopTime)
+-                    break;
+-            }
+-        }
+-
+-        /**
+-         * @brief Pushes a log message into the queue
+-         */
+-        void Push(LogMessage &&message) {
+-            messageQueue.Push(std::move(message));
+-        }
+-
+-        /**
+-         * @return Whether the message with the given log level should be written
+-         */
+-        bool CheckLogLevel(AsyncLogger::LogLevel level) {
+-            return level >= currentLevel;
+-        }
+-
+-        /**
+-         * @brief Writes a message to the log file and logcat
+-         */
+-        void Write(LogMessage &message) {
+-            // Prefix the function name to the message
+-            if (message.function)
+-                message.str = fmt::format(FMT_COMPILE("{}: {}"), message.function, message.str);
+-
+-            WriteAndroid(message);
+-            WriteFile(message);
+-        }
+-
+-      private:
+-        void WriteAndroid(const LogMessage &message) {
+-            constexpr std::array<int, 5> androidLevel{
+-                ANDROID_LOG_VERBOSE,
+-                ANDROID_LOG_DEBUG,
+-                ANDROID_LOG_INFO,
+-                ANDROID_LOG_WARN,
+-                ANDROID_LOG_ERROR,
+-            }; // The LogLevel as Android NDK log level
+-
+-            __android_log_write(androidLevel[static_cast<u32>(message.level)], message.threadContext.GetLogTag().data(), message.str.c_str());
+-        }
+-
+-        void WriteFile(const LogMessage &message) {
+-            constexpr std::array<const char *, 5> levelTag{
+-                "VERBOSE",
+-                "DEBUG",
+-                "INFO",
+-                "WARNING",
+-                "ERROR",
+-            };
+-
+-            std::scoped_lock lock{fileMutex};
+-
+-            // LEVEL__ | ______TIME | ____THREAD_____ | MESSAGE
+-            logFile << fmt::format(
+-                "{:7} | {:>10} | {:^15} | {}\n",
+-                levelTag[static_cast<u32>(message.level)],
+-                duration_cast<microseconds>(message.time - start).count(),
+-                message.threadContext.GetThreadName().data(),
+-                message.str
+-            );
+-            logFile.flush();
+-        }
+-    };
+-
+-    AsyncLogger::Impl impl{};
++    namespace { std::shared_ptr<AsyncLogger::Impl> instance; }
+ 
+     void AsyncLogger::Initialize(LogLevel level, const std::filesystem::path &path) {
+-        std::construct_at(&impl, level, path);
+-        UpdateTag(); // Update the tag for the calling thread
+-    }
+-
+-    void AsyncLogger::Finalize(bool wait) {
+-        impl.Finalize(wait);
+-        std::destroy_at(&impl);
+-    }
+-
++        std::lock_guard lock{lifecycleMutex};
++        minimumLevel = Level::Disabled;
++        if (instance) instance->Stop();
++        instance.reset();
++        unavailableDrops = 0;
++        if (level >= Level::Verbose && level < Level::Disabled) {
++            instance = std::make_shared<Impl>(path);
++            minimumLevel = level;
++        }
++        UpdateTag();
++    }
++    void AsyncLogger::Finalize(bool /*wait*/) {
++        // Both legacy modes drain and join. No detached worker may outlive its storage.
++        std::lock_guard lock{lifecycleMutex};
++        minimumLevel = Level::Disabled;
++        if (instance) instance->Stop();
++        instance.reset();
++    }
+     void AsyncLogger::UpdateTag() {
+-        pthread_getname_np(pthread_self(), threadContext.GetThreadName().data(), MaxThreadNameLength);
+-    }
+-
++        threadId = syscall(SYS_gettid);
++        if (pthread_getname_np(pthread_self(), threadName.data(), threadName.size()) != 0)
++            threadName = {'u','n','k','n','o','w','n',0};
++    }
+     bool AsyncLogger::CheckLogLevel(LogLevel level) {
+-        return impl.CheckLogLevel(level);
+-    }
+-
+-    void AsyncLogger::LogAsync(LogLevel level, std::string &&str, const char *function) {
+-        diagnostics::ObserveLog(function ? function : "log", str);
+-        impl.Push(LogMessage{
+-            level,
+-            function,
+-            std::move(str),
+-            clock::now(),
+-            threadContext
+-        });
+-    }
+-
++        return level >= minimumLevel.load(std::memory_order_relaxed) && level < Level::Disabled;
++    }
++    void AsyncLogger::LogAsync(LogLevel level, std::string &&str, const char *function, const char *source, unsigned line) {
++        if (!CheckLogLevel(level)) return;
++        try {
++            std::shared_ptr<Impl> target;
++            {
++                std::unique_lock lock{lifecycleMutex, std::try_to_lock};
++                if (!lock || !instance) { ++unavailableDrops; return; }
++                target = instance;
++            }
++            if (!threadId) UpdateTag();
++            if (!source) diagnostics::ObserveLog(function ? function : "log", str);
++            target->Push(Message{level, std::move(str), Component(source),
++                fmt::format("{}:{}", source ? source : "external", line), function ? function : "",
++                threadId, threadName, Clock::now()});
++        } catch (...) { ++unavailableDrops; }
++    }
++    void AsyncLogger::ReportUnsupported(const char *source, unsigned line, std::string_view detail) noexcept {
++        diagnostics::Unsupported(source ? source : "external",line,detail);
++    }
+     void AsyncLogger::LogSync(LogLevel level, std::string &&str, const char *function) {
+-        diagnostics::ObserveLog(function ? function : "log", str);
+-        auto message = LogMessage{
+-            level,
+-            function,
+-            std::move(str),
+-            clock::now(),
+-            threadContext
+-        };
+-        impl.Write(message);
++        // Legacy emergency API: logcat only; never race the writer's file stream.
++        if (!CheckLogLevel(level)) return;
++        constexpr std::array<int, 5> levels{ANDROID_LOG_VERBOSE, ANDROID_LOG_DEBUG, ANDROID_LOG_INFO, ANDROID_LOG_WARN, ANDROID_LOG_ERROR};
++        try {
++            if (!threadId) UpdateTag();
++            auto body{fmt::format("[tid={}][sync] {}{}{}", threadId, function ? function : "", function ? ": " : "", str.substr(0, MaxMessageBytes))};
++            __android_log_write(levels[static_cast<size_t>(level)], "emu-cpp", body.c_str());
++            LogAsync(level, std::move(str), function);
++        } catch (...) { Emergency("Synchronous log formatting failed"); }
+     }
+ }
+--- avant/logger/logger.h
++++ apres/logger/logger.h
+@@ -4,6 +4,7 @@
+ #pragma once
+ 
+ #include <string>
++#include <string_view>
+ #include <filesystem>
+ #include <common/format.h>
+ 
+@@ -27,6 +28,13 @@
+             Disabled, // A special log level that disables all logging, must be the last log level
+         };
+ 
++        static constexpr bool IsUnsupportedFormat(std::string_view text) {
++            return text.find("STUB")!=text.npos || text.find("stubbed")!=text.npos ||
++                   text.find("unimplemented")!=text.npos || text.find("Unimplemented")!=text.npos ||
++                   text.find("unsupported")!=text.npos || text.find("Unsupported")!=text.npos ||
++                   text.find("not implemented")!=text.npos || text.find("Not implemented")!=text.npos;
++        }
++        static void ReportUnsupported(const char *source, unsigned line, std::string_view detail) noexcept;
+         constexpr static size_t LogQueueSize{1024}; //!< The size of the log message queue
+ 
+         /**
+@@ -39,7 +47,7 @@
+          * @brief Finalizes the logger and flushes all pending logs
+          * @details This stops the writer thread
+          * @note After calling this, Initialize must be called before using the logger again
+-         * @param wait If the function should wait for the writer thread to flush remaining messages and exit
++         * @param wait Retained for source compatibility. Both modes now drain and join safely.
+          */
+         static void Finalize(bool wait = false);
+ 
+@@ -58,10 +66,10 @@
+          * @brief Writes a log message to the log file and logcat asynchronously
+          * @param function The name of the function that pushed this message, nullptr if no function should be prepended
+          */
+-        static void LogAsync(LogLevel level, std::string &&str, const char *function = nullptr);
++        static void LogAsync(LogLevel level, std::string &&str, const char *function = nullptr, const char *source = nullptr, unsigned line = 0);
+ 
+         /**
+-         * @brief Writes a log message to the log file and logcat synchronously
++         * @brief Writes immediately to logcat and queues the file copy; not signal-handler safe
+          * @param function The name of the function that pushed this message, nullptr if no function should be prepended
+          */
+         static void LogSync(LogLevel level, std::string &&str, const char *function = nullptr);
+@@ -71,21 +79,25 @@
+     };
+ }
+ 
+-#define LOG_WRITE(level, ...)                                                               \
+-        do {                                                                                \
+-            if (!skyline::AsyncLogger::CheckLogLevel(level))                                \
+-                break;                                                                      \
+-            std::string _str = fmt::format(__VA_ARGS__);                                    \
+-            skyline::AsyncLogger::LogAsync(level, std::move(_str), __builtin_FUNCTION());   \
+-        } while (0)
++// Register unsupported sites even when their text log level is disabled.
++// Format strings identify the site without formatting changing addresses/arguments.
++#define LOG_WRITE(level, formatString, ...) \
++    do { \
++        if (skyline::AsyncLogger::IsUnsupportedFormat(formatString)) \
++            skyline::AsyncLogger::ReportUnsupported(__FILE__, __LINE__, formatString); \
++        if (!skyline::AsyncLogger::CheckLogLevel(level)) break; \
++        std::string _str = fmt::format(formatString __VA_OPT__(,) __VA_ARGS__); \
++        skyline::AsyncLogger::LogAsync(level, std::move(_str), __builtin_FUNCTION(), __FILE__, __LINE__); \
++    } while (0)
+ 
+-#define LOGNF_WRITE(level, ...)                                                             \
+-        do {                                                                                \
+-            if (!skyline::AsyncLogger::CheckLogLevel(level))                                \
+-                break;                                                                      \
+-            std::string _str = fmt::format(__VA_ARGS__);                                    \
+-            skyline::AsyncLogger::LogAsync(level, std::move(_str), nullptr);                \
+-        } while (0)
++#define LOGNF_WRITE(level, formatString, ...) \
++    do { \
++        if (skyline::AsyncLogger::IsUnsupportedFormat(formatString)) \
++            skyline::AsyncLogger::ReportUnsupported(__FILE__, __LINE__, formatString); \
++        if (!skyline::AsyncLogger::CheckLogLevel(level)) break; \
++        std::string _str = fmt::format(formatString __VA_OPT__(,) __VA_ARGS__); \
++        skyline::AsyncLogger::LogAsync(level, std::move(_str), nullptr, __FILE__, __LINE__); \
++    } while (0)
+ 
+ /**
+  * @brief Logs an Error message, formatted using fmt::format
+@@ -131,3 +143,6 @@
+  * @brief Logs a Verbose message without the calling function name, formatted using fmt::format
+  */
+ #define LOGVNF(...) LOGNF_WRITE(skyline::AsyncLogger::LogLevel::Verbose, __VA_ARGS__)
++
++// Trace shares the persisted Verbose value: existing Android preferences remain valid.
++#define LOGT(...) LOGV(__VA_ARGS__)
+--- avant/nce.cpp
++++ apres/nce.cpp
+@@ -2,6 +2,7 @@
+ // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
+ 
+ #include <common/diagnostic_crash.h>
++#include <common/diagnostic_recorder.h>
+ #include <fstream>
+ #include <cxxabi.h>
+ #include <linux/elf.h>
+@@ -28,21 +29,49 @@
+ 
+         const auto &state{*ctx->state};
+         auto svc{svcId < kernel::svc::SvcTable.size() ? kernel::svc::SvcTable[svcId] : kernel::svc::SvcDescriptor{}};
++        const auto callId=diagnostics::NewId();
++        const auto started=std::chrono::steady_clock::now();
++        const bool detailed=diagnostics::RecorderEnabled() && AsyncLogger::CheckLogLevel(AsyncLogger::LogLevel::Verbose);
++        if(detailed) {
++            auto &r=*reinterpret_cast<kernel::svc::SvcContext *>(ctx);
++            diagnostics::Event("svc_arguments",callId,svcId);
++            diagnostics::Event("svc_input_x0_x1",callId,r.x0,r.x1);
++            diagnostics::Event("svc_input_x2_x3",callId,r.x2,r.x3);
++            diagnostics::Event("svc_input_x4_x5",callId,r.x4,r.x5);
++        }
++        // Explicit endings: longjmp below does not run C++ scope destructors.
++        bool callEnded{};
++        auto endCall=[&](std::string_view outcome) {
++            if (callEnded) return;
++            callEnded = true;
++            auto elapsed=static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-started).count());
++            diagnostics::RecordDuration(diagnostics::Timing::Svc,elapsed);
++            auto &r=*reinterpret_cast<kernel::svc::SvcContext *>(ctx);
++            if(detailed || outcome!="returned") diagnostics::Event("svc_result",callId,svcId,r.x0,outcome);
++            if (detailed) {
++                diagnostics::Event("svc_output_x1_x2",callId,r.x1,r.x2);
++                diagnostics::Event("svc_output_x3_x4",callId,r.x3,r.x4);
++                diagnostics::Event("svc_output_x5",callId,r.x5);
++            }
++        };
+         try {
+             if (svc) [[likely]] {
+                 TRACE_EVENT("kernel", perfetto::StaticString{svc.name});
+                 auto &svcContext{*reinterpret_cast<kernel::svc::SvcContext *>(ctx)};
+                 (svc.function)(state, svcContext);
+             } else {
++                diagnostics::Unsupported("svc",svcId,"unimplemented SVC");
+                 throw exception("Unimplemented SVC 0x{:X}", svcId);
+             }
+ 
++            endCall("returned"); // x0 is raw; GetSystemTick and others do not return Result.
+             while (kernel::Scheduler::YieldPending) [[unlikely]] {
+                 state.scheduler->Rotate(false);
+                 kernel::Scheduler::YieldPending = false;
+                 state.scheduler->WaitSchedule();
+             }
+         } catch (const signal::SignalException &e) {
++            endCall("signal");
+             if (e.signal != SIGINT) {
+                 LOGENF("{} (SVC: {})\nStack Trace:{}", e.what(), svc.name, state.loader->GetStackTrace(e.frames));
+ 
+@@ -55,6 +84,7 @@
+             abi::__cxa_end_catch(); // We call this prior to the longjmp to cause the exception object to be destroyed
+             std::longjmp(state.thread->originalCtx, true);
+         } catch (const ExitException &e) {
++            endCall("exit");
+             if (e.killAllThreads && state.thread->id) {
+                 signal::BlockSignal({SIGINT});
+                 state.process->Kill(false);
+@@ -63,6 +93,7 @@
+             abi::__cxa_end_catch();
+             std::longjmp(state.thread->originalCtx, true);
+         } catch (const exception &e) {
++            endCall("exception");
+             LOGENF("{}\nStack Trace:{}", e.what(), state.loader->GetStackTrace(e.frames));
+ 
+             if (state.thread->id) {
+@@ -73,6 +104,7 @@
+             abi::__cxa_end_catch();
+             std::longjmp(state.thread->originalCtx, true);
+         } catch (const std::exception &e) {
++            endCall("std_exception");
+             if (svc)
+                 LOGENF("{} (SVC: {})\nStack Trace:{}", e.what(), svc.name, state.loader->GetStackTrace());
+             else
+--- avant/nce/jit_fallback.cpp
++++ apres/nce/jit_fallback.cpp
+@@ -14,6 +14,7 @@
+ #include <unordered_set>
+ #include <asm/sigcontext.h>
+ #include <common/signal.h>
++#include <common/utils.h>
+ #include <loader/loader.h>
+ #include <kernel/types/KProcess.h>
+ #include <kernel/types/KThread.h>
+@@ -471,9 +472,8 @@
+             void AddTicks(u64 ticks) override {}
+             u64 GetTicksRemaining() override { return 1; }
+             u64 GetCNTPCT() override {
+-                u64 value;
+-                asm volatile("MRS %0, CNTVCT_EL0" : "=r"(value));
+-                return value;
++                // Match GetSystemTick and the NCE counter patch: guest time is 19.2 MHz.
++                return util::GetTimeTicks();
+             }
+         };
+ 
+--- avant/services/base_service.cpp
++++ apres/services/base_service.cpp
+@@ -3,8 +3,12 @@
+ // Modified 2024: Strato Revival Project — removed exception-based crash paths
+ 
+ #include <cxxabi.h>
++#include <array>
++#include <cstring>
++#include <algorithm>
+ #include <common/trace.h>
+ #include "base_service.h"
++#include "diagnostic_noops.h"
+ 
+ namespace skyline::service {
+     Result service::BaseService::HandleRequest(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
+@@ -12,29 +16,53 @@
+         u32 functionId{request.isTipc ? static_cast<u32>(request.header->type) : request.payload->value};
+ 
+         diagnostics::Scope diagnosticScope(0);
+-        diagnostics::Event("ipc_request", functionId, 0, 0, GetName());
++        diagnostics::Event("ipc_request", functionId, request.cmdArgSz, request.isTipc, GetName());
++        diagnostics::Operation operation("ipc_call", functionId, diagnostics::Timing::Ipc);
++        if (diagnostics::RecorderEnabled() && AsyncLogger::CheckLogLevel(AsyncLogger::LogLevel::Verbose)) {
++            std::array<u64,4> words{};
++            const auto base=reinterpret_cast<uintptr_t>(request.header), args=reinterpret_cast<uintptr_t>(request.cmdArg);
++            size_t bytes{};
++            if (args>=base && args-base<constant::TlsIpcSize)
++                bytes=std::min({static_cast<size_t>(request.cmdArgSz),sizeof(words),static_cast<size_t>(constant::TlsIpcSize-(args-base))});
++            if(bytes)std::memcpy(words.data(),request.cmdArg,bytes);
++            diagnostics::Event("ipc_arguments",functionId,bytes,request.cmdArgSz,
++                fmt::format("raw_le_words={:X},{:X},{:X},{:X}; buffers_in={} out={}",words[0],words[1],words[2],words[3],request.inputBuf.size(),request.outputBuf.size()));
++        }
++        auto finish=[&](Result result) {
++            diagnostics::Event("ipc_result",functionId,static_cast<u32>(result),0,GetName());
++            operation.Finish(static_cast<u32>(result));
++            if (static_cast<u32>(result)) LOGW("Service '{}' cmd=0x{:X} returned 0x{:X}",GetName(),functionId,static_cast<u32>(result));
++            return result;
++        };
+         function = GetServiceFunction(functionId, request.isTipc);
+         if (function.clazz == nullptr) {
+             diagnostics::Unsupported(GetName(), functionId, "missing service function");
+             LOGW("[STUB] No valid function found in service '{}' for {} cmdId=0x{:X} ({})",
+                  GetName(), request.isTipc ? "TIPC" : "HIPC", functionId, functionId);
+-            return Result{0xF601};
++            return finish(Result{0xF601});
+         }
+ 
++        if (diagnostics_detail::IsSuccessOnly(GetName(), function.name)) {
++            diagnostics::Unsupported(GetName(), functionId, function.name);
++            diagnostics::Event("ipc_success_only", functionId, 0, request.isTipc, function.name);
++            LOGD("Service '{}' {}: body returns success without an action; may be intentional", GetName(), function.name);
++        }
+         LOGDNF("Service: {}", function.name);
+         TRACE_EVENT("service", perfetto::StaticString{function.name});
+         try {
+-            return function(session, request, response);
++            return finish(function(session, request, response));
+         } catch (exception &e) {
++            diagnostics::Event("ipc_exception",functionId,0,0,e.what());
+             // We need to forward any skyline::exception objects without modification even though they inherit from std::exception
+             std::rethrow_exception(std::current_exception());
+         } catch (const std::exception &e) {
++            diagnostics::Event("ipc_exception",functionId,0,0,e.what());
+             throw exception("{} (Service: {})", e.what(), function.name);
+         } catch (...) {
+             // Anti-crash: catch any non-std::exception (e.g. thrown from driver/vendor code) instead of
+             // letting it propagate to std::terminate() and killing the whole emulator process.
+             LOGE("[STUB] Unknown non-standard exception caught in service '{}' (Function: {}) — returning NotImplemented instead of crashing", GetName(), function.name);
+-            return Result{0xF601};
++            return finish(Result{0xF601});
+         }
+     }
+ }
+--- avant/services/base_service.h
++++ apres/services/base_service.h
+@@ -8,8 +8,6 @@
+ 
+ #include <kernel/ipc.h>
+ #include <cxxabi.h>
+-#include <mutex>
+-#include <unordered_set>
+ #include <string>
+ 
+ constexpr static skyline::u32 TipcFunctionIdFlag{1U << 31}; //!< Flag applied to the stored service function ID to differentiate between TIPC and HIPC functions
+@@ -35,7 +33,7 @@
+             u32 key{(isTipc ? TipcFunctionIdFlag : 0U) | id}; \
+             auto it{functions.find(key)}; \
+             if (it == functions.end()) [[unlikely]] { \
+-                if (BaseService::ShouldLogStubCall(GetName(), id)) LOGW("[STUB] Missing function in service '{}': cmdId=0x{:X} (tipc={}) — further calls to this cmdId will not be logged", GetName(), id, isTipc); \
++                if (BaseService::ShouldLogStubCall(GetName(), id)) LOGW("[STUB] Missing function in service '{}': cmdId=0x{:X} (tipc={})", GetName(), id, isTipc); \
+                 return ServiceFunctionDescriptor{ \
+                     reinterpret_cast<DerivedService*>(this), \
+                     reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(&BaseService::StubFunction), \
+@@ -101,22 +99,10 @@
+         }
+ 
+       public:
+-        /**
+-         * @brief Returns true only the first time it's called for a given (service, cmdId)
+-         *        pair. Used to avoid the logcat I/O cost of logging on every single call to
+-         *        a missing/stubbed IPC function — some games poll unimplemented functions
+-         *        every frame, and unconditional per-call logging there was measurably
+-         *        causing frame pacing stutter despite a stable average FPS.
+-         */
++        // Every call is counted; the bounded logger handles text rate limiting per site.
+         static bool ShouldLogStubCall(std::string_view serviceName, u32 cmdId) {
+             diagnostics::Unsupported(serviceName, cmdId, "service command stub");
+-            static std::mutex mtx;
+-            static std::unordered_set<std::string> logged;
+-            std::string key{serviceName};
+-            key += ':';
+-            key += std::to_string(cmdId);
+-            std::scoped_lock lock{mtx};
+-            return logged.insert(std::move(key)).second;
++            return true;
+         }
+ 
+       public:
+@@ -129,7 +115,7 @@
+ 
+         virtual ServiceFunctionDescriptor GetServiceFunction(u32 id, bool isTipc) {
+             if (ShouldLogStubCall(GetName(), id))
+-                LOGW("[STUB] {}::GetServiceFunction not implemented (cmdId=0x{:X}, tipc={}) — further calls to this cmdId will not be logged", GetName(), id, isTipc);
++                LOGW("[STUB] {}::GetServiceFunction not implemented (cmdId=0x{:X}, tipc={})", GetName(), id, isTipc);
+             return ServiceFunctionDescriptor{
+                 reinterpret_cast<DerivedService*>(this),
+                 reinterpret_cast<decltype(ServiceFunctionDescriptor::function)>(&BaseService::StubFunction),
+--- avant/services/diagnostic_noops.h
++++ apres/services/diagnostic_noops.h
+@@ -0,0 +1,105 @@
++// SPDX-License-Identifier: MPL-2.0
++#pragma once
++#include <algorithm>
++#include <array>
++#include <string_view>
++#include <utility>
++
++namespace skyline::service::diagnostics_detail {
++    // Verified bodies contain only return {}. This is an observation, not proof of a bug.
++    // Keep sorted; update this catalogue when implementing one of these functions.
++    inline constexpr std::array<std::pair<std::string_view, std::string_view>, 88> SuccessOnlyFunctions{{
++        {"account::IAccountServiceForApplication", "IAccountServiceForApplication::InitializeApplicationInfo"},
++        {"account::IAccountServiceForApplication", "IAccountServiceForApplication::InitializeApplicationInfoV0"},
++        {"account::IAccountServiceForApplication", "IAccountServiceForApplication::InitializeApplicationInfoV2"},
++        {"account::IAccountServiceForApplication", "IAccountServiceForApplication::LoadOpenContext"},
++        {"account::IAccountServiceForApplication", "IAccountServiceForApplication::StoreSaveDataThumbnail"},
++        {"account::IAsyncContext", "IAsyncContext::GetResult"},
++        {"account::IAuthorizationRequest", "IAuthorizationRequest::GetAuthorizationCode"},
++        {"account::IManagerForApplication", "IManagerForApplication::LoadIdTokenCache"},
++        {"am::IApplicationFunctions", "IApplicationFunctions::EnableApplicationCrashReport"},
++        {"am::IApplicationFunctions", "IApplicationFunctions::InitializeGamePlayRecording"},
++        {"am::IApplicationFunctions", "IApplicationFunctions::SetGamePlayRecordingState"},
++        {"am::ICommonStateGetter", "ICommonStateGetter::SetRequestExitToLibraryAppletAtExecuteNextProgramEnabled"},
++        {"am::ISelfController", "ISelfController::LockExit"},
++        {"am::ISelfController", "ISelfController::ReportUserIsActive"},
++        {"am::ISelfController", "ISelfController::SetAlbumImageOrientation"},
++        {"am::ISelfController", "ISelfController::SetFocusHandlingMode"},
++        {"am::ISelfController", "ISelfController::SetOperationModeChangedNotification"},
++        {"am::ISelfController", "ISelfController::SetOutOfFocusSuspendingEnabled"},
++        {"am::ISelfController", "ISelfController::SetPerformanceModeChangedNotification"},
++        {"am::ISelfController", "ISelfController::SetRecordVolumeMuted"},
++        {"am::ISelfController", "ISelfController::SetRestartMessageEnabled"},
++        {"am::ISelfController", "ISelfController::SetScreenShotPermission"},
++        {"am::ISelfController", "ISelfController::UnlockExit"},
++        {"am::IWindowController", "IWindowController::AcquireForegroundRights"},
++        {"aocsrv::IAddOnContentManager", "IAddOnContentManager::CheckAddOnContentMountStatus"},
++        {"aocsrv::IPurchaseEventManager", "IPurchaseEventManager::PopPurchasedProductInfo"},
++        {"aocsrv::IPurchaseEventManager", "IPurchaseEventManager::SetDefaultDeliveryTarget"},
++        {"bcat::IDeliveryCacheProgressService", "IDeliveryCacheProgressService::GetImpl"},
++        {"friends::IFriendService", "IFriendService::DeclareCloseOnlinePlaySession"},
++        {"friends::IFriendService", "IFriendService::DeclareOpenOnlinePlaySession"},
++        {"friends::IFriendService", "IFriendService::GetPlayHistoryRegistrationKey"},
++        {"friends::IFriendService", "IFriendService::UpdateUserPresence"},
++        {"fssrv::IFile", "IFile::Flush"},
++        {"fssrv::IFileSystem", "IFileSystem::Commit"},
++        {"fssrv::IMultiCommitManager", "IMultiCommitManager::Add"},
++        {"fssrv::IMultiCommitManager", "IMultiCommitManager::Commit"},
++        {"hid::IHidServer", "IHidServer::ActivateDebugPad"},
++        {"hid::IHidServer", "IHidServer::ActivateKeyboard"},
++        {"hid::IHidServer", "IHidServer::ActivateMouse"},
++        {"hid::IHidServer", "IHidServer::SetPalmaBoostMode"},
++        {"hid::IHidServer", "IHidServer::StartLrAssignmentMode"},
++        {"hid::IHidServer", "IHidServer::StartSixAxisSensor"},
++        {"hid::IHidServer", "IHidServer::StopLrAssignmentMode"},
++        {"hid::IHidServer", "IHidServer::StopSixAxisSensor"},
++        {"irs::IIrSensorServer", "IIrSensorServer::ActivateIrsensorWithFunctionLevel"},
++        {"lbl::ILblController", "ILblController::GetCurrentAmbientLightSensorMapping"},
++        {"lbl::ILblController", "ILblController::SetBrightnessReflectionDelayLevel"},
++        {"lbl::ILblController", "ILblController::SetCurrentAmbientLightSensorMapping"},
++        {"ldn::IUserLocalCommunicationService", "IUserLocalCommunicationService::CreateNetwork"},
++        {"ldn::IUserLocalCommunicationService", "IUserLocalCommunicationService::CreateNetworkPrivate"},
++        {"ldn::IUserLocalCommunicationService", "IUserLocalCommunicationService::GetIpv4Address"},
++        {"ldn::IUserLocalCommunicationService", "IUserLocalCommunicationService::OpenAccessPoint"},
++        {"ldn::IUserLocalCommunicationService", "IUserLocalCommunicationService::OpenStation"},
++        {"ldn::IUserLocalCommunicationService", "IUserLocalCommunicationService::SetAdvertiseData"},
++        {"lm::ILogger", "ILogger::SetDestination"},
++        {"mii::IDatabaseService", "IDatabaseService::BuildDefault"},
++        {"mii::IDatabaseService", "IDatabaseService::BuildRandom"},
++        {"mii::IDatabaseService", "IDatabaseService::DeleteFile"},
++        {"mii::IDatabaseService", "IDatabaseService::Get"},
++        {"mii::IDatabaseService", "IDatabaseService::Get1"},
++        {"mii::IDatabaseService", "IDatabaseService::SetInterfaceVersion"},
++        {"nifm::IRequest", "IRequest::Cancel"},
++        {"nifm::IRequest", "IRequest::GetResult"},
++        {"nifm::IRequest", "IRequest::SetConnectionConfirmationOption"},
++        {"nifm::IRequest", "IRequest::Submit"},
++        {"nvdrv::INvDrvServices", "INvDrvServices::DumpStatus"},
++        {"nvdrv::INvDrvServices", "INvDrvServices::SetGraphicsFirmwareMemoryMarginEnabled"},
++        {"pctl::IParentalControlService", "IParentalControlService::CheckFreeCommunicationPermission"},
++        {"pctl::IParentalControlService", "IParentalControlService::EndFreeCommunication"},
++        {"pctl::IParentalControlService", "IParentalControlService::Initialize"},
++        {"prepo::IPrepoService", "IPrepoService::RequestImmediateTransmission"},
++        {"prepo::IPrepoService", "IPrepoService::SaveReportWithUser"},
++        {"psm::IPsmSession", "IPsmSession::SetBatteryVoltageStateChangeEventEnabled"},
++        {"psm::IPsmSession", "IPsmSession::SetChargerTypeChangeEventEnabled"},
++        {"psm::IPsmSession", "IPsmSession::SetPowerSupplyChangeEventEnabled"},
++        {"psm::IPsmSession", "IPsmSession::UnbindStateChangeEvent"},
++        {"ro::IRoInterface", "IRoInterface::RegisterModuleInfo"},
++        {"ro::IRoInterface", "IRoInterface::RegisterProcessHandle"},
++        {"ro::IRoInterface", "IRoInterface::RegisterProcessModuleInfo"},
++        {"ro::IRoInterface", "IRoInterface::UnregisterModuleInfo"},
++        {"sm::IUserInterface", "IUserInterface::Initialize"},
++        {"socket::IClient", "IClient::ShutdownAllSockets"},
++        {"socket::IClient", "IClient::StartMonitoring"},
++        {"socket::IManager", "IManager::ResolveEx"},
++        {"socket::IResolver", "IResolver::GetHostByNameRequestWithOptions"},
++        {"socket::IResolver", "IResolver::GetNameInfoRequestWithOptions"},
++        {"visrv::IManagerDisplayService", "IManagerDisplayService::AddToLayerStack"},
++        {"visrv::ISystemDisplayService", "ISystemDisplayService::SetLayerZ"},
++    }};
++    inline bool IsSuccessOnly(std::string_view service, std::string_view function) noexcept {
++        const std::pair key{service, function};
++        return std::binary_search(SuccessOnlyFunctions.begin(), SuccessOnlyFunctions.end(), key);
++    }
++}
+--- avant/services/stub_service.cpp
++++ apres/services/stub_service.cpp
+@@ -1,42 +1,20 @@
+ // SPDX-License-Identifier: MPL-2.0
+ // Copyright © 2024 Strato Revival Project
+-#include <mutex>
+-#include <unordered_set>
++#include <common/diagnostic_recorder.h>
+ #include "stub_service.h"
+ 
+ namespace skyline::service {
+-
+-    namespace {
+-        // Tracks (service name, cmdId) pairs that have already been logged, so a hot
+-        // IPC call (e.g. polled every frame by a game) only pays the logcat I/O cost
+-        // once instead of on every single invocation. Repeated unlogged calls were
+-        // causing measurable frame pacing stutter despite a stable average FPS.
+-        std::mutex loggedStubCallsMutex;
+-        std::unordered_set<std::string> loggedStubCalls;
+-
+-        bool ShouldLog(std::string_view serviceName, u32 cmdId) {
+-            std::string key{serviceName};
+-            key += ':';
+-            key += std::to_string(cmdId);
+-
+-            std::scoped_lock lock{loggedStubCallsMutex};
+-            return loggedStubCalls.insert(std::move(key)).second;
+-        }
+-    }
+-
+-    Result StubService::StubFunction(type::KSession &session, ipc::IpcRequest &request, ipc::IpcResponse &response) {
+-        if (ShouldLog(serviceName, request.payload->value))
+-            LOGW("[STUB] Service '{}' received unimplemented call (cmdId=0x{:X}, tipc={}) — further calls to this cmdId will not be logged",
+-                 serviceName, request.payload->value, request.isTipc);
+-        // Return HOS error: Module=1 (Kernel), Description=0x601 (NotImplemented)
++    Result StubService::StubFunction(type::KSession &, ipc::IpcRequest &request, ipc::IpcResponse &) {
++        const u32 command{request.isTipc ? static_cast<u32>(request.header->type) : request.payload->value};
++        diagnostics::Unsupported(serviceName, command, "stub service; result=0xF601");
++        LOGW("[STUB] Service '{}' cmd=0x{:X} tipc={} result=0xF601", serviceName, command, request.isTipc);
+         return Result{0xF601};
+     }
+-
+-    BaseService::ServiceFunctionDescriptor StubService::GetServiceFunction(u32 id, bool isTipc) {
++    BaseService::ServiceFunctionDescriptor StubService::GetServiceFunction(u32, bool) {
+         return BaseService::ServiceFunctionDescriptor{
+             reinterpret_cast<BaseService::DerivedService*>(this),
+             reinterpret_cast<decltype(BaseService::ServiceFunctionDescriptor::function)>(&StubService::StubFunction),
+             "StubService::StubFunction"
+         };
+     }
+-}+}
