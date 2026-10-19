@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #include "diagnostic_recorder.h"
 #include "diagnostic_session.h"
+#include "thread_activity.h"
 #include <thread>
 #include <deque>
 #include <condition_variable>
@@ -36,6 +37,16 @@ namespace {
         Id sequence{}, ns{}, tid{}, frame{}, operation{}, submission{}, pipeline{}, resource{}, address{}, size{};
         char kind[32]{}, text[192]{};
     };
+    ThreadActivities activities;
+    struct CpuSample { Id tid{}, ticks{}, ns{}; };
+    std::array<CpuSample,256> cpuSamples{};
+    constexpr size_t TraceCapacity=16384, TraceBudget=32*1024*1024;
+    std::array<Entry,TraceCapacity> traceQueue{};
+    size_t traceHead{},traceCount{},traceBytes{};
+    std::atomic<Id> traceDrops{},traceWritten{},traceIoErrors{},traceBudgetDrops{},threadSnapshotFailures{},traceStatusFailures{};
+    bool traceEnabled{true};
+    void DrainTrace() noexcept;
+    void SnapshotThreads() noexcept;
     std::array<Entry, Capacity> ring{};
     std::array<Entry, IpcCapacity> ipcRing{}; // IPC traffic cannot evict rendering evidence.
     std::atomic_flag ringLock = ATOMIC_FLAG_INIT;
@@ -69,10 +80,13 @@ namespace {
             worker=std::thread([this] {
                 Id lastRequest{};
                 auto nextFlush=std::chrono::steady_clock::now();
+                auto nextThreads=nextFlush;
                 std::unique_lock lock(mutex);
-                while(!cv.wait_for(lock,std::chrono::seconds(1),[this]{return stop;})) {
+                while(!cv.wait_for(lock,std::chrono::milliseconds(250),[this]{return stop;})) {
+                    DrainTrace();
                     DrainArtifacts();
                     const auto request=CaptureRequest();const auto now=std::chrono::steady_clock::now();
+                    if(now>=nextThreads){SnapshotThreads();nextThreads=now+std::chrono::seconds(1);}
                     if(request!=lastRequest || now>=nextFlush) {
                         if(FlushRecorder(request!=lastRequest?"manual_evidence":"periodic"))lastRequest=request;
                         nextFlush=now+std::chrono::seconds(10);
@@ -96,14 +110,123 @@ namespace {
     }
     std::string Quote(std::string_view s) { return "\"" + JsonEscape(s) + "\""; }
 }
+namespace {
+    void SerializeEntry(std::ostream &out,const Entry &e) {
+        out<<"{\"seq\":"<<e.sequence<<",\"ns\":"<<e.ns<<",\"tid\":"<<e.tid<<",\"frame\":"<<e.frame
+           <<",\"operation\":"<<e.operation<<",\"submission\":"<<e.submission<<",\"pipeline\":"<<e.pipeline
+           <<",\"kind\":"<<Quote(e.kind)<<",\"resource\":"<<e.resource<<",\"address\":"<<e.address
+           <<",\"size\":"<<e.size<<",\"text\":"<<Quote(e.text)<<"}\n";
+    }
+    void DrainTrace() noexcept {
+        try {
+            std::vector<Entry> batch(TraceCapacity);
+            if(ringLock.test_and_set(std::memory_order_acquire))return;
+            const auto n=traceCount;
+            for(size_t i=0;i<n;++i)batch[i]=traceQueue[(traceHead+i)%TraceCapacity];
+            traceHead=(traceHead+n)%TraceCapacity;traceCount=0;
+            ringLock.clear(std::memory_order_release);batch.resize(n);
+            std::string text;
+            size_t accepted{};
+            for(const auto &e:batch){
+                std::ostringstream line;SerializeEntry(line,e);auto value=line.str();
+                if(value.size()>TraceBudget-traceBytes-text.size()){++traceBudgetDrops;continue;}
+                text+=value;++accepted;
+            }
+            if(!text.empty()) {
+                std::ofstream out(OutputPath("session_trace.jsonl",{}),std::ios::app|std::ios::binary);
+                out.write(text.data(),static_cast<std::streamsize>(text.size()));out.close();
+                // Count attempted bytes too: never exceed budget after a partial disk write.
+                traceBytes+=text.size();
+                if(out)traceWritten+=accepted;else traceIoErrors+=accepted;
+            }
+            std::ostringstream status;
+            status<<"{\"schema_version\":1,\"enabled\":"<<(traceEnabled?"true":"false")
+                  <<",\"queued_capacity\":"<<TraceCapacity<<",\"budget_bytes\":"<<TraceBudget
+                  <<",\"attempted_bytes\":"<<traceBytes<<",\"written_events\":"<<traceWritten.load()
+                  <<",\"thread_snapshot_failures\":"<<threadSnapshotFailures.load()<<",\"status_write_failures\":"<<traceStatusFailures.load()
+                  <<",\"queue_drops\":"<<traceDrops.load()<<",\"producer_contention_drops\":"<<dropped.load()
+                  <<",\"budget_drops\":"<<traceBudgetDrops.load()<<",\"io_failed_events\":"<<traceIoErrors.load()
+                  <<",\"known_loss\":"<<((traceDrops||dropped||traceBudgetDrops||traceIoErrors)?"true":"false")
+                  <<",\"scope\":\"instrumented native dispatch only; not every C++ call or guest instruction; undrained tail may be lost on abrupt process death; 250ms is a nominal drain interval\"}";
+            if(!WriteJson("session_trace_status.json",status.str()))++traceStatusFailures;
+        } catch (...) {++traceIoErrors;}
+    }
+    std::string ProcText(Id tid,const char *file) {
+        std::ifstream in("/proc/self/task/"+std::to_string(tid)+"/"+file);
+        if(!in)return "unavailable";
+        std::string value;std::getline(in,value);return value;
+    }
+    void SnapshotThreads() noexcept {
+        try {
+            const auto now=Now();Id busy{},lost{};bool comma=false;
+            std::ostringstream out;
+            out<<"{\"schema_version\":1,\"ns\":"<<now<<",\"paused\":"<<(IsPaused()?"true":"false")
+               <<",\"certainty\":\"observed calls and waits only; a long wait alone does not prove deadlock\",\"threads\":[";
+            for(auto &slot:activities.slots) {
+                if(!slot.tid.load(std::memory_order_acquire))continue;
+                ThreadActivities::State s;Id missed{};
+                {
+                    std::unique_lock lock(slot.mutex,std::try_to_lock);
+                    if(!lock){++busy;continue;}
+                    s=slot.state;missed=slot.lost.load();
+                }
+                if(!s.tid)continue;
+                lost+=missed;
+                const auto stat=ProcText(s.tid,"stat");
+                const auto endName=stat.rfind(')');
+                char hostState='?';Id userTicks{},systemTicks{};bool cpuValid=false;double cpuPercent{};
+                auto &previous=cpuSamples[static_cast<size_t>(&slot-activities.slots.data())];
+                if(endName!=std::string::npos) {
+                    std::istringstream fields(stat.substr(endName+1));std::string skip;
+                    fields>>hostState;
+                    for(int field=4;field<=13;++field)fields>>skip;
+                    if(fields>>userTicks>>systemTicks){
+                        const auto ticks=userTicks+systemTicks;
+                        const auto hz=sysconf(_SC_CLK_TCK);
+                        if(hz>0 && previous.tid==s.tid && now>previous.ns && ticks>=previous.ticks){
+                            cpuPercent=100.0*static_cast<double>(ticks-previous.ticks)*1e9/
+                                (static_cast<double>(hz)*static_cast<double>(now-previous.ns));cpuValid=true;
+                        }
+                        previous={s.tid,ticks,now};
+                    }
+                }
+                if(comma)out<<',';
+                comma=true;
+                out<<"{\"tid\":"<<s.tid<<",\"guest\":"<<(s.isGuest?"true":"false")
+                   <<",\"guest_id\":"<<s.guest<<",\"guest_handle\":"<<s.handle<<",\"exited\":"<<(s.exited?"true":"false")
+                   <<",\"name\":"<<Quote(ProcText(s.tid,"comm"))<<",\"host_stat\":"<<Quote(stat)<<",\"host_state\":"<<Quote(std::string(1,hostState))
+                   <<",\"cpu_percent_valid\":"<<(cpuValid?"true":"false")<<",\"cpu_percent_one_core\":"<<cpuPercent
+                   <<",\"host_wchan\":"<<Quote(ProcText(s.tid,"wchan"))<<",\"lost_updates\":"<<missed
+                   <<",\"completed_calls\":"<<s.completed<<",\"last_change_ns\":"<<s.changed
+                   <<",\"last_call\":"<<Quote(s.last.kind)<<",\"last_resource\":"<<s.last.resource
+                   <<",\"last_result_raw\":"<<s.lastResult<<",\"active\":[";
+                for(unsigned i=0;i<s.depth;++i){
+                    const auto &c=s.calls[i];if(i)out<<',';
+                    const auto age=now>=c.started?now-c.started:0;
+                    out<<"{\"id\":"<<c.id<<",\"kind\":"<<Quote(c.kind)<<",\"label\":"<<Quote(c.label)
+                       <<",\"resource\":"<<c.resource<<",\"arg0\":"<<c.address<<",\"arg1\":"<<c.value
+                       <<",\"arg2\":"<<c.extra[0]<<",\"arg3\":"<<c.extra[1]<<",\"arg4\":"<<c.extra[2]<<",\"arg5\":"<<c.extra[3]
+                       <<",\"started_ns\":"<<c.started<<",\"age_ns\":"<<age
+                       <<",\"long_running_candidate\":"<<(!IsPaused()&&age>=10000000000ULL?"true":"false")<<'}';
+                }
+                out<<"]}";
+            }
+            out<<"],\"busy_slots\":"<<busy<<",\"lost_updates\":"<<lost<<",\"untracked_updates\":"<<activities.overflow.load()<<'}';
+            if(!WriteJson("thread_activity.json",out.str()))++threadSnapshotFailures;
+        } catch (...) {++threadSnapshotFailures;}
+    }
+}
 
-Operation::Operation(const char *name, Id resource, Timing timing) noexcept
+Operation::Operation(const char *name, Id resource, Timing timing, std::string_view label) noexcept
     : kind{name}, resource{resource}, id{NewId()}, timing{timing}, start{std::chrono::steady_clock::now()} {
+    BeginActivity(id,kind,resource,0,0,label);
     Event(kind,id,resource,0,"begin");
 }
 Operation::~Operation() { if(!finished) Finish(UINT64_MAX,"failed_or_abandoned"); }
 void Operation::Finish(Id result, std::string_view detail) noexcept {
-    if(finished)return;finished=true;
+    if(finished)return;
+    finished=true;
+    EndActivity(id,result);
     const auto ns=static_cast<Id>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count());
     RecordDuration(timing,ns);Event(kind,id,ns,result,detail.empty()?"end":detail);
 }
@@ -112,6 +235,25 @@ void RecordDuration(Timing kind, Id ns) noexcept {
     auto index=static_cast<unsigned>(kind);if(index>=histograms.size())return;
     unsigned bucket=0;for(Id v=ns;v>1 && bucket<63;v>>=1)++bucket;
     auto &h=histograms[index];++h.buckets[bucket];h.sum.fetch_add(ns,std::memory_order_relaxed);++h.samples;
+}
+bool SessionTraceEnabled() noexcept { return RecorderEnabled() && traceEnabled; }
+void GuestThread(Id guest,Id handle,bool exited) noexcept {
+    if(!RecorderEnabled())return;
+    activities.Guest(static_cast<Id>(syscall(SYS_gettid)),guest,handle,Now(),exited);
+    Event(exited?"guest_thread_exit":"guest_thread_start",guest,handle);
+}
+void BeginActivity(Id id,std::string_view kind,Id resource,Id address,Id value,std::string_view label) noexcept {
+    if(!RecorderEnabled())return;
+    activities.Begin(static_cast<Id>(syscall(SYS_gettid)),id,Now(),kind,resource,address,value,label);
+    if(SessionTraceEnabled())Event("native_call_begin",id,resource,0,kind);
+}
+void ActivityArguments(Id id,Id x2,Id x3,Id x4,Id x5) noexcept {
+    if(RecorderEnabled())activities.Arguments(static_cast<Id>(syscall(SYS_gettid)),id,x2,x3,x4,x5);
+}
+void EndActivity(Id id,Id result) noexcept {
+    if(!RecorderEnabled())return;
+    activities.End(static_cast<Id>(syscall(SYS_gettid)),id,Now(),result);
+    if(SessionTraceEnabled())Event("native_call_end",id,result);
 }
 bool RecorderEnabled() noexcept { return enabled.load(std::memory_order_relaxed); }
 int ValidationMode() noexcept { return validationMode; }
@@ -127,6 +269,11 @@ void Event(std::string_view kind, Id resource, Id address, Id size, std::string_
     e.sequence = ++total;e.ns = Now();e.tid = static_cast<Id>(syscall(SYS_gettid));e.frame = frames.load();
     e.operation = correlation.operation;e.submission = correlation.submission;e.pipeline = correlation.pipeline;
     e.resource = resource;e.address = address;e.size = size;Copy(e.kind,kind);Copy(e.text,text);
+    if(traceEnabled) {
+        if(traceCount<traceQueue.size()) {
+            traceQueue[(traceHead+traceCount)%TraceCapacity]=e;++traceCount;
+        } else ++traceDrops;
+    }
     targetHead = (targetHead + 1) % capacity;targetCount = std::min(targetCount + 1, capacity);
     ringLock.clear(std::memory_order_release);
 }
@@ -272,6 +419,7 @@ bool FlushRecorder(std::string_view reason) noexcept {
 void InitializeRecorder() noexcept {
     // Called before emulation workers start; the session directory is immutable afterwards.
     pump.Stop();
+    activities.Reset();cpuSamples={};traceHead=traceCount=traceBytes=0;traceDrops=traceWritten=traceIoErrors=traceBudgetDrops=threadSnapshotFailures=traceStatusFailures=0;traceEnabled=true;
     {std::lock_guard lock(pendingMutex);pendingArtifacts.clear();pendingBytes=0;}
     lastPresent=0;for(auto &h:histograms){h.samples=0;h.sum=0;for(auto &b:h.buckets)b=0;}
     enabled=false;head=count=ipcHead=ipcCount=artifactBytes=artifactCount=0;total=dropped=captures=artifactDrops=mappingDrops=registryDrops=0;
@@ -281,7 +429,12 @@ void InitializeRecorder() noexcept {
         std::ifstream options(OutputPath("diagnostic_options.cfg",{}));int captureShaders=1;
         int requestedMode{};
         if(options>>requestedMode>>captureShaders){validationMode=std::clamp(requestedMode,0,3);shaderCapture=captureShaders!=0;}
+        int requestedTrace=1;
+        if(options>>requestedTrace)traceEnabled=requestedTrace!=0;
+        {std::ofstream trace(OutputPath("session_trace.jsonl",{}),std::ios::trunc);}
         enabled=!OutputPath("flight_recorder.jsonl",{}).empty();
+        Feature("thread_activity","256 thread identities; 8 nested native activities; separate snapshot every second; lost updates invalidate certainty; normal waits are not deadlocks");
+        Feature("session_trace",traceEnabled?"enabled from native JNI entry; 16384 queued events; async 250ms drain; first 32 MiB preserved; newest events in flight_recorder; losses counted; no guest instruction or every C++ function tracing":"disabled via third diagnostic_options.cfg integer");
         Feature("recorder","active; separate bounded rings: 8192 general and 2048 IPC events; nonblocking producers; dropped counts explicit");
         Feature("mapping","incremental mapped-region registry; holes are absent ranges; dropped updates invalidate completeness");
         Feature("unsupported","active; explicit IPC/compute/texel hooks plus observed logs; bounded 512 distinct entries");
@@ -292,5 +445,5 @@ void InitializeRecorder() noexcept {
         if(RecorderEnabled())pump.Start();
     } catch (...) { enabled=false; }
 }
-void ShutdownRecorder() noexcept { pump.Stop();DrainArtifacts();FlushRecorder("shutdown");enabled=false; }
+void ShutdownRecorder() noexcept { pump.Stop();DrainTrace();SnapshotThreads();DrainArtifacts();FlushRecorder("shutdown");enabled=false; }
 }

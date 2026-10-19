@@ -60,11 +60,15 @@ class DiagnosticActivity : AppCompatActivity() {
                     prefs.edit().putInt("diagnostic_validation_mode", selected).apply()
                 }
                 .setPositiveButton(android.R.string.ok, null)
-                .setNeutralButton(R.string.diagnostic_shader_options) { _, _ ->
+                .setNeutralButton(R.string.diagnostic_recording_options) { _, _ ->
                     MaterialAlertDialogBuilder(this)
-                        .setTitle(R.string.diagnostic_shader_options)
-                        .setMultiChoiceItems(arrayOf(getString(R.string.diagnostic_save_shaders)), booleanArrayOf(prefs.getBoolean("diagnostic_capture_shaders", true))) { _, _, checked ->
-                            prefs.edit().putBoolean("diagnostic_capture_shaders", checked).apply()
+                        .setTitle(R.string.diagnostic_recording_options)
+                        .setMultiChoiceItems(
+                            arrayOf(getString(R.string.diagnostic_save_shaders), getString(R.string.diagnostic_native_trace)),
+                            booleanArrayOf(prefs.getBoolean("diagnostic_capture_shaders", true), prefs.getBoolean("diagnostic_native_trace", true))
+                        ) { _, index, checked ->
+                            val key = if (index == 0) "diagnostic_capture_shaders" else "diagnostic_native_trace"
+                            prefs.edit().putBoolean(key, checked).apply()
                         }.setPositiveButton(android.R.string.ok, null).show()
                 }.show()
         }

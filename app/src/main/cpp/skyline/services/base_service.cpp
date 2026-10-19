@@ -17,8 +17,8 @@ namespace skyline::service {
 
         diagnostics::Scope diagnosticScope(0);
         diagnostics::Event("ipc_request", functionId, request.cmdArgSz, request.isTipc, GetName());
-        diagnostics::Operation operation("ipc_call", functionId, diagnostics::Timing::Ipc);
-        if (diagnostics::RecorderEnabled() && AsyncLogger::CheckLogLevel(AsyncLogger::LogLevel::Verbose)) {
+        diagnostics::Operation operation("ipc_call", functionId, diagnostics::Timing::Ipc, GetName());
+        if (diagnostics::SessionTraceEnabled() || (diagnostics::RecorderEnabled() && AsyncLogger::CheckLogLevel(AsyncLogger::LogLevel::Verbose))) {
             std::array<u64,4> words{};
             const auto base=reinterpret_cast<uintptr_t>(request.header), args=reinterpret_cast<uintptr_t>(request.cmdArg);
             size_t bytes{};

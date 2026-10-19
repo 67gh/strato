@@ -27,11 +27,28 @@ namespace skyline::diagnostics {
         std::chrono::steady_clock::time_point start;
         bool finished{};
       public:
-        Operation(const char *kind, Id resource, Timing timing) noexcept;
+        Operation(const char *kind, Id resource, Timing timing, std::string_view label = {}) noexcept;
         Operation(const Operation &) = delete;
         Operation &operator=(const Operation &) = delete;
         ~Operation();
         void Finish(Id result = 0, std::string_view detail = {}) noexcept;
+    };
+    // Native dispatch tracing, independent of text logger verbosity. Not instruction tracing.
+    bool SessionTraceEnabled() noexcept;
+    void GuestThread(Id guest, Id handle, bool exited = false) noexcept;
+    void BeginActivity(Id id, std::string_view kind, Id resource = 0, Id address = 0,
+                       Id value = 0, std::string_view label = {}) noexcept;
+    void ActivityArguments(Id id, Id x2, Id x3, Id x4, Id x5) noexcept;
+    void EndActivity(Id id, Id result = 0) noexcept;
+    class Activity {
+        Id id{NewId()};
+      public:
+        Activity(std::string_view kind, Id resource = 0, Id address = 0, Id value = 0) noexcept {
+            BeginActivity(id,kind,resource,address,value);
+        }
+        ~Activity() { EndActivity(id); }
+        Activity(const Activity &) = delete;
+        Activity &operator=(const Activity &) = delete;
     };
     void InitializeRecorder() noexcept;
     void ShutdownRecorder() noexcept;

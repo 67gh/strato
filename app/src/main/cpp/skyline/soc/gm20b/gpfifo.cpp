@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <common/diagnostic_recorder.h>
 #include <gpu.h>
 #include <common/signal.h>
 #include <common/settings.h>
@@ -90,6 +91,8 @@ namespace skyline::soc::gm20b {
         thread(std::thread(&ChannelGpfifo::Run, this)) {}
 
     void ChannelGpfifo::SendFull(u32 method, GpfifoArgument argument, SubchannelId subChannel, bool lastCall) {
+        if (diagnostics::SessionTraceEnabled() && (method < engine::GPFIFO::RegisterCount || method >= engine::EngineMethodsEnd))
+            diagnostics::Event("gpu_method_full",method,static_cast<u32>(subChannel),*argument);
         if (method < engine::GPFIFO::RegisterCount) {
             gpfifoEngine.CallMethod(method, *argument);
         } else if (method < engine::EngineMethodsEnd) { [[likely]]
@@ -116,6 +119,7 @@ namespace skyline::soc::gm20b {
     }
 
     void ChannelGpfifo::SendPure(u32 method, u32 argument, SubchannelId subChannel) {
+        if(diagnostics::SessionTraceEnabled())diagnostics::Event("gpu_method",method,static_cast<u32>(subChannel),argument);
         if (subChannel == SubchannelId::ThreeD) [[likely]] {
             channelCtx.maxwell3D.CallMethod(method, argument);
             return;
@@ -143,6 +147,8 @@ namespace skyline::soc::gm20b {
     }
 
     void ChannelGpfifo::SendPureBatchNonInc(u32 method, span<u32> arguments, SubchannelId subChannel) {
+        if(diagnostics::SessionTraceEnabled())
+            for(const auto argument:arguments)diagnostics::Event("gpu_method_batch",method,static_cast<u32>(subChannel),argument);
         switch (subChannel) {
             case SubchannelId::ThreeD:
                 channelCtx.maxwell3D.CallMethodBatchNonInc(method, arguments);
@@ -163,6 +169,8 @@ namespace skyline::soc::gm20b {
     }
 
     void ChannelGpfifo::Process(GpEntry gpEntry) {
+        diagnostics::Activity activity("gpu_pushbuffer",reinterpret_cast<uintptr_t>(this),gpEntry.Address(),gpEntry.size);
+        if(diagnostics::SessionTraceEnabled())diagnostics::Event("gpu_pushbuffer",reinterpret_cast<uintptr_t>(this),gpEntry.Address(),gpEntry.size);
         if (!gpEntry.size) {
             // This is a GPFIFO control entry, all control entries have a zero length and contain no pushbuffers
             switch (gpEntry.opcode) {

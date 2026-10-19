@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="diagnostic_recording_options">Recording options</string>
+    <string name="diagnostic_native_trace">Native startup trace (next launch, up to 32 MiB; may reduce performance)</string>
+</resources>
