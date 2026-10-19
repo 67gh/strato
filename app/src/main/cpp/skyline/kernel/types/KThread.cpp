@@ -2,9 +2,11 @@
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 #include <cxxabi.h>
+#include <vector>
 #include <unistd.h>
 #include <common/signal.h>
 #include <common/trace.h>
+#include <common/diagnostic_recorder.h>
 #include <nce.h>
 #include <os.h>
 #include "KProcess.h"
@@ -22,6 +24,7 @@ namespace skyline::kernel::type {
           basePriority(priority),
           idealCore(idealCore),
           coreId(idealCore),
+          waiterMutex(parent->syncWaiterMutex),
           KSyncObject(state, KType::KThread) {
         affinityMask.set(coreId);
     }
@@ -44,14 +47,18 @@ namespace skyline::kernel::type {
             LOGW("Failed to set the thread name: {}", strerror(result));
         AsyncLogger::UpdateTag();
 
-        if (!ctx.tpidrroEl0)
+        diagnostics::GuestThread(id,handle);
+        if (!ctx.tpidrroEl0) {
+            diagnostics::Activity allocation("thread_tls_allocate",id);
             ctx.tpidrroEl0 = parent->AllocateTlsSlot();
+        }
 
         ctx.state = &state;
         state.ctx = &ctx;
         state.thread = shared_from_this();
 
         if (setjmp(originalCtx)) { // Returns 1 if it's returning from guest, 0 otherwise
+            diagnostics::GuestThread(id,handle,true);
             state.scheduler->RemoveThread();
 
             {
@@ -269,68 +276,51 @@ namespace skyline::kernel::type {
     }
 
     void KThread::UpdatePriorityInheritance() {
-        std::unique_lock lock{waiterMutex};
-
-        std::shared_ptr<KThread> waitingOn{waitThread};
-        i8 currentPriority{priority.load()};
-        while (waitingOn) {
-            i8 ownerPriority;
-            do {
-                // Try to CAS the priority of the owner with the current thread
-                // If the new priority is equivalent to the current priority then we don't need to CAS
-                ownerPriority = waitingOn->priority.load();
-                if (ownerPriority <= currentPriority)
-                    return;
-            } while (!waitingOn->priority.compare_exchange_strong(ownerPriority, currentPriority));
-
-            if (ownerPriority != currentPriority) {
-                std::unique_lock waiterLock{waitingOn->waiterMutex, std::try_to_lock};
-                if (!waiterLock) {
-                    // We want to avoid a deadlock here from the thread holding waitingOn->waiterMutex waiting for waiterMutex
-                    // We use a fallback mechanism to avoid this, resetting the state and trying again after being able to successfully acquire waitingOn->waiterMutex once
-                    waitingOn->priority = ownerPriority;
-
-                    lock.unlock();
-
-                    waiterLock.lock();
-                    waiterLock.unlock();
-
-                    lock.lock();
-                    waitingOn = waitThread;
-
-                    continue;
-                }
-
-                auto nextThread{waitingOn->waitThread};
-                if (nextThread) {
-                    // We need to update the location of the owner thread in the waiter queue of the thread it's waiting on
-                    std::unique_lock nextWaiterLock{nextThread->waiterMutex, std::try_to_lock};
-                    if (!nextWaiterLock) {
-                        // We want to avoid a deadlock here from the thread holding nextThread->waiterMutex waiting for waiterMutex or waitingOn->waiterMutex
-                        waitingOn->priority = ownerPriority;
-
-                        lock.unlock();
-                        waiterLock.unlock();
-
-                        nextWaiterLock.lock();
-                        nextWaiterLock.unlock();
-
-                        lock.lock();
-                        waitingOn = waitThread;
-
-                        continue;
-                    }
-
-                    auto &piWaiters{nextThread->waiters};
-                    piWaiters.erase(std::find(piWaiters.begin(), piWaiters.end(), waitingOn));
-                    piWaiters.insert(std::upper_bound(piWaiters.begin(), piWaiters.end(), currentPriority, KThread::IsHigherPriority), waitingOn);
-                    break;
-                }
-                state.scheduler->UpdatePriority(waitingOn);
-                waitingOn = nextThread;
-            } else {
+        std::scoped_lock lock{waiterMutex};
+        std::vector<std::shared_ptr<KThread>> chain;
+        auto current{shared_from_this()};
+        size_t cycleStart{};
+        while (current) {
+            auto found{std::find(chain.begin(), chain.end(), current)};
+            if (found != chain.end()) {
+                cycleStart = static_cast<size_t>(std::distance(chain.begin(), found));
                 break;
             }
+            chain.push_back(current);
+            current = current->waitThread;
         }
+        const size_t prefixSize{current ? cycleStart : chain.size()};
+        std::vector<i8> previous;
+        previous.reserve(chain.size());
+        for (const auto &thread : chain)
+            previous.push_back(thread->priority.load());
+        for (size_t i{}; i < prefixSize; ++i) {
+            auto &thread{chain[i]};
+            i8 effective{thread->basePriority.load()};
+            for (const auto &waiter : thread->waiters)
+                effective = std::min(effective, waiter->priority.load());
+            thread->priority = effective;
+        }
+        if (current) {
+            // A guest deadlock must not cause an endless host traversal. Recompute
+            // the cycle from base priorities and external donations, not stale PI.
+            i8 effective{chain[cycleStart]->basePriority.load()};
+            auto cycleBegin{chain.begin() + static_cast<std::ptrdiff_t>(cycleStart)};
+            for (auto it{cycleBegin}; it != chain.end(); ++it) {
+                effective = std::min(effective, (*it)->basePriority.load());
+                for (const auto &waiter : (*it)->waiters)
+                    if (std::find(cycleBegin, chain.end(), waiter) == chain.end())
+                        effective = std::min(effective, waiter->priority.load());
+            }
+            for (auto it{cycleBegin}; it != chain.end(); ++it)
+                (*it)->priority = effective;
+            diagnostics::Event("priority_wait_cycle", id, chain.size() - cycleStart);
+        }
+        for (const auto &thread : chain)
+            if (auto owner{thread->waitThread})
+                owner->waiters.sort([](const auto &a, const auto &b) { return a->priority.load() < b->priority.load(); });
+        for (size_t i{}; i < chain.size(); ++i)
+            if (previous[i] != chain[i]->priority.load())
+                state.scheduler->UpdatePriority(chain[i]);
     }
 }

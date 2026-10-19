@@ -12,6 +12,7 @@
 #include "jvm.h"
 #include "kernel/types/KProcess.h"
 #include "kernel/svc.h"
+#include "kernel/results.h"
 #include "nce/guest.h"
 #include "nce/instructions.h"
 #include "nce.h"
@@ -31,19 +32,24 @@ namespace skyline::nce {
         auto svc{svcId < kernel::svc::SvcTable.size() ? kernel::svc::SvcTable[svcId] : kernel::svc::SvcDescriptor{}};
         const auto callId=diagnostics::NewId();
         const auto started=std::chrono::steady_clock::now();
-        const bool detailed=diagnostics::RecorderEnabled() && AsyncLogger::CheckLogLevel(AsyncLogger::LogLevel::Verbose);
+        const bool detailed=diagnostics::SessionTraceEnabled() || (diagnostics::RecorderEnabled() && AsyncLogger::CheckLogLevel(AsyncLogger::LogLevel::Verbose));
+        auto &input=*reinterpret_cast<kernel::svc::SvcContext *>(ctx);
+        diagnostics::BeginActivity(callId,"svc",svcId,input.x0,input.x1,svc ? svc.name : "unknown");
+        diagnostics::ActivityArguments(callId,input.x2,input.x3,input.x4,input.x5);
         if(detailed) {
             auto &r=*reinterpret_cast<kernel::svc::SvcContext *>(ctx);
             diagnostics::Event("svc_arguments",callId,svcId);
             diagnostics::Event("svc_input_x0_x1",callId,r.x0,r.x1);
             diagnostics::Event("svc_input_x2_x3",callId,r.x2,r.x3);
             diagnostics::Event("svc_input_x4_x5",callId,r.x4,r.x5);
+            diagnostics::Event("svc_input_x6_x7",callId,ctx->gpr.x6,ctx->gpr.x7);
         }
         // Explicit endings: longjmp below does not run C++ scope destructors.
         bool callEnded{};
         auto endCall=[&](std::string_view outcome) {
             if (callEnded) return;
             callEnded = true;
+            diagnostics::EndActivity(callId,reinterpret_cast<kernel::svc::SvcContext *>(ctx)->x0);
             auto elapsed=static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-started).count());
             diagnostics::RecordDuration(diagnostics::Timing::Svc,elapsed);
             auto &r=*reinterpret_cast<kernel::svc::SvcContext *>(ctx);
@@ -58,7 +64,12 @@ namespace skyline::nce {
             if (svc) [[likely]] {
                 TRACE_EVENT("kernel", perfetto::StaticString{svc.name});
                 auto &svcContext{*reinterpret_cast<kernel::svc::SvcContext *>(ctx)};
-                (svc.function)(state, svcContext);
+                try {
+                    (svc.function)(state, svcContext);
+                } catch (const kernel::type::InvalidHandleException &e) {
+                    LOGW("Invalid handle in SVC {}: {}", svc.name, e.what());
+                    svcContext.w0 = kernel::result::InvalidHandle;
+                }
             } else {
                 diagnostics::Unsupported("svc",svcId,"unimplemented SVC");
                 throw exception("Unimplemented SVC 0x{:X}", svcId);
@@ -125,6 +136,7 @@ namespace skyline::nce {
     void NCE::HookHandler(HookId hookId, ThreadContext *ctx) {
         const auto &state{*ctx->state};
         auto hookedSymbol{state.nce->hookedSymbols[hookId.index]};
+        if(diagnostics::SessionTraceEnabled())diagnostics::Event("hle_hook",hookId.index,hookId.isExit,0,hookedSymbol.prettyName);
         try {
             std::visit(VariantVisitor{
                 [&](const hle::OverrideHook &hook) {

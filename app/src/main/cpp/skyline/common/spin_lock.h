@@ -99,26 +99,28 @@ namespace skyline {
       private:
         SpinLock backingLock;
         u32 uses{};
-        std::thread::id tid{};
+        inline static thread_local const char ownerToken{};
+        std::atomic<const void *> owner{};
+        static_assert(std::atomic<const void *>::is_always_lock_free);
 
       public:
         void lock() {
-            if (tid == std::this_thread::get_id()) {
+            if (owner.load(std::memory_order_relaxed) == &ownerToken) {
                 uses++;
             } else {
                 backingLock.lock();
-                tid = std::this_thread::get_id();
+                owner.store(&ownerToken, std::memory_order_relaxed);
                 uses = 1;
             }
         }
 
         bool try_lock() {
-            if (tid == std::this_thread::get_id()) {
+            if (owner.load(std::memory_order_relaxed) == &ownerToken) {
                 uses++;
                 return true;
             } else {
                 if (backingLock.try_lock()) {
-                    tid = std::this_thread::get_id();
+                    owner.store(&ownerToken, std::memory_order_relaxed);
                     uses = 1;
                     return true;
                 }
@@ -128,7 +130,7 @@ namespace skyline {
 
         void unlock() {
             if (--uses == 0) {
-                tid = {};
+                owner.store(nullptr, std::memory_order_relaxed);
                 backingLock.unlock();
             }
         }

@@ -5,6 +5,7 @@
 #include <nce.h>
 #include <kernel/types/KProcess.h>
 #include <common/trace.h>
+#include <common/diagnostic_recorder.h>
 #include <vfs/npdm.h>
 #include "results.h"
 #include "svc.h"
@@ -381,16 +382,9 @@ namespace skyline::kernel::svc {
         try {
             auto thread{state.process->GetHandle<type::KThread>(handle)};
             LOGD("Setting thread #{}'s priority to {}", thread->id, priority);
-            if (thread->priority != priority) {
+            {
+                std::scoped_lock lock{thread->waiterMutex};
                 thread->basePriority = priority;
-                i8 newPriority{};
-                do {
-                    // Try to CAS the priority of the thread with its new base priority
-                    // If the new priority is equivalent to the current priority then we don't need to CAS
-                    newPriority = thread->priority.load();
-                    newPriority = std::min(newPriority, priority);
-                } while (newPriority != priority && !thread->priority.compare_exchange_strong(newPriority, priority));
-                state.scheduler->UpdatePriority(thread);
                 thread->UpdatePriorityInheritance();
             }
             ctx.w0 = Result{};
@@ -485,7 +479,7 @@ namespace skyline::kernel::svc {
         KHandle handle{ctx.w0};
         TRACE_EVENT_FMT("kernel", "ClearEvent 0x{:X}", handle);
         try {
-            std::static_pointer_cast<type::KEvent>(state.process->GetHandle(handle))->ResetSignal();
+            state.process->GetHandle<type::KEvent>(handle)->ResetSignal();
             LOGD("Clearing 0x{:X}", handle);
             ctx.w0 = Result{};
         } catch (const std::out_of_range &) {
@@ -647,7 +641,6 @@ namespace skyline::kernel::svc {
             }
 
             LOGD("Resetting 0x{:X}", handle);
-            ctx.w0 = Result{};
         } catch (const std::out_of_range &) {
             LOGW("'handle' invalid: 0x{:X}", handle);
             ctx.w0 = result::InvalidHandle;
@@ -656,6 +649,7 @@ namespace skyline::kernel::svc {
     }
 
     void WaitSynchronization(const DeviceState &state, SvcContext &ctx) {
+        diagnostics::Activity wait("sync_objects_wait",ctx.x2,ctx.x1,ctx.x3);
         constexpr u8 MaxSyncHandles{0x40}; // The total amount of handles that can be passed to WaitSynchronization
 
         u32 numHandles{ctx.w2};
@@ -669,7 +663,15 @@ namespace skyline::kernel::svc {
         objectTable.reserve(numHandles);
 
         for (const auto &handle : waitHandles) {
-            auto object{state.process->GetHandle(handle)};
+            std::shared_ptr<type::KObject> object;
+            try {
+                object = state.process->GetHandle(handle);
+            } catch (const std::out_of_range &) {
+                LOGW("Invalid wait handle: 0x{:X}", handle);
+                ctx.w0 = result::InvalidHandle;
+                return;
+            }
+            if(diagnostics::SessionTraceEnabled())diagnostics::Event("svc_wait_handle",state.thread->id,handle,static_cast<u32>(object->objectType));
             switch (object->objectType) {
                 case type::KType::KProcess:
                 case type::KType::KThread:
@@ -696,7 +698,7 @@ namespace skyline::kernel::svc {
             LOGD("Waiting on handles:\n{}Timeout: {}ns", handleString, timeout);
         }
 
-        TRACE_EVENT_FMT("kernel", fmt::runtime(waitHandles.size() == 1 ? "WaitSynchronization 0x{:X}" : "WaitSynchronizationMultiple 0x{:X}"), waitHandles[0]);
+        TRACE_EVENT_FMT("kernel", "WaitSynchronization count={}", numHandles);
 
         std::unique_lock lock(type::KSyncObject::syncObjectMutex);
         if (state.thread->cancelSync) {
@@ -801,6 +803,7 @@ namespace skyline::kernel::svc {
 
         KHandle ownerHandle{ctx.w0};
         KHandle requesterHandle{ctx.w2};
+        diagnostics::Activity wait("mutex_lock",ownerHandle,reinterpret_cast<uintptr_t>(mutex),requesterHandle);
         auto result{state.process->MutexLock(state.thread, mutex, ownerHandle, requesterHandle)};
         if (result == Result{})
             LOGD("Locked {}", fmt::ptr(mutex));
@@ -841,6 +844,7 @@ namespace skyline::kernel::svc {
         i64 timeout{static_cast<i64>(ctx.x3)};
         LOGD("Waiting on {} with {} for {}ns", fmt::ptr(conditional), fmt::ptr(mutex), timeout);
 
+        diagnostics::Activity wait("condition_wait",requesterHandle,reinterpret_cast<uintptr_t>(conditional),static_cast<u64>(timeout));
         auto result{state.process->ConditionVariableWait(conditional, mutex, requesterHandle, timeout)};
         if (result == Result{})
             LOGD("Waited for {} and reacquired {}", fmt::ptr(conditional), fmt::ptr(mutex));
@@ -898,12 +902,15 @@ namespace skyline::kernel::svc {
 
     void GetThreadId(const DeviceState &state, SvcContext &ctx) {
         KHandle handle{ctx.w1};
-        size_t tid{state.process->GetHandle<type::KThread>(handle)->id};
-
-        LOGD("0x{:X} -> #{}", handle, tid);
-
-        ctx.x1 = tid;
-        ctx.w0 = Result{};
+        try {
+            size_t tid{state.process->GetHandle<type::KThread>(handle)->id};
+            LOGD("0x{:X} -> #{}", handle, tid);
+            ctx.x1 = tid;
+            ctx.w0 = Result{};
+        } catch (const std::out_of_range &) {
+            LOGW("Invalid thread handle: 0x{:X}", handle);
+            ctx.w0 = result::InvalidHandle;
+        }
     }
 
     void Break(const DeviceState &state, SvcContext &ctx) {
@@ -1241,6 +1248,7 @@ namespace skyline::kernel::svc {
     }
 
     void WaitForAddress(const DeviceState &state, SvcContext &ctx) {
+        diagnostics::Activity wait("address_wait",ctx.x1,ctx.x0,ctx.x3);
         auto address{reinterpret_cast<u32 *>(ctx.x0)};
         if (!util::IsWordAligned(address)) [[unlikely]] {
             LOGW("'address' not word aligned: {}", fmt::ptr(address));

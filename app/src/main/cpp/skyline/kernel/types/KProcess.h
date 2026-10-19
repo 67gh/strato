@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <stdexcept>
 #include <common/trap_manager.h>
 #include <vfs/npdm.h>
 #include "KThread.h"
@@ -22,6 +23,12 @@ namespace skyline {
     }
 
     namespace kernel::type {
+        // Invalid guest handles are recoverable SVC errors, not emulator failures.
+        class InvalidHandleException : public std::out_of_range {
+          public:
+            using std::out_of_range::out_of_range;
+        };
+
         /**
          * @brief KProcess manages process-global state such as memory, kernel handles allocated to the process and synchronization primitives
          */
@@ -36,10 +43,12 @@ namespace skyline {
             std::mutex threadMutex; //!< Synchronizes thread creation to prevent a race between thread creation and thread killing
             bool disableThreadCreation{}; //!< Whether to disable thread creation, we use this to prevent thread creation after all threads have been killed
             std::atomic_bool alreadyKilled{}; //!< If the process has already been killed prior so there's no need to redundantly kill it again
+            friend class KThread;
+            // Declared before threads: the shared wait-graph lock must outlive them.
+            std::recursive_mutex syncWaiterMutex;
             std::vector<std::shared_ptr<KThread>> threads;
 
             using SyncWaiters = std::multimap<void *, std::shared_ptr<KThread>>;
-            std::mutex syncWaiterMutex; //!< Synchronizes all mutations to the map to prevent races
             SyncWaiters syncWaiters; //!< All threads waiting on process-wide synchronization primitives (Atomic keys + Address Arbiter)
 
             /**
@@ -174,29 +183,38 @@ namespace skyline {
                     if (item != nullptr && item->objectType == objectType)
                         return std::static_pointer_cast<objectClass>(item);
                     else if (item == nullptr)
-                        throw exception("GetHandle was called with a deleted handle: 0x{:X}", handle);
+                        throw InvalidHandleException(fmt::format("GetHandle was called with a deleted handle: 0x{:X}", handle));
                     else
-                        throw exception("Tried to get kernel object (0x{:X}) with different type: {} when object is {}", handle, objectType, item->objectType);
+                        throw InvalidHandleException(fmt::format("GetHandle type mismatch for 0x{:X}", handle));
                 } catch (const std::out_of_range &) {
-                    throw std::out_of_range(fmt::format("GetHandle was called with an invalid handle: 0x{:X}", handle));
+                    throw InvalidHandleException(fmt::format("GetHandle was called with an invalid handle: 0x{:X}", handle));
                 }
             }
 
             template<>
             std::shared_ptr<KObject> GetHandle<KObject>(KHandle handle) {
                 std::shared_lock lock(handleMutex);
-                auto &item{handles.at(handle - constant::BaseHandleIndex)};
-                if (item != nullptr)
-                    return item;
-                else
-                    throw std::out_of_range(fmt::format("GetHandle was called with a deleted handle: 0x{:X}", handle));
+                if (handle < constant::BaseHandleIndex || handle - constant::BaseHandleIndex >= handles.size())
+                    throw InvalidHandleException(fmt::format("Invalid handle: 0x{:X}", handle));
+                auto item{handles[handle - constant::BaseHandleIndex]};
+                if (!item)
+                    throw InvalidHandleException(fmt::format("Closed handle: 0x{:X}", handle));
+                return item;
             }
 
             /**
              * @brief Closes a handle in the handle table
              */
             void CloseHandle(KHandle handle) {
-                handles.at(handle - constant::BaseHandleIndex) = nullptr;
+                std::shared_ptr<KObject> retired;
+                {
+                    std::unique_lock lock(handleMutex);
+                    auto &item{handles.at(handle - constant::BaseHandleIndex)};
+                    if (!item)
+                        throw InvalidHandleException(fmt::format("Closed handle: 0x{:X}", handle));
+                    retired = std::move(item);
+                }
+                // Destructors may re-enter the process; release the table lock first.
             }
 
             /**
