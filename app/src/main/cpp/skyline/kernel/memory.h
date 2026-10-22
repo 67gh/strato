@@ -7,6 +7,7 @@
 #include <common.h>
 #include <common/file_descriptor.h>
 #include <map>
+#include <mutex>
 
 namespace skyline {
     namespace kernel::type {
@@ -258,9 +259,11 @@ namespace skyline {
             const DeviceState &state;
             std::map<u8 *, ChunkDescriptor> chunks;
 
+            std::mutex memRefsMutex; //!< Protects the reference collection independently of VMM operations
             std::vector<std::shared_ptr<type::KMemory>> memRefs;
 
-            void MapInternal(const std::pair<u8 *, ChunkDescriptor> &newDesc);
+            // updateHostProtection=false is only for the synthetic inaccessible 36-bit prefix.
+            void MapInternal(const std::pair<u8 *, ChunkDescriptor> &newDesc, bool updateHostProtection = true);
 
             void ForeachChunkInRange(span<u8> memory, auto editCallback);
 

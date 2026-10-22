@@ -14,8 +14,12 @@ namespace skyline::kernel::type {
             throw exception("An error occurred while creating shared memory: {}", fileDescriptor);
 
         u8 *hostPtr{static_cast<u8 *>(mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fileDescriptor, 0))};
-        if (hostPtr == MAP_FAILED) [[unlikely]]
-            throw exception("An occurred while mapping shared memory: {}", strerror(errno));
+        if (hostPtr == MAP_FAILED) [[unlikely]] {
+            int error{errno};
+            close(fileDescriptor);
+            fileDescriptor = -1;
+            throw exception("An error occurred while mapping shared memory: {}", strerror(error));
+        }
 
         host = span<u8>{hostPtr, size};
     }
@@ -41,7 +45,7 @@ namespace skyline::kernel::type {
             throw exception("KMemory allocation isn't inside guest address space: {} - {}", fmt::ptr(map.data()), fmt::ptr(map.end().base()));
         if (!util::IsPageAligned(map.data()) || !util::IsPageAligned(map.size())) [[unlikely]]
             throw exception("KMemory mapping isn't page-aligned: {} - {} ({} bytes)", fmt::ptr(map.data()), fmt::ptr(map.end().base()), map.size());
-        if (guest.data() != map.data() && guest.size() != map.size()) [[unlikely]]
+        if (!guest.valid() || !map.size() || guest.data() != map.data() || guest.size() != map.size()) [[unlikely]]
             throw exception("Unmapping KMemory partially is not supported: Requested Unmap: {} - {} (0x{:X}), Current Mapping: {} - {} (0x{:X})", fmt::ptr(map.data()), fmt::ptr(map.end().base()), map.size(), fmt::ptr(guest.data()), fmt::ptr(guest.end().base()), guest.size());
 
         map = state.process->memory.GetHostSpan(map);

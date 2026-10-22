@@ -2,6 +2,9 @@
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 #include <fstream>
+#include <charconv>
+#include <cstdint>
+#include <limits>
 #include <asm-generic/unistd.h>
 #include <fcntl.h>
 #include "memory.h"
@@ -17,7 +20,36 @@ namespace skyline::kernel {
             munmap(reinterpret_cast<void *>(codeBase36Bit.data()), codeBase36Bit.size());
     }
 
-    void MemoryManager::MapInternal(const std::pair<u8 *, ChunkDescriptor> &newDesc) {
+    void MemoryManager::MapInternal(const std::pair<u8 *, ChunkDescriptor> &newDesc, bool updateHostProtection) {
+        if (!newDesc.second.size)
+            return;
+        const auto startAddress{reinterpret_cast<uintptr_t>(newDesc.first)};
+        if (newDesc.second.size > std::numeric_limits<uintptr_t>::max() - startAddress || chunks.empty()) [[unlikely]]
+            throw exception("Invalid memory mapping range");
+        u8 *end{newDesc.first + newDesc.second.size};
+        auto current{chunks.upper_bound(newDesc.first)};
+        if (current == chunks.begin() || end > chunks.rbegin()->first) [[unlikely]]
+            throw exception("Memory mapping range is outside the descriptor map");
+        --current;
+        const bool isUnmapping{newDesc.second.state == memory::states::Unmapped};
+        bool needsReprotection{};
+        for (; current != chunks.end() && current->first < end; ++current) {
+            if (current->second.size && (current->second.state == memory::states::Unmapped) != isUnmapping) {
+                needsReprotection = true;
+                break;
+            }
+        }
+        // Do not publish a mapped/unmapped state if the host protection fails.
+        // Mapped-to-mapped guest permission edits must preserve GPU trap protections.
+        if (needsReprotection && updateHostProtection) {
+            auto hostSpan{GetHostSpan({newDesc.first, newDesc.second.size})};
+            if (mprotect(hostSpan.data(), hostSpan.size(), isUnmapping ? PROT_NONE : PROT_READ | PROT_WRITE | PROT_EXEC)) [[unlikely]] {
+                int error{errno};
+                LOGE("VMM reprotection failed at {} (0x{:X} bytes): {}", fmt::ptr(hostSpan.data()), hostSpan.size(), strerror(error));
+                throw exception("VMM reprotection failed: {}", strerror(error));
+            }
+        }
+
         // The chunk that contains / precedes the new chunk base address
         auto firstChunkBase{chunks.lower_bound(newDesc.first)};
         if (newDesc.first <= firstChunkBase->first && firstChunkBase != chunks.begin())
@@ -31,17 +63,11 @@ namespace skyline::kernel {
         ChunkDescriptor firstChunk{firstChunkBase->second};
         ChunkDescriptor lastChunk{lastChunkBase->second};
 
-        bool needsReprotection{false};
-        bool isUnmapping{newDesc.second.state == memory::states::Unmapped};
-
         // We cut a hole in a single chunk
         if (firstChunkBase->first == lastChunkBase->first) {
             if (firstChunk.IsCompatible(newDesc.second)) [[unlikely]]
                 // No editing necessary
                 return;
-
-            if ((firstChunk.state == memory::states::Unmapped) != isUnmapping)
-                needsReprotection = true;
 
             // We reduce the size of the first half
             firstChunk.size = static_cast<size_t>(newDesc.first - firstChunkBase->first);
@@ -56,13 +82,6 @@ namespace skyline::kernel {
         } else {
             // If there are descriptors between first and last chunk, delete them
             if ((firstChunkBase->first + firstChunk.size) != lastChunkBase->first) {
-                auto tempChunkBase{std::next(firstChunkBase)};
-
-                while (tempChunkBase->first != lastChunkBase->first) {
-                    auto tmp{tempChunkBase++};
-                    if ((tmp->second.state == memory::states::Unmapped) != isUnmapping)
-                        needsReprotection = true;
-                }
                 chunks.erase(std::next(firstChunkBase), lastChunkBase);
             }
 
@@ -78,9 +97,6 @@ namespace skyline::kernel {
                 firstChunk.size = static_cast<size_t>(newDesc.first - firstChunkBase->first);
 
                 chunks.insert_or_assign(firstChunkBase->first, firstChunk);
-
-                if ((firstChunk.state == memory::states::Unmapped) != isUnmapping)
-                    needsReprotection = true;
             }
 
             // We check if the new chunk and the last chunk is mergeable
@@ -103,94 +119,106 @@ namespace skyline::kernel {
 
                 chunks.erase(lastChunkBase);
                 chunks.insert_or_assign(newDesc.first + newDesc.second.size, lastChunk);
-
-                if ((lastChunk.state == memory::states::Unmapped) != isUnmapping)
-                    needsReprotection = true;
             }
 
             // Insert if not merged
             if (shouldInsert)
                 chunks.insert_or_assign(newDesc.first, newDesc.second);
         }
-
-        if (needsReprotection) {
-            // Retrieve the host region to re-protect
-            span<u8> hostSpan{GetHostSpan({newDesc.first, newDesc.second.size})};
-            if (mprotect(hostSpan.data(), hostSpan.size(), !isUnmapping ? PROT_READ | PROT_WRITE | PROT_EXEC : PROT_NONE)) [[unlikely]]
-                LOGW("Reprotection failed: {}", strerror(errno));
-        }
     }
 
     void MemoryManager::ForeachChunkInRange(span<u8> memory, auto editCallback) {
-        auto chunkBase{chunks.lower_bound(memory.data())};
-        if (memory.data() < chunkBase->first)
-            --chunkBase;
-
+        u8 *cursor{memory.data()};
         size_t sizeLeft{memory.size()};
+        while (sizeLeft) {
+            // MapInternal may erase or merge both the current and following nodes.
+            // Keep only the clipped descriptor across the callback, then look up again.
+            auto chunkBase{chunks.upper_bound(cursor)};
+            if (chunkBase == chunks.begin()) [[unlikely]]
+                throw exception("Memory range has no chunk descriptor");
+            --chunkBase;
+            size_t offset{static_cast<size_t>(cursor - chunkBase->first)};
+            if (offset >= chunkBase->second.size) [[unlikely]]
+                throw exception("Memory range extends beyond its chunk descriptors");
 
-        if (chunkBase->first < memory.data()) [[unlikely]] {
-            size_t chunkSize{std::min<size_t>(chunkBase->second.size - (static_cast<size_t>(memory.data() - chunkBase->first)), memory.size())};
-
-            std::pair<u8 *, ChunkDescriptor> temp{memory.data(), chunkBase->second};
+            size_t chunkSize{std::min(sizeLeft, chunkBase->second.size - offset)};
+            std::pair<u8 *, ChunkDescriptor> temp{cursor, chunkBase->second};
             temp.second.size = chunkSize;
             editCallback(temp);
-
-            ++chunkBase;
+            cursor += chunkSize;
             sizeLeft -= chunkSize;
-        }
-
-        while (sizeLeft) {
-            if (sizeLeft < chunkBase->second.size) {
-                std::pair<u8 *, ChunkDescriptor> temp(*chunkBase);
-                temp.second.size = sizeLeft;
-                editCallback(temp);
-                break;
-            } else [[likely]] {
-                std::pair<u8 *, ChunkDescriptor> temp(*chunkBase);
-
-                editCallback(temp);
-
-                sizeLeft = sizeLeft - chunkBase->second.size;
-                ++chunkBase;
-            }
         }
     }
 
+    static std::vector<std::pair<uintptr_t, size_t>> FindMappingCandidates(std::istream &maps, size_t minSize, size_t align, uintptr_t minAddress, uintptr_t maxAddress, bool findLargest) {
+        if (!minSize || !util::IsPageAligned(minSize) || !align || (align & (align - 1)) ||
+            !util::IsPageAligned(align) || minAddress >= maxAddress || minSize > maxAddress - minAddress) [[unlikely]]
+            throw exception("Invalid guest address reservation parameters");
+
+        std::vector<std::pair<uintptr_t, size_t>> candidates;
+        auto addGap = [&](uintptr_t start, uintptr_t end) {
+            start = std::max(start, minAddress);
+            end = std::min(end, maxAddress);
+            if (start >= end || start > std::numeric_limits<uintptr_t>::max() - (align - 1))
+                return;
+            start = (start + align - 1) & ~(static_cast<uintptr_t>(align) - 1);
+            if (start >= end || minSize > end - start)
+                return;
+            size_t size{findLargest ? (end - start) & ~(constant::PageSize - 1) : minSize};
+            candidates.emplace_back(start, size);
+        };
+
+        uintptr_t previousEnd{};
+        bool sawMapping{};
+        std::string line;
+        while (std::getline(maps, line)) {
+            const auto dash{line.find('-')};
+            const auto space{line.find(' ')};
+            if (dash == std::string::npos || space == std::string::npos || !dash || dash + 1 >= space) [[unlikely]]
+                throw exception("Malformed address range in /proc/self/maps");
+            uintptr_t start{}, end{};
+            auto first{std::from_chars(line.data(), line.data() + dash, start, 16)};
+            auto last{std::from_chars(line.data() + dash + 1, line.data() + space, end, 16)};
+            if (first.ec != std::errc{} || last.ec != std::errc{} || first.ptr != line.data() + dash ||
+                last.ptr != line.data() + space || start >= end || start < previousEnd) [[unlikely]]
+                throw exception("Invalid or unordered address range in /proc/self/maps");
+            addGap(previousEnd, start);
+            previousEnd = end;
+            sawMapping = true;
+        }
+        if (maps.bad() || !maps.eof() || !sawMapping) [[unlikely]]
+            throw exception("Failed to read /proc/self/maps");
+        addGap(previousEnd, maxAddress);
+        if (findLargest)
+            std::stable_sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+        return candidates;
+    }
+
     static span<u8> AllocateMappedRange(size_t minSize, size_t align, size_t minAddress, size_t maxAddress, bool findLargest) {
-        span<u8> region{};
-        size_t size{minSize};
-
-        std::ifstream mapsFile("/proc/self/maps");
-        std::string maps((std::istreambuf_iterator<char>(mapsFile)), std::istreambuf_iterator<char>());
-        size_t line{}, start{minAddress}, alignedStart{minAddress};
-        do {
-            auto end{util::HexStringToInt<u64>(std::string_view(maps.data() + line, sizeof(u64) * 2))};
-            if (end < start)
-                continue;
-            if (end - start > size + (alignedStart - start)) { // We don't want to overflow if alignedStart > start
-                if (findLargest)
-                    size = end - start;
-
-                region = span<u8>{reinterpret_cast<u8 *>(alignedStart), size};
-
-                if (!findLargest)
-                    break;
+        int lastError{};
+        // /proc is only a placement hint. Never replace an existing mapping even
+        // if another thread occupies a candidate after the snapshot was read.
+        for (unsigned attempt{}; attempt < 3; ++attempt) {
+            std::ifstream mapsFile("/proc/self/maps");
+            if (!mapsFile.is_open()) [[unlikely]]
+                throw exception("Failed to open /proc/self/maps");
+            auto candidates{FindMappingCandidates(mapsFile, minSize, align, minAddress, maxAddress, findLargest)};
+            for (auto [address, size] : candidates) {
+                auto requested{reinterpret_cast<void *>(address)};
+                auto result{mmap(requested, size, PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0)};
+                if (result == MAP_FAILED) {
+                    lastError = errno;
+                    continue;
+                }
+                if (result == requested)
+                    return {static_cast<u8 *>(result), size};
+                // A collision (or a kernel placement policy) moved the mapping.
+                // Release only the mapping returned by this call, then try again.
+                if (munmap(result, size)) [[unlikely]]
+                    throw exception("Failed to release relocated VMM reservation: {}", strerror(errno));
             }
-
-            start = util::HexStringToInt<u64>(std::string_view(maps.data() + maps.find_first_of('-', line) + 1, sizeof(u64) * 2));
-            alignedStart = util::AlignUp(start, align);
-            if (alignedStart + size > maxAddress) // We don't want to map past the end of the address space
-                break;
-        } while ((line = maps.find_first_of('\n', line)) != std::string::npos && line++);
-
-        if (!region.valid()) [[unlikely]]
-            throw exception("Allocation failed");
-
-        auto result{mmap(reinterpret_cast<void *>(region.data()), size, PROT_WRITE, MAP_FIXED | MAP_ANONYMOUS | MAP_SHARED, -1, 0)};
-        if (result == MAP_FAILED) [[unlikely]]
-            throw exception("Failed to mmap guest address space: {}", strerror(errno));
-
-        return region;
+        }
+        throw exception("Could not reserve guest address space after 3 attempts (last mmap errno: {})", lastError);
     }
 
     namespace {
@@ -287,12 +315,13 @@ namespace skyline::kernel {
 
         switch (addressSpaceType) {
             case memory::AddressSpaceType::AddressSpace36Bit: {
-                // As a workaround if we can't place the code region at the base of the AS we mark it as inaccessible heap so rtld doesn't crash
+                // rtld expects the prefix to appear as inaccessible heap. It is
+                // not an owned host reservation, so only publish its guest metadata.
                 if (codeBase36Bit.data() != reinterpret_cast<u8 *>(AS36bit::CodeRegionStart)) {
                     MapInternal(std::pair<u8 *, ChunkDescriptor>(reinterpret_cast<u8 *>(AS36bit::CodeRegionStart), {
                         .size = reinterpret_cast<size_t>(codeBase36Bit.data() - AS36bit::CodeRegionStart),
                         .state = memory::states::Heap
-                    }));
+                    }), false);
                 }
 
                 // Place code, stack and TLS/IO in the lower 36-bits of the host AS and heap and alias past that
@@ -316,8 +345,11 @@ namespace skyline::kernel {
                 if (newSize > base.size()) [[unlikely]]
                     throw exception("Guest VMM size has exceeded host carveout size: 0x{:X}/0x{:X} (Code: 0x{:X}/0x{:X})", newSize, base.size(), code.size(), AS39bit::MaxCodeRegionSize);
 
-                if (newSize != base.size()) [[likely]]
-                    munmap(base.end().base(), newSize - base.size());
+                if (newSize != base.size()) [[likely]] {
+                    if (munmap(base.data() + newSize, base.size() - newSize)) [[unlikely]]
+                        throw exception("Failed to shrink guest VMM reservation: {}", strerror(errno));
+                    base = span<u8>{base.data(), newSize};
+                }
 
                 break;
             }
@@ -348,7 +380,7 @@ namespace skyline::kernel {
         // Get the host address of the mapping
         mapping = GetHostSpan(mapping);
 
-        if (!base.contains(mapping)) [[unlikely]]
+        if (!mapping.size() || !base.contains(mapping)) [[unlikely]]
             throw exception("Mapping is outside of VMM base: {} - {}", fmt::ptr(mapping.data()), fmt::ptr(mapping.end().base()));
 
         auto offset{static_cast<size_t>(mapping.data() - base.data())};
@@ -359,43 +391,53 @@ namespace skyline::kernel {
         if (mirror == MAP_FAILED) [[unlikely]]
             throw exception("Failed to create mirror mapping at {} - {} (0x{:X}): {}", fmt::ptr(mapping.data()), fmt::ptr(mapping.end().base()), offset, strerror(errno));
 
-        mprotect(mirror, mapping.size(), PROT_READ | PROT_WRITE);
+        if (mprotect(mirror, mapping.size(), PROT_READ | PROT_WRITE)) [[unlikely]] {
+            int error{errno};
+            if (munmap(mirror, mapping.size()))
+                LOGE("Failed to release unusable mirror mapping: {}", strerror(errno));
+            throw exception("Failed to protect mirror mapping: {}", strerror(error));
+        }
 
         return span<u8>{reinterpret_cast<u8 *>(mirror), mapping.size()};
     }
 
     span<u8> MemoryManager::CreateMirrors(const std::vector<span<u8>> &regions) {
         size_t totalSize{};
-        for (const auto &region : regions)
+        // Validate every region before reserving or creating any mapping.
+        for (const auto &region : regions) {
+            auto hostRegion{GetHostSpan(region)};
+            if (!hostRegion.size() || !base.contains(hostRegion)) [[unlikely]]
+                throw exception("Mirror region is empty or outside of VMM base");
+            if (!util::IsPageAligned(hostRegion.data()) || !util::IsPageAligned(hostRegion.size())) [[unlikely]]
+                throw exception("Mirror region is not page aligned");
+            if (region.size() > std::numeric_limits<size_t>::max() - totalSize) [[unlikely]]
+                throw exception("Combined mirror size overflows size_t");
             totalSize += region.size();
+        }
+        if (!totalSize) [[unlikely]]
+            throw exception("Cannot create an empty mirror mapping");
 
         auto mirrorBase{mmap(nullptr, totalSize, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)}; // Reserve address space for all mirrors
         if (mirrorBase == MAP_FAILED) [[unlikely]]
             throw exception("Failed to create mirror base: {} (0x{:X} bytes)", strerror(errno), totalSize);
 
-        size_t mirrorOffset{};
-        for (const auto &region : regions) {
-            // Get the host address of the region
-            auto hostRegion{GetHostSpan(region)};
-
-            if (!base.contains(hostRegion)) [[unlikely]]
-                throw exception("Mapping is outside of VMM base: {} - {}", fmt::ptr(hostRegion.data()), fmt::ptr(hostRegion.end().base()));
-
-            auto offset{static_cast<size_t>(hostRegion.data() - base.data())};
-            if (!util::IsPageAligned(offset) || !util::IsPageAligned(hostRegion.size())) [[unlikely]]
-                throw exception("Mapping is not aligned to a page: {} - {} (0x{:X})", fmt::ptr(hostRegion.data()), fmt::ptr(hostRegion.end().base()), offset);
-
-            auto mirror{mremap(hostRegion.data(), 0, hostRegion.size(), MREMAP_FIXED | MREMAP_MAYMOVE, reinterpret_cast<u8 *>(mirrorBase) + mirrorOffset)};
-            if (mirror == MAP_FAILED) [[unlikely]]
-                throw exception("Failed to create mirror mapping at {} - {} (0x{:X}): {}", fmt::ptr(hostRegion.data()), fmt::ptr(hostRegion.end().base()), offset, strerror(errno));
-
-            mprotect(mirror, hostRegion.size(), PROT_READ | PROT_WRITE);
-
-            mirrorOffset += hostRegion.size();
+        try {
+            size_t mirrorOffset{};
+            for (const auto &region : regions) {
+                auto hostRegion{GetHostSpan(region)};
+                auto mirror{mremap(hostRegion.data(), 0, hostRegion.size(), MREMAP_FIXED | MREMAP_MAYMOVE, reinterpret_cast<u8 *>(mirrorBase) + mirrorOffset)};
+                if (mirror == MAP_FAILED) [[unlikely]]
+                    throw exception("Failed to create mirror mapping: {}", strerror(errno));
+                if (mprotect(mirror, hostRegion.size(), PROT_READ | PROT_WRITE)) [[unlikely]]
+                    throw exception("Failed to protect mirror mapping: {}", strerror(errno));
+                mirrorOffset += hostRegion.size();
+            }
+        } catch (...) {
+            // Includes both completed mirrors and the untouched reservation tail.
+            if (munmap(mirrorBase, totalSize))
+                LOGE("Failed to release incomplete mirror mapping: {}", strerror(errno));
+            throw;
         }
-
-        if (mirrorOffset != totalSize) [[unlikely]]
-            throw exception("Mirror size mismatch: 0x{:X} != 0x{:X}", mirrorOffset, totalSize);
 
         return span<u8>{reinterpret_cast<u8 *>(mirrorBase), totalSize};
     }
@@ -584,35 +626,44 @@ namespace skyline::kernel {
     void MemoryManager::SvcUnmapMemory(span<u8> source, span<u8> destination) {
         std::unique_lock lock{mutex};
 
-        auto dstChunk = chunks.lower_bound(destination.data());
-        if (destination.data() < dstChunk->first)
-            --dstChunk;
-        while (dstChunk->second.state == memory::states::Unmapped)
-            ++dstChunk;
+        if (source.size() != destination.size()) [[unlikely]]
+            throw exception("Mismatched svcUnmapMemory range sizes");
 
-        if ((destination.data() + destination.size()) > dstChunk->first) [[likely]] {
-            ForeachChunkInRange(span<u8>{source.data() + (dstChunk->first - destination.data()), dstChunk->second.size}, [&](std::pair<u8 *, ChunkDescriptor> &desc) __attribute__((always_inline)) {
-                desc.second.permission = dstChunk->second.permission;
+        ForeachChunkInRange(destination, [&](const std::pair<u8 *, ChunkDescriptor> &dstChunk) {
+            if (dstChunk.second.state == memory::states::Unmapped)
+                return;
+
+            size_t offset{static_cast<size_t>(dstChunk.first - destination.data())};
+            span<u8> sourcePart{source.data() + offset, dstChunk.second.size};
+            ForeachChunkInRange(sourcePart, [&](std::pair<u8 *, ChunkDescriptor> &desc) {
+                desc.second.permission = dstChunk.second.permission;
                 desc.second.attributes.isBorrowed = false;
                 MapInternal(desc);
             });
 
-            auto sourceHost{GetHostSpan(source)};
-            auto dstChunkHost{GetHostSpan(span<u8>{dstChunk->first, dstChunk->second.size})};
-            auto destinationOffset{dstChunk->first - destination.data()};
-            std::memcpy(sourceHost.data() + destinationOffset, dstChunkHost.data(), dstChunkHost.size());
-        }
+            auto sourceHost{GetHostSpan(sourcePart)};
+            auto destinationHost{GetHostSpan({dstChunk.first, dstChunk.second.size})};
+            std::memcpy(sourceHost.data(), destinationHost.data(), sourceHost.size());
+        });
     }
 
     void MemoryManager::AddRef(std::shared_ptr<type::KMemory> ptr) {
+        std::lock_guard lock{memRefsMutex};
         memRefs.push_back(std::move(ptr));
     }
 
     void MemoryManager::RemoveRef(const std::shared_ptr<type::KMemory> &ptr) {
-        auto i = std::find(memRefs.begin(), memRefs.end(), ptr);
-
-        if (*i == ptr) [[likely]]
+        // Release the object outside the collection lock: its destructor may
+        // re-enter memory management.
+        std::shared_ptr<type::KMemory> removed;
+        {
+            std::lock_guard lock{memRefsMutex};
+            auto i = std::find(memRefs.begin(), memRefs.end(), ptr);
+            if (i == memRefs.end())
+                return;
+            removed = std::move(*i);
             memRefs.erase(i);
+        }
     }
 
     size_t MemoryManager::GetUserMemoryUsage() {
