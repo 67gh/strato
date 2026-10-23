@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <algorithm>
 #include <fstream>
 #include <charconv>
 #include <cstdint>
@@ -168,26 +169,44 @@ namespace skyline::kernel {
             candidates.emplace_back(start, size);
         };
 
-        uintptr_t previousEnd{};
-        bool sawMapping{};
+        // Treat the map as a set of occupied ranges, not as an allocation
+        // guarantee. The mmap below remains responsible for collision safety.
+        std::vector<std::pair<uintptr_t, uintptr_t>> occupied;
+        size_t lineNumber{};
         std::string line;
         while (std::getline(maps, line)) {
+            ++lineNumber;
             const auto dash{line.find('-')};
-            const auto space{line.find(' ')};
+            const auto space{line.find_first_of(" \t")};
             if (dash == std::string::npos || space == std::string::npos || !dash || dash + 1 >= space) [[unlikely]]
-                throw exception("Malformed address range in /proc/self/maps");
+                throw exception("Malformed address range in /proc/self/maps at line {} (prefix: {})", lineNumber, line.substr(0, 64));
             uintptr_t start{}, end{};
             auto first{std::from_chars(line.data(), line.data() + dash, start, 16)};
             auto last{std::from_chars(line.data() + dash + 1, line.data() + space, end, 16)};
             if (first.ec != std::errc{} || last.ec != std::errc{} || first.ptr != line.data() + dash ||
-                last.ptr != line.data() + space || start >= end || start < previousEnd) [[unlikely]]
-                throw exception("Invalid or unordered address range in /proc/self/maps");
-            addGap(previousEnd, start);
-            previousEnd = end;
-            sawMapping = true;
+                last.ptr != line.data() + space) [[unlikely]]
+                throw exception("Invalid hexadecimal address in /proc/self/maps at line {} (range: {})", lineNumber, line.substr(0, std::min(space, size_t{64})));
+            if (start >= end) [[unlikely]]
+                throw exception("Empty or reversed address range in /proc/self/maps at line {}: {:X}-{:X}", lineNumber, start, end);
+            occupied.emplace_back(start, end);
         }
-        if (maps.bad() || !maps.eof() || !sawMapping) [[unlikely]]
+        if (maps.bad() || !maps.eof() || occupied.empty()) [[unlikely]]
             throw exception("Failed to read /proc/self/maps");
+
+        const bool reordered{!std::is_sorted(occupied.begin(), occupied.end())};
+        std::sort(occupied.begin(), occupied.end());
+        uintptr_t previousEnd{};
+        size_t overlaps{};
+        for (const auto &[start, end] : occupied) {
+            if (start < previousEnd)
+                ++overlaps;
+            else
+                addGap(previousEnd, start);
+            // A nested/duplicate range must not reopen a hole in its parent.
+            previousEnd = std::max(previousEnd, end);
+        }
+        if (reordered || overlaps)
+            LOGW("VMM maps normalized: {} ranges, reordered={}, overlapping/duplicate={}", occupied.size(), reordered, overlaps);
         addGap(previousEnd, maxAddress);
         if (findLargest)
             std::stable_sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
