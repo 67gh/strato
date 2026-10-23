@@ -173,6 +173,7 @@ namespace skyline::kernel {
         // guarantee. The mmap below remains responsible for collision safety.
         std::vector<std::pair<uintptr_t, uintptr_t>> occupied;
         size_t lineNumber{};
+        size_t emptyRanges{};
         std::string line;
         while (std::getline(maps, line)) {
             ++lineNumber;
@@ -186,8 +187,14 @@ namespace skyline::kernel {
             if (first.ec != std::errc{} || last.ec != std::errc{} || first.ptr != line.data() + dash ||
                 last.ptr != line.data() + space) [[unlikely]]
                 throw exception("Invalid hexadecimal address in /proc/self/maps at line {} (range: {})", lineNumber, line.substr(0, std::min(space, size_t{64})));
-            if (start >= end) [[unlikely]]
-                throw exception("Empty or reversed address range in /proc/self/maps at line {}: {:X}-{:X}", lineNumber, start, end);
+            if (start > end) [[unlikely]]
+                throw exception("Reversed address range in /proc/self/maps at line {}: {:X}-{:X}", lineNumber, start, end);
+            // Some Android maps listings contain zero-length entries. They
+            // occupy no bytes and must not split a gap or abort reservation.
+            if (start == end) [[unlikely]] {
+                ++emptyRanges;
+                continue;
+            }
             occupied.emplace_back(start, end);
         }
         if (maps.bad() || !maps.eof() || occupied.empty()) [[unlikely]]
@@ -205,8 +212,8 @@ namespace skyline::kernel {
             // A nested/duplicate range must not reopen a hole in its parent.
             previousEnd = std::max(previousEnd, end);
         }
-        if (reordered || overlaps)
-            LOGW("VMM maps normalized: {} ranges, reordered={}, overlapping/duplicate={}", occupied.size(), reordered, overlaps);
+        if (reordered || overlaps || emptyRanges)
+            LOGW("VMM maps normalized: {} ranges, reordered={}, overlapping/duplicate={}, empty={}", occupied.size(), reordered, overlaps, emptyRanges);
         addGap(previousEnd, maxAddress);
         if (findLargest)
             std::stable_sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
