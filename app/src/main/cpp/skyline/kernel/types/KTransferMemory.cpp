@@ -53,7 +53,7 @@ namespace skyline::kernel::type {
             LOGE("Failed to restore transfer memory descriptors");
             std::terminate();
         }
-        guest = {};
+        guest = skyline::span<u8>{nullptr};
         originalMappings.clear();
     }
 

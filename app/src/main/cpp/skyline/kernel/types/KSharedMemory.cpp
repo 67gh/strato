@@ -47,7 +47,7 @@ namespace skyline::kernel::type {
             LOGE("Failed to publish shared memory unmap");
             std::terminate();
         }
-        guest = {};
+        guest = skyline::span<u8>{nullptr};
     }
 
     KSharedMemory::~KSharedMemory() {
