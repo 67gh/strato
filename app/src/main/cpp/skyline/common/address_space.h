@@ -228,51 +228,39 @@ namespace skyline {
          */
         template<typename Function, typename Container>
         span<u8> ReadTill(Container& destination, VaType virt, Function function, std::function<void(span<u8>)> cpuAccessCallback = {}) {
-            //TRACE_EVENT("containers", "FlatMemoryManager::ReadTill");
-
             std::shared_lock lock(this->blockMutex);
-
-            auto successor{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt, [](auto virt, const auto &block) {
-                return virt < block.virt;
-            })};
-
-            auto predecessor{std::prev(successor)};
-
+            ValidateRange(virt, 0);
+            // The exclusive VA limit is an unmapped boundary for this partial reader.
+            const VaType total{static_cast<VaType>(std::min<size_t>(destination.size(), this->vaLimit - virt))};
+            VaType remaining{total};
             auto pointer{destination.data()};
-            auto remainingSize{destination.size()};
-
-            u8 *blockPhys{predecessor->phys + (virt - predecessor->virt)};
-            VaType blockReadSize{std::min(successor->virt - virt, remainingSize)};
-
-            while (remainingSize) {
-                if (predecessor->phys == nullptr) {
-                    return {destination.data(), destination.size() - remainingSize};
+            while (remaining) {
+                auto next{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt,
+                    [](VaType value, const auto &block) { return value < block.virt; })};
+                auto block{std::prev(next)};
+                if (!block->phys)
+                    break; // ReadTill deliberately returns the valid prefix.
+                const VaType end{next == this->blocks.end() ? this->vaLimit : next->virt};
+                const VaType amount{std::min(remaining, end - virt)};
+                if (block->extraInfo.sparseMapped) {
+                    std::memset(pointer, 0, amount);
                 } else {
-                    if (predecessor->extraInfo.sparseMapped) {
-                        std::memset(pointer, 0, blockReadSize);
-                    } else {
-                        span<u8> cpuBlock{blockPhys, blockReadSize};
-                        if (cpuAccessCallback)
-                            cpuAccessCallback(cpuBlock);
-
-                        auto end{function(cpuBlock)};
-                        std::memcpy(pointer, blockPhys, end ? *end : blockReadSize);
-                        if (end)
-                            return {destination.data(), (destination.size() - remainingSize) + *end};
-                    }
+                    span<u8> cpuBlock{block->phys + (virt - block->virt), amount};
+                    if (cpuAccessCallback)
+                        cpuAccessCallback(cpuBlock);
+                    auto stop{function(cpuBlock)};
+                    if (stop && *stop > amount)
+                        throw exception("ReadTill callback exceeded its block");
+                    const auto count{stop ? *stop : amount};
+                    std::memcpy(pointer, cpuBlock.data(), count);
+                    if (stop)
+                        return {destination.data(), total - remaining + count};
                 }
-
-                pointer += blockReadSize;
-                remainingSize -= blockReadSize;
-
-                if (remainingSize) {
-                    predecessor = successor++;
-                    blockPhys = predecessor->phys;
-                    blockReadSize = std::min(successor->virt - predecessor->virt, remainingSize);
-                }
+                pointer += amount;
+                virt += amount;
+                remaining -= amount;
             }
-
-            return {destination.data(), destination.size()};
+            return {destination.data(), total - remaining};
         }
 
         void Write(VaType virt, u8 *source, VaType size, std::function<void(span<u8>)> cpuAccessCallback = {});
@@ -342,3 +330,4 @@ namespace skyline {
         void Free(VaType virt, VaType size);
     };
 }
+

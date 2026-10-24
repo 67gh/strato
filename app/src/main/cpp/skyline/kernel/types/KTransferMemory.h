@@ -12,7 +12,7 @@ namespace skyline::kernel::type {
      */
     class KTransferMemory : public KMemory {
       private:
-        ChunkDescriptor originalMapping;
+        std::vector<std::pair<u8 *, ChunkDescriptor>> originalMappings;
 
       public:
         /**
@@ -33,3 +33,4 @@ namespace skyline::kernel::type {
         ~KTransferMemory();
     };
 }
+

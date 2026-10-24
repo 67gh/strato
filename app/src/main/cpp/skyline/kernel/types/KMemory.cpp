@@ -25,6 +25,9 @@ namespace skyline::kernel::type {
     }
 
     u8 *KMemory::Map(span<u8> map, memory::Permission permission) {
+        // Derived mappings validate guest state while holding the VMM lock.
+        if (!map.size() || map.size() != host.size()) [[unlikely]]
+            throw exception("KMemory mapping size differs from backing: 0x{:X}/0x{:X}", map.size(), host.size());
         if (!state.process->memory.AddressSpaceContains(map)) [[unlikely]]
             throw exception("KMemory allocation isn't inside guest address space: {} - {}", fmt::ptr(map.data()), fmt::ptr(map.end().base()));
         if (!util::IsPageAligned(map.data()) || !util::IsPageAligned(map.size())) [[unlikely]]
@@ -60,3 +63,4 @@ namespace skyline::kernel::type {
         close(fileDescriptor);
     }
 }
+

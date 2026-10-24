@@ -2,10 +2,29 @@
 // Copyright © 2024 Strato Team and Contributors (https://github.com/strato-emu/)
 
 #include <sys/mman.h>
+#include <cerrno>
+#include <unistd.h>
+#include <cstdlib>
 #include "trace.h"
 #include "trap_manager.h"
 
 namespace skyline {
+    // No formatting, allocation, or logger lock on this fatal path: it can run
+    // from a fault callback. Partial mprotect success cannot safely be ignored.
+    [[noreturn]] static void TrapProtectionFailure() noexcept {
+        constexpr char message[]{"Strato: mprotect failed in TrapManager; aborting inconsistent protection state\n"};
+        (void)write(STDERR_FILENO, message, sizeof(message) - 1);
+        std::abort();
+    }
+
+    static bool SetTrapProtection(void *address, size_t size, int protection) noexcept {
+        int result;
+        do {
+            result = mprotect(address, size, protection);
+        } while (result == -1 && errno == EINTR);
+        return result == 0;
+    }
+
     CallbackEntry::CallbackEntry(TrapProtection protection, LockCallback lockCallback, TrapCallback readCallback, TrapCallback writeCallback) : protection{protection}, lockCallback{std::move(lockCallback)}, readCallback{std::move(readCallback)}, writeCallback{std::move(writeCallback)} {}
 
     constexpr TrapHandle::TrapHandle(const TrapMap::GroupHandle &handle) : TrapMap::GroupHandle(handle) {}
@@ -46,7 +65,8 @@ namespace skyline {
         auto reprotectIntervalsWithFunction = [&intervals](auto getProtection) {
             for (auto region : intervals) {
                 region = region.Align(constant::PageSize);
-                mprotect(region.start, region.Size(), getProtection(region));
+                if (!SetTrapProtection(region.start, region.Size(), getProtection(region)))
+                    TrapProtectionFailure();
             }
         };
 
@@ -156,6 +176,7 @@ namespace skyline {
                         break;
                     }
                     entry.protection = TrapProtection::WriteOnly; // We only need to trap writes to this entry
+                    allNone = false; // A read callback must not silently remove the pending write trap.
                 }
                 if (lockCallback)
                     continue; // We need to retry the loop because a callback was blocking
@@ -165,9 +186,11 @@ namespace skyline {
             int permission{PROT_READ | (write ? PROT_WRITE : 0) | PROT_EXEC};
             for (const auto &interval : intervals)
                 // Reprotect the interval to the lowest protection level that the callbacks performed allow
-                mprotect(interval.start, interval.Size(), permission);
+                if (!SetTrapProtection(interval.start, interval.Size(), permission))
+                    TrapProtectionFailure();
 
             return true;
         }
     }
 }
+

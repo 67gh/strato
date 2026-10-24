@@ -382,8 +382,12 @@ namespace skyline::nce {
                     accesses += fmt::format("{}\"{}{}@0x{:X}={}\"", accesses.empty() ? "" : ",", direction, sizeof(T) * 8, address, Hex(value));
             }
 
-            bool Valid(u64 address, size_t size) const {
-                return deviceState->process->memory.AddressSpaceContains(span<u8>{reinterpret_cast<u8 *>(address), size});
+            bool Valid(u64 address, size_t size, bool write = false) const {
+                return deviceState->process->memory.CheckRange({reinterpret_cast<u8 *>(address), size},
+                    [write](const kernel::ChunkDescriptor &chunk) {
+                        return chunk.state != memory::states::Unmapped && chunk.state != memory::states::Reserved &&
+                            (write ? chunk.permission.w : chunk.permission.r);
+                    });
             }
 
             template<typename T>
@@ -394,25 +398,25 @@ namespace skyline::nce {
                 }
 
                 T value{};
-                std::memcpy(&value, reinterpret_cast<const void *>(address), sizeof(T));
+                std::memcpy(&value, deviceState->process->memory.GetHostSpan({reinterpret_cast<u8 *>(address), sizeof(T)}).data(), sizeof(T));
                 Record('R', address, value);
                 return value;
             }
 
             template<typename T>
             void Write(u64 address, T value) {
-                if (!Valid(address, sizeof(T))) {
+                if (!Valid(address, sizeof(T), true)) {
                     Fail(JitFallback::Outcome::MemoryFault, fmt::format("invalid guest write at 0x{:X}", address));
                     return;
                 }
 
-                std::memcpy(reinterpret_cast<void *>(address), &value, sizeof(T));
+                std::memcpy(deviceState->process->memory.GetHostSpan({reinterpret_cast<u8 *>(address), sizeof(T)}).data(), &value, sizeof(T));
                 Record('W', address, value);
             }
 
             template<typename T>
             bool WriteExclusive(u64 address, T value, T expected) {
-                if (!Valid(address, sizeof(T))) {
+                if (!Valid(address, sizeof(T), true)) {
                     Fail(JitFallback::Outcome::MemoryFault, fmt::format("invalid guest exclusive write at 0x{:X}", address));
                     return false;
                 }
@@ -421,7 +425,7 @@ namespace skyline::nce {
                     return false;
                 }
 
-                bool success{__atomic_compare_exchange_n(reinterpret_cast<T *>(address), &expected, value, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)};
+                bool success{__atomic_compare_exchange_n(reinterpret_cast<T *>(deviceState->process->memory.GetHostSpan({reinterpret_cast<u8 *>(address), sizeof(T)}).data()), &expected, value, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)};
                 if (success)
                     Record('X', address, value);
                 return success;
@@ -732,3 +736,4 @@ namespace skyline::nce {
         return outcome == Outcome::Recovered;
     }
 }
+

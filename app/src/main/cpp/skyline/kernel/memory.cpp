@@ -495,17 +495,49 @@ namespace skyline::kernel {
         });
     }
 
+    std::vector<std::pair<u8 *, ChunkDescriptor>> MemoryManager::SnapshotRangeLocked(span<u8> range) {
+        std::vector<std::pair<u8 *, ChunkDescriptor>> snapshot;
+        ForeachChunkInRange(range, [&](const auto &chunk) { snapshot.push_back(chunk); });
+        return snapshot;
+    }
+
+    bool MemoryManager::SvcSetMemoryPermission(span<u8> range, memory::Permission permission) {
+        std::unique_lock lock{mutex};
+        if (!CheckRangeLocked(range, [](const ChunkDescriptor &chunk) {
+                return chunk.state.permissionChangeAllowed && !chunk.attributes.isBorrowed && !chunk.attributes.isIpcLocked;
+            }))
+            return false;
+        ForeachChunkInRange(range, [&](auto &chunk) {
+            chunk.second.permission = permission;
+            MapInternal(chunk);
+        });
+        return true;
+    }
+
+    bool MemoryManager::SvcSetMemoryAttribute(span<u8> range, bool uncached) {
+        std::unique_lock lock{mutex};
+        if (!CheckRangeLocked(range, [](const ChunkDescriptor &chunk) {
+                return chunk.state.attributeChangeAllowed && !chunk.attributes.isBorrowed && !chunk.attributes.isIpcLocked;
+            }))
+            return false;
+        ForeachChunkInRange(range, [&](auto &chunk) {
+            chunk.second.attributes.isUncached = uncached;
+            MapInternal(chunk);
+        });
+        return true;
+    }
+
     std::optional<std::pair<u8 *, ChunkDescriptor>> MemoryManager::GetChunk(u8 *addr) {
         std::shared_lock lock{mutex};
-
-        if (!addressSpace.contains(addr)) [[unlikely]]
+        auto next{chunks.upper_bound(addr)};
+        if (next == chunks.begin())
             return std::nullopt;
-
-        auto chunkBase{chunks.lower_bound(addr)};
-        if (addr < chunkBase->first)
-            --chunkBase;
-
-        return std::make_optional(*chunkBase);
+        auto chunk{std::prev(next)};
+        const auto address{reinterpret_cast<uintptr_t>(addr)};
+        const auto start{reinterpret_cast<uintptr_t>(chunk->first)};
+        if (address < start || address - start >= chunk->second.size)
+            return std::nullopt;
+        return std::make_optional(*chunk);
     }
 
     __attribute__((always_inline)) void MemoryManager::MapCodeMemory(span<u8> memory, memory::Permission permission) {
@@ -627,50 +659,97 @@ namespace skyline::kernel {
                 LOGE("Failed to free memory: {}", strerror(errno));
     }
 
-    void MemoryManager::SvcMapMemory(span<u8> source, span<u8> destination) {
+    bool MemoryManager::SvcMapMemory(span<u8> source, span<u8> destination) {
         std::unique_lock lock{mutex};
-
-        MapInternal(std::pair<u8 *, ChunkDescriptor>(
-            destination.data(), {
-                .size = destination.size(),
-                .permission = {true, true, false},
-                .state = memory::states::Stack,
-                .isSrcMergeDisallowed = true
-            }));
-
+        if (source.size() != destination.size() || !stack.guest.contains(destination) ||
+            !CheckRangeLocked(source, [](const ChunkDescriptor &chunk) {
+                return chunk.state.mapAllowed && chunk.permission == memory::Permission{true, true, false} && !chunk.attributes.value;
+            }) || !CheckRangeLocked(destination, [](const ChunkDescriptor &chunk) {
+                return chunk.state == memory::states::Unmapped && !chunk.attributes.value;
+            }))
+            return false;
+        // Allocate the bookkeeping before changing host memory or descriptors.
+        auto originals{SnapshotRangeLocked(source)};
+        auto nextAliases{aliases};
+        for (const auto &[address, descriptor] : originals) {
+            auto target{destination.data() + (address - source.data())};
+            if (!nextAliases.emplace(target, AliasMapping{address, descriptor}).second)
+                return false;
+        }
+        ChunkDescriptor stackDescriptor{};
+        stackDescriptor.size = destination.size();
+        stackDescriptor.permission = {true, true, false};
+        stackDescriptor.state = memory::states::Stack;
+        stackDescriptor.isSrcMergeDisallowed = true;
+        MapInternal({destination.data(), stackDescriptor});
         auto sourceHost{GetHostSpan(source)};
         auto destinationHost{GetHostSpan(destination)};
-        std::memcpy(destinationHost.data(), sourceHost.data(), sourceHost.size());
-
-        ForeachChunkInRange(source, [&](std::pair<u8 *, ChunkDescriptor> &desc) __attribute__((always_inline)) {
-            desc.second.permission = {false, false, false};
-            desc.second.attributes.isBorrowed = true;
-            MapInternal(desc);
-        });
+        std::memcpy(destinationHost.data(), sourceHost.data(), source.size());
+        for (auto descriptor : originals) {
+            descriptor.second.permission = {};
+            descriptor.second.attributes.isBorrowed = true;
+            MapInternal(descriptor);
+        }
+        aliases.swap(nextAliases);
+        return true;
     }
 
-    void MemoryManager::SvcUnmapMemory(span<u8> source, span<u8> destination) {
+    bool MemoryManager::SvcUnmapMemory(span<u8> source, span<u8> destination) {
         std::unique_lock lock{mutex};
+        if (source.size() != destination.size() || !stack.guest.contains(destination) ||
+            !CheckRangeLocked(source, [](const ChunkDescriptor &chunk) {
+                return chunk.state.mapAllowed && chunk.attributes.isBorrowed && !chunk.permission.Get();
+            }) || !CheckRangeLocked(destination, [](const ChunkDescriptor &chunk) {
+                return chunk.state == memory::states::Stack && !chunk.attributes.value;
+            }))
+            return false;
 
-        if (source.size() != destination.size()) [[unlikely]]
-            throw exception("Mismatched svcUnmapMemory range sizes");
-
-        ForeachChunkInRange(destination, [&](const std::pair<u8 *, ChunkDescriptor> &dstChunk) {
-            if (dstChunk.second.state == memory::states::Unmapped)
-                return;
-
-            size_t offset{static_cast<size_t>(dstChunk.first - destination.data())};
-            span<u8> sourcePart{source.data() + offset, dstChunk.second.size};
-            ForeachChunkInRange(sourcePart, [&](std::pair<u8 *, ChunkDescriptor> &desc) {
-                desc.second.permission = dstChunk.second.permission;
-                desc.second.attributes.isBorrowed = false;
-                MapInternal(desc);
-            });
-
-            auto sourceHost{GetHostSpan(sourcePart)};
-            auto destinationHost{GetHostSpan({dstChunk.first, dstChunk.second.size})};
-            std::memcpy(sourceHost.data(), destinationHost.data(), sourceHost.size());
-        });
+        auto nextAliases{aliases};
+        std::vector<std::pair<u8 *, ChunkDescriptor>> originals;
+        u8 *cursor{destination.data()};
+        size_t remaining{destination.size()};
+        while (remaining) {
+            auto next{aliases.upper_bound(cursor)};
+            if (next == aliases.begin())
+                return false;
+            auto entry{std::prev(next)};
+            const size_t offset{static_cast<size_t>(cursor - entry->first)};
+            if (offset >= entry->second.original.size ||
+                entry->second.source + offset != source.data() + (cursor - destination.data()))
+                return false;
+            const size_t amount{std::min(remaining, entry->second.original.size - offset)};
+            auto descriptor{entry->second.original};
+            descriptor.size = amount;
+            originals.emplace_back(entry->second.source + offset, descriptor);
+            nextAliases.erase(entry->first);
+            if (offset) {
+                auto prefix{entry->second};
+                prefix.original.size = offset;
+                nextAliases.emplace(entry->first, prefix);
+            }
+            if (offset + amount < entry->second.original.size) {
+                auto suffix{entry->second};
+                suffix.source += offset + amount;
+                suffix.original.size -= offset + amount;
+                nextAliases.emplace(cursor + amount, suffix);
+            }
+            remaining -= amount;
+            cursor += amount;
+        }
+        // Source host pages remain accessible while guest permissions are borrowed.
+        auto sourceHost{GetHostSpan(source)};
+        auto destinationHost{GetHostSpan(destination)};
+        std::memcpy(sourceHost.data(), destinationHost.data(), source.size());
+        for (const auto &descriptor : originals)
+            MapInternal(descriptor);
+        // Finish the unmap under this same lock, not in a later SVC call.
+        ChunkDescriptor unmapped{};
+        unmapped.size = destination.size();
+        unmapped.state = memory::states::Unmapped;
+        MapInternal({destination.data(), unmapped});
+        FreeMemory(destination);
+        aliases.swap(nextAliases);
+        return true;
     }
 
     void MemoryManager::AddRef(std::shared_ptr<type::KMemory> ptr) {
@@ -717,3 +796,4 @@ namespace skyline::kernel {
         return {guestSpan.data() + guestOffset, guestSpan.size()};
     }
 }
+

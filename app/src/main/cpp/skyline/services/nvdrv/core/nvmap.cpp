@@ -2,6 +2,7 @@
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 #include <common/address_space.inc>
+#include <limits>
 #include <soc.h>
 #include "nvmap.h"
 
@@ -120,6 +121,9 @@ namespace skyline::service::nvdrv::core {
             return 0;
 
         std::scoped_lock lock(handleDesc->mutex);
+        if (!handleDesc->allocated || !handleDesc->alignedSize ||
+            handleDesc->alignedSize > std::numeric_limits<u32>::max())
+            throw exception("Invalid SMMU backing size");
         if (!handleDesc->pins) {
             // If we're in the unmap queue we can just remove ourselves and return since we're already mapped
             {
@@ -137,19 +141,39 @@ namespace skyline::service::nvdrv::core {
             // If not then allocate some space and map it
             u32 address{};
             while (!(address = smmuAllocator.Allocate(static_cast<u32>(handleDesc->alignedSize)))) {
-                // Free handles until the allocation succeeds
-                std::scoped_lock queueLock(unmapQueueLock);
-                if (auto freeHandleDesc{unmapQueue.front()}) {
-                    // Handles in the unmap queue are guaranteed not to be pinned so don't bother checking if they are before unmapping
-                    std::scoped_lock freeLock(freeHandleDesc->mutex);
-                    if (handleDesc->pinVirtAddress)
-                        UnmapHandle(*freeHandleDesc);
-                } else {
-                    throw exception("Ran out of SMMU address space!");
+                std::shared_ptr<Handle> candidate;
+                {
+                    std::scoped_lock queueLock(unmapQueueLock);
+                    while (!unmapQueue.empty() && !unmapQueue.front())
+                        unmapQueue.pop_front();
+                    if (unmapQueue.empty())
+                        throw exception("Ran out of SMMU address space!");
+                    candidate = unmapQueue.front();
                 }
+                // Never wait for a handle with the queue locked. Pin/Unpin/Free
+                // take the handle first, then the queue. Our requesting handle
+                // is not queued (the cached mapping path above already returned).
+                if (candidate == handleDesc)
+                    throw exception("Requesting SMMU handle unexpectedly queued");
+                std::scoped_lock candidateLock(candidate->mutex);
+                std::scoped_lock queueLock(unmapQueueLock);
+                // It may have been pinned or freed while we waited.
+                if (!candidate->unmapQueueEntry)
+                    continue;
+                if (candidate->pins || !candidate->pinVirtAddress) {
+                    unmapQueue.erase(*candidate->unmapQueueEntry);
+                    candidate->unmapQueueEntry.reset();
+                    continue;
+                }
+                UnmapHandle(*candidate);
             }
 
-            state.soc->smmu.Map(address, reinterpret_cast<u8 *>(handleDesc->address), static_cast<u32>(handleDesc->alignedSize));
+            try {
+                state.soc->smmu.Map(address, reinterpret_cast<u8 *>(handleDesc->address), static_cast<u32>(handleDesc->alignedSize));
+            } catch (...) {
+                smmuAllocator.Free(address, static_cast<u32>(handleDesc->alignedSize));
+                throw;
+            }
             handleDesc->pinVirtAddress = address;
         }
 
@@ -224,3 +248,4 @@ namespace skyline::service::nvdrv::core {
         return freeInfo;
     }
 }
+

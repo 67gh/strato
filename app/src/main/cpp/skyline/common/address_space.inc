@@ -100,220 +100,155 @@ namespace skyline {
 
     MM_MEMBER(void)::Read(u8 *destination, VaType virt, VaType size, std::function<void(span<u8>)> cpuAccessCallback) {
         TRACE_EVENT("containers", "FlatMemoryManager::Read");
-
         std::shared_lock lock(this->blockMutex);
-
-        auto successor{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt, [] (auto virt, const auto &block) {
-            return virt < block.virt;
-        })};
-
-        auto predecessor{std::prev(successor)};
-
-        u8 *blockPhys{predecessor->phys + (virt - predecessor->virt)};
-        VaType blockReadSize{std::min(successor->virt - virt, size)};
-
-        // Reads may span across multiple individual blocks
+        ValidateRange(virt, size);
+        if (!size)
+            return;
+        auto next{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt,
+            [](VaType value, const auto &block) { return value < block.virt; })};
+        auto block{std::prev(next)};
         while (size) {
-            if (predecessor->phys == nullptr) {
-                throw exception("Page fault at 0x{:X}", predecessor->virt);
+            if (!block->phys)
+                throw exception("Page fault at 0x{:X}", virt);
+            const VaType end{next == this->blocks.end() ? this->vaLimit : next->virt};
+            const VaType amount{std::min(size, end - virt)};
+            if (block->extraInfo.sparseMapped) {
+                std::memset(destination, 0, amount);
             } else {
-                if (predecessor->extraInfo.sparseMapped) { // Sparse mappings read all zeroes
-                    std::memset(destination, 0, blockReadSize);
-                } else {
-                    if (cpuAccessCallback)
-                        cpuAccessCallback(span{blockPhys, blockReadSize});
-
-                    std::memcpy(destination, blockPhys, blockReadSize);
-                }
+                u8 *physical{block->phys + (virt - block->virt)};
+                if (cpuAccessCallback)
+                    cpuAccessCallback(span{physical, amount});
+                std::memcpy(destination, physical, amount);
             }
-
-            destination += blockReadSize;
-            size -= blockReadSize;
-
-            if (size) {
-                predecessor = successor++;
-                blockPhys = predecessor->phys;
-                blockReadSize = std::min(successor->virt - predecessor->virt, size);
-            }
+            destination += amount;
+            virt += amount;
+            size -= amount;
+            if (size)
+                block = next++;
         }
     }
 
     MM_MEMBER(void)::Write(VaType virt, u8 *source, VaType size, std::function<void(span<u8>)> cpuAccessCallback) {
         TRACE_EVENT("containers", "FlatMemoryManager::Write");
-
         std::shared_lock lock(this->blockMutex);
-
-        VaType virtEnd{virt + size};
-
-        auto successor{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt, [] (auto virt, const auto &block) {
-            return virt < block.virt;
-        })};
-
-        auto predecessor{std::prev(successor)};
-
-        u8 *blockPhys{predecessor->phys + (virt - predecessor->virt)};
-        VaType blockWriteSize{std::min(successor->virt - virt, size)};
-
-        // Writes may span across multiple individual blocks
+        ValidateRange(virt, size);
+        if (!size)
+            return;
+        auto next{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt,
+            [](VaType value, const auto &block) { return value < block.virt; })};
+        auto block{std::prev(next)};
         while (size) {
-            if (predecessor->phys == nullptr) {
-                throw exception("Page fault at 0x{:X}", predecessor->virt);
-            } else {
-                if (!predecessor->extraInfo.sparseMapped) { // Sparse mappings ignore writes
-                    if (cpuAccessCallback)
-                        cpuAccessCallback(span{blockPhys, blockWriteSize});
-
-                    std::memcpy(blockPhys, source, blockWriteSize);
-                }
+            if (!block->phys)
+                throw exception("Page fault at 0x{:X}", virt);
+            const VaType end{next == this->blocks.end() ? this->vaLimit : next->virt};
+            const VaType amount{std::min(size, end - virt)};
+            if (!block->extraInfo.sparseMapped) {
+                u8 *physical{block->phys + (virt - block->virt)};
+                if (cpuAccessCallback)
+                    cpuAccessCallback(span{physical, amount});
+                std::memcpy(physical, source, amount);
             }
-
-            source += blockWriteSize;
-            size -= blockWriteSize;
-
-            if (size) {
-                predecessor = successor++;
-                blockPhys = predecessor->phys;
-                blockWriteSize = std::min(successor->virt - predecessor->virt, size);
-            }
+            source += amount;
+            virt += amount;
+            size -= amount;
+            if (size)
+                block = next++;
         }
     }
 
     MM_MEMBER(void)::Copy(VaType dst, VaType src, VaType size, std::function<void(span<u8>)> cpuAccessCallback) {
         TRACE_EVENT("containers", "FlatMemoryManager::Copy");
-
         std::shared_lock lock(this->blockMutex);
-
-        VaType srcEnd{src + size};
-        VaType dstEnd{dst + size};
-
-        auto srcSuccessor{std::upper_bound(this->blocks.begin(), this->blocks.end(), src, [] (auto virt, const auto &block) {
-            return virt < block.virt;
-        })};
-
-        auto dstSuccessor{std::upper_bound(this->blocks.begin(), this->blocks.end(), dst, [] (auto virt, const auto &block) {
-            return virt < block.virt;
-        })};
-
-        auto srcPredecessor{std::prev(srcSuccessor)};
-        auto dstPredecessor{std::prev(dstSuccessor)};
-
-        u8 *srcBlockPhys{srcPredecessor->phys + (src - srcPredecessor->virt)};
-        u8 *dstBlockPhys{dstPredecessor->phys + (dst - dstPredecessor->virt)};
-
-        VaType srcBlockRemainingSize{srcSuccessor->virt - src};
-        VaType dstBlockRemainingSize{dstSuccessor->virt - dst};
-
-        VaType blockCopySize{std::min({srcBlockRemainingSize, dstBlockRemainingSize, size})};
-
-        // Writes may span across multiple individual blocks
-        while (size) {
-            if (srcPredecessor->phys == nullptr) {
-                throw exception("Page fault at 0x{:X}", srcPredecessor->virt);
-            } else if (dstPredecessor->phys == nullptr) {
-                throw exception("Page fault at 0x{:X}", dstPredecessor->virt);
-            } else { [[likely]]
-                    if (srcPredecessor->extraInfo.sparseMapped) {
-                        std::memset(dstBlockPhys, 0, blockCopySize);
-                    } else [[likely]] {
-                        if (cpuAccessCallback) {
-                            cpuAccessCallback(span{dstBlockPhys, blockCopySize});
-                            cpuAccessCallback(span{srcBlockPhys, blockCopySize});
-                        }
-
-                        std::memcpy(dstBlockPhys, srcBlockPhys, blockCopySize);
-                    }
-            }
-
-            dstBlockPhys += blockCopySize;
-            srcBlockPhys += blockCopySize;
-            size -= blockCopySize;
-            srcBlockRemainingSize -= blockCopySize;
-            dstBlockRemainingSize -= blockCopySize;
-
-            if (size) {
-                if (!srcBlockRemainingSize) {
-                    srcPredecessor = srcSuccessor++;
-                    srcBlockPhys = srcPredecessor->phys;
-                    srcBlockRemainingSize = srcSuccessor->virt - srcPredecessor->virt;
-                    blockCopySize = std::min({srcBlockRemainingSize, dstBlockRemainingSize, size});
-                }
-                if (!dstBlockRemainingSize) {
-                    dstPredecessor = dstSuccessor++;
-                    dstBlockPhys = dstPredecessor->phys;
-                    dstBlockRemainingSize = dstSuccessor->virt - dstPredecessor->virt;
-                    blockCopySize = std::min({srcBlockRemainingSize, dstBlockRemainingSize, size});
+        ValidateRange(src, size);
+        ValidateRange(dst, size);
+        const bool backward{dst > src && dst - src < size};
+        VaType remaining{size};
+        while (remaining) {
+            const VaType srcAddress{backward ? src + remaining - 1 : src + size - remaining};
+            const VaType dstAddress{backward ? dst + remaining - 1 : dst + size - remaining};
+            auto srcNext{std::upper_bound(this->blocks.begin(), this->blocks.end(), srcAddress,
+                [](VaType value, const auto &block) { return value < block.virt; })};
+            auto dstNext{std::upper_bound(this->blocks.begin(), this->blocks.end(), dstAddress,
+                [](VaType value, const auto &block) { return value < block.virt; })};
+            auto source{std::prev(srcNext)};
+            auto destination{std::prev(dstNext)};
+            if (!source->phys || !destination->phys)
+                throw exception("Page fault copying GPU VA 0x{:X} to 0x{:X}", srcAddress, dstAddress);
+            const VaType srcAvailable{backward ? srcAddress - source->virt + 1 :
+                (srcNext == this->blocks.end() ? this->vaLimit : srcNext->virt) - srcAddress};
+            const VaType dstAvailable{backward ? dstAddress - destination->virt + 1 :
+                (dstNext == this->blocks.end() ? this->vaLimit : dstNext->virt) - dstAddress};
+            const VaType amount{std::min({remaining, srcAvailable, dstAvailable})};
+            // Sparse destinations discard all writes, including zero-fill from sparse sources.
+            if (!destination->extraInfo.sparseMapped) {
+                u8 *dstPhysical{destination->phys + (dstAddress - destination->virt) - (backward ? amount - 1 : 0)};
+                if (cpuAccessCallback)
+                    cpuAccessCallback(span{dstPhysical, amount});
+                if (source->extraInfo.sparseMapped) {
+                    std::memset(dstPhysical, 0, amount);
+                } else {
+                    u8 *srcPhysical{source->phys + (srcAddress - source->virt) - (backward ? amount - 1 : 0)};
+                    if (cpuAccessCallback)
+                        cpuAccessCallback(span{srcPhysical, amount});
+                    std::memmove(dstPhysical, srcPhysical, amount);
                 }
             }
+            remaining -= amount;
         }
     }
 
-    ALLOC_MEMBER()::FlatAllocator(VaType vaStart, VaType vaLimit) : Base(vaLimit), vaStart(vaStart), currentLinearAllocEnd(vaStart) {}
+    ALLOC_MEMBER()::FlatAllocator(VaType vaStart, VaType vaLimit) : Base(vaLimit), vaStart(vaStart), currentLinearAllocEnd(vaStart) {
+        if (vaStart <= UnmappedVa || vaStart >= vaLimit)
+            throw exception("Invalid allocator bounds");
+    }
 
     ALLOC_MEMBER(VaType)::Allocate(VaType size) {
         TRACE_EVENT("containers", "FlatAllocator::Allocate");
-
         std::scoped_lock lock(this->blockMutex);
+        if (!size || vaStart >= this->vaLimit || size > this->vaLimit - vaStart)
+            return UnmappedVa;
 
-        VaType allocStart{UnmappedVa};
-        VaType allocEnd{currentLinearAllocEnd + size};
-
-        // Avoid searching backwards in the address space if possible
-        if (allocEnd >= currentLinearAllocEnd && allocEnd <= this->vaLimit) {
-            auto allocEndSuccessor{std::lower_bound(this->blocks.begin(), this->blocks.end(), allocEnd)};
-            if (allocEndSuccessor == this->blocks.begin())
-                throw exception("First block in AS map is invalid!");
-
-            auto allocEndPredecessor{std::prev(allocEndSuccessor)};
-            if (allocEndPredecessor->virt <= currentLinearAllocEnd) {
-                allocStart = currentLinearAllocEnd;
-            } else {
-                // Skip over fixed any mappings in front of us
-                while (allocEndSuccessor != this->blocks.end()) {
-                    if (allocEndSuccessor->virt - allocEndPredecessor->virt < size || allocEndPredecessor->Mapped() ) {
-                        allocStart = allocEndPredecessor->virt;
-                        break;
-                    }
-
-                    allocEndPredecessor = allocEndSuccessor++;
-
-                    // Use the VA limit to calculate if we can fit in the final block since it has no successor
-                    if (allocEndSuccessor == this->blocks.end()) {
-                        allocEnd = allocEndPredecessor->virt + size;
-
-                        if (allocEnd >= allocEndPredecessor->virt && allocEnd <= this->vaLimit)
-                            allocStart = allocEndPredecessor->virt;
-                    }
-                }
+        auto findGap = [&](VaType start) -> VaType {
+            if (start >= this->vaLimit)
+                return UnmappedVa;
+            auto next{std::upper_bound(this->blocks.begin(), this->blocks.end(), start,
+                [](VaType value, const auto &block) { return value < block.virt; })};
+            if (next == this->blocks.begin())
+                return UnmappedVa;
+            auto block{std::prev(next)};
+            while (block != this->blocks.end()) {
+                const VaType end{next == this->blocks.end() ? this->vaLimit : next->virt};
+                const VaType begin{std::max(start, block->virt)};
+                if (!block->Mapped() && begin < end && size <= end - begin)
+                    return begin;
+                block = next;
+                if (next != this->blocks.end())
+                    ++next;
             }
-        }
+            return UnmappedVa;
+        };
 
-        if (allocStart != UnmappedVa) {
-            currentLinearAllocEnd = allocStart + size;
-        } else {  // If linear allocation overflows the AS then find a gap
-            if (this->blocks.size() <= 2)
-                throw exception("Unexpected allocator state!");
-
-            auto searchPredecessor{std::next(this->blocks.begin())};
-            auto searchSuccessor{std::next(searchPredecessor)};
-
-            while (searchSuccessor != this->blocks.end() &&
-                (searchSuccessor->virt - searchPredecessor->virt < size || searchPredecessor->Mapped())) {
-                searchPredecessor = searchSuccessor++;
-            }
-
-            if (searchSuccessor != this->blocks.end())
-                allocStart = searchPredecessor->virt;
-            else
-                return {}; // AS is full
-        }
-
-
-        this->MapLocked(allocStart, true, size, {});
-        return allocStart;
+        VaType address{findGap(std::max(vaStart, currentLinearAllocEnd))};
+        if (address == UnmappedVa)
+            address = findGap(vaStart);
+        if (address == UnmappedVa)
+            return UnmappedVa;
+        this->MapLocked(address, true, size, {});
+        currentLinearAllocEnd = address + size;
+        return address;
     }
 
     ALLOC_MEMBER(void)::AllocateFixed(VaType virt, VaType size) {
         std::scoped_lock lock(this->blockMutex);
+        if (!size || virt < vaStart || virt > this->vaLimit || size > this->vaLimit - virt)
+            throw exception("Invalid fixed allocation range");
+        auto next{std::upper_bound(this->blocks.begin(), this->blocks.end(), virt,
+            [](VaType value, const auto &block) { return value < block.virt; })};
+        if (next == this->blocks.begin())
+            throw exception("Invalid allocator map");
+        auto block{std::prev(next)};
+        if (block->Mapped() || (next != this->blocks.end() && size > next->virt - virt))
+            throw exception("Fixed allocation overlaps an existing allocation");
         this->MapLocked(virt, true, size, {});
     }
 
@@ -322,3 +257,4 @@ namespace skyline {
         this->UnmapLocked(virt, size);
     }
 }
+

@@ -8,10 +8,13 @@
 #include <common/file_descriptor.h>
 #include <map>
 #include <mutex>
+#include <limits>
 
 namespace skyline {
     namespace kernel::type {
         class KMemory;
+        class KSharedMemory;
+        class KTransferMemory;
     }
 
     namespace memory {
@@ -256,6 +259,45 @@ namespace skyline {
          */
         class MemoryManager {
           private:
+            friend class type::KSharedMemory;
+            friend class type::KTransferMemory;
+
+            // Caller holds mutex. Validate the entire range without mutating it.
+            template<typename Predicate>
+            bool CheckRangeLocked(span<u8> range, Predicate predicate) const {
+                const auto start{reinterpret_cast<uintptr_t>(range.data())};
+                if (!range.size() || range.size() > std::numeric_limits<uintptr_t>::max() - start ||
+                    guestOffset > std::numeric_limits<uintptr_t>::max() - start - range.size() ||
+                    !AddressSpaceContains(range))
+                    return false;
+                auto it{chunks.upper_bound(range.data())};
+                if (it == chunks.begin())
+                    return false;
+                --it;
+                uintptr_t cursor{start};
+                size_t remaining{range.size()};
+                while (remaining) {
+                    if (it == chunks.end())
+                        return false;
+                    const auto chunkStart{reinterpret_cast<uintptr_t>(it->first)};
+                    if (cursor < chunkStart || cursor - chunkStart >= it->second.size || !predicate(it->second))
+                        return false;
+                    const auto amount{std::min(remaining, it->second.size - static_cast<size_t>(cursor - chunkStart))};
+                    cursor += amount;
+                    remaining -= amount;
+                    ++it;
+                    if (remaining && (it == chunks.end() || reinterpret_cast<uintptr_t>(it->first) != cursor))
+                        return false;
+                }
+                return true;
+            }
+
+            struct AliasMapping {
+                u8 *source;
+                ChunkDescriptor original;
+            };
+            std::map<u8 *, AliasMapping> aliases; //!< svcMapMemory destination -> original source descriptor
+            std::vector<std::pair<u8 *, ChunkDescriptor>> SnapshotRangeLocked(span<u8> range);
             const DeviceState &state;
             std::map<u8 *, ChunkDescriptor> chunks;
 
@@ -268,6 +310,12 @@ namespace skyline {
             void ForeachChunkInRange(span<u8> memory, auto editCallback);
 
           public:
+            template<typename Predicate>
+            bool CheckRange(span<u8> range, Predicate predicate) {
+                std::shared_lock lock{mutex};
+                return CheckRangeLocked(range, predicate);
+            }
+
             memory::AddressSpaceType addressSpaceType{};
             span<u8> addressSpace{}; //!< The entire address space
             span<u8> codeBase36Bit{}; //!< A mapping in the lower 36 bits of the address space for mapping code and stack on 36-bit guests
@@ -327,6 +375,9 @@ namespace skyline {
              */
             void SetRegionPermission(span<u8> memory, memory::Permission permission);
 
+            bool SvcSetMemoryPermission(span<u8> memory, memory::Permission permission);
+            bool SvcSetMemoryAttribute(span<u8> memory, bool uncached);
+
             /**
              * @brief Gets the highest chunk's descriptor that contains this address
              */
@@ -364,13 +415,13 @@ namespace skyline {
              * Implements the memory manager side functionality of svcMapMemory
              * @note Argument validity must be checked by the caller
              */
-            void SvcMapMemory(span<u8> source, span<u8> destination);
+            bool SvcMapMemory(span<u8> source, span<u8> destination);
 
             /**
              * Implements the memory manager side functionality of svcUnmapMemory
              * @note Argument validity must be checked by the caller
              */
-            void SvcUnmapMemory(span<u8> source, span<u8> destination);
+            bool SvcUnmapMemory(span<u8> source, span<u8> destination);
 
             /**
              * @brief Adds a reference to shared memory, extending its lifetime until `RemoveRef` is called
@@ -396,12 +447,21 @@ namespace skyline {
             /**
              * @return If the supplied guest region is contained withing the accessible guest address space
              */
-            constexpr bool AddressSpaceContains(span<u8> region) const {
-                region = GetHostSpan(region);
+            bool AddressSpaceContains(span<u8> region) const {
+                const auto guestAddress{reinterpret_cast<uintptr_t>(region.data())};
+                if (guestOffset > std::numeric_limits<uintptr_t>::max() - guestAddress)
+                    return false;
+                const uintptr_t address{guestAddress + guestOffset};
+                if (region.size() > std::numeric_limits<uintptr_t>::max() - address)
+                    return false;
+                auto contains = [&](span<u8> reservation) {
+                    const auto start{reinterpret_cast<uintptr_t>(reservation.data())};
+                    return address >= start && address - start <= reservation.size() &&
+                        region.size() <= reservation.size() - (address - start);
+                };
                 if (addressSpaceType == memory::AddressSpaceType::AddressSpace36Bit)
-                    return codeBase36Bit.contains(region) || base.contains(region);
-                else
-                    return base.contains(region);
+                    return contains(codeBase36Bit) || contains(base);
+                return contains(base);
             }
 
             /**
@@ -425,3 +485,4 @@ struct fmt::formatter<skyline::memory::Permission> {
         return fmt::format_to(ctx.out(), "{}{}{}", permission.r ? 'R' : '-', permission.w ? 'W' : '-', permission.x ? 'X' : '-');
     }
 };
+
