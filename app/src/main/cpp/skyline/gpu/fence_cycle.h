@@ -267,8 +267,14 @@ namespace skyline::gpu {
                 if (shouldDestroy)
                     DestroyDependencies();
                 return true;
-            } else {
+            } else if (status == vk::Result::eNotReady) {
                 return false;
+            } else {
+                // Keep resources attached; a driver error is not completion.
+                if (status == vk::Result::eErrorDeviceLost)
+                    diagnostics::CaptureDeviceFault(static_cast<VkDevice>(*device));
+                diagnostics::DumpFaultReport(fmt::format("polling a fence failed: {}", vk::to_string(status)));
+                throw exception("An error occurred while polling fence {}: {}", fmt::ptr(static_cast<VkFence>(fence)), vk::to_string(status));
             }
         }
 

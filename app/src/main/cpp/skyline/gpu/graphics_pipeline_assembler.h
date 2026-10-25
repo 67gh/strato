@@ -118,16 +118,18 @@ namespace skyline::gpu {
             }
         };
 
-        std::mutex mutex; //!< Protects access to `compilePendingDescs`
+        std::mutex mutex; //!< Protects `compilePendingDescs` and `compilationCallback`
         std::list<PipelineDescription> compilePendingDescs; //!< List of pipeline descriptions that are pending compilation
 
         /**
          * @brief Synchronously compiles a pipeline with the state from the given description
          */
+        void ReleasePipelineDescription(std::list<PipelineDescription>::iterator it);
         vk::raii::Pipeline AssemblePipeline(std::list<PipelineDescription>::iterator pipelineDescIt, vk::PipelineLayout pipelineLayout);
 
       public:
         GraphicsPipelineAssembler(GPU &gpu, std::string_view pipelineCacheDir);
+        ~GraphicsPipelineAssembler();
 
         struct CompiledPipeline {
             vk::raii::DescriptorSetLayout descriptorSetLayout;

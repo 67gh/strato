@@ -287,7 +287,7 @@ namespace skyline::gpu {
                 else if (guest->tileConfig.mode == texture::TileMode::Pitch)
                     texture::CopyPitchLinearToLinear(*guest, pointer, outputLayer);
                 else if (guest->tileConfig.mode == texture::TileMode::Linear)
-                    std::memcpy(outputLayer, pointer, surfaceSize);
+                    std::memcpy(outputLayer, pointer, deswizzledLayerStride);
                 pointer += guestLayerStride;
                 outputLayer += deswizzledLayerStride;
             }
@@ -466,7 +466,7 @@ namespace skyline::gpu {
                 else if (guest->tileConfig.mode == texture::TileMode::Pitch)
                     texture::CopyLinearToPitchLinear(*guest, hostBuffer, guestOutput);
                 else if (guest->tileConfig.mode == texture::TileMode::Linear)
-                    std::memcpy(hostBuffer, guestOutput, layerStride);
+                    std::memcpy(guestOutput, hostBuffer, layerStride);
                 guestOutput += guestLayerStride;
                 hostBuffer += layerStride;
             }
@@ -637,7 +637,12 @@ namespace skyline::gpu {
     }
 
     Texture::~Texture() {
-        SynchronizeGuest(true);
+        try {
+            SynchronizeGuest(true);
+        } catch (const std::exception &error) {
+            // Destruction cannot propagate readback failures, but must still remove traps/mirrors.
+            LOGE("Texture destroyed without successful guest readback: {}", error.what());
+        }
         if (trapHandle)
             gpu.state.process->trap.DeleteTrap(*trapHandle);
         if (alignedMirror.valid())
@@ -841,14 +846,18 @@ namespace skyline::gpu {
                 return;
             }
 
-            dirtyState = cpuDirty ? DirtyState::CpuDirty : DirtyState::Clean;
-            memoryFreed = false;
+            if (layout != vk::ImageLayout::eUndefined && format != guest->format) {
+                // A successful trap callback must never expose stale bytes as a completed readback.
+                LOGE("Texture readback conversion unavailable: host {} -> guest {}", vk::to_string(format->vkFormat), vk::to_string(guest->format->vkFormat));
+                throw exception("Unsupported texture readback conversion: {} -> {}", vk::to_string(format->vkFormat), vk::to_string(guest->format->vkFormat));
+            }
         }
 
-        if (layout == vk::ImageLayout::eUndefined || format != guest->format)
-            // If the state of the host texture is undefined then so can the guest
-            // If the texture has differing formats on the guest and host, we don't support converting back in that case as it may involve recompression of a decompressed texture
-            return;
+        if (layout == vk::ImageLayout::eUndefined) {
+            std::scoped_lock lock{stateMutex};
+            dirtyState = cpuDirty ? DirtyState::CpuDirty : DirtyState::Clean;
+            return; // Undefined contents require no readback.
+        }
 
         WaitOnBacking();
 
@@ -869,6 +878,12 @@ namespace skyline::gpu {
             CopyToGuest(std::get<memory::Image>(backing).data());
         } else {
             throw exception("Host -> Guest synchronization of images tiled as '{}' isn't implemented", vk::to_string(tiling));
+        }
+
+        {
+            std::scoped_lock lock{stateMutex};
+            dirtyState = cpuDirty ? DirtyState::CpuDirty : DirtyState::Clean;
+            memoryFreed = false;
         }
 
         if (!skipTrap)

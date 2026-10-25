@@ -114,7 +114,13 @@ namespace skyline::gpu::memory {
         VmaAllocationInfo allocationInfo;
         ThrowOnFail(vmaCreateBuffer(vmaAllocator, &static_cast<const VkBufferCreateInfo &>(bufferCreateInfo), &allocationCreateInfo, &buffer, &allocation, &allocationInfo));
 
-        return std::make_shared<memory::StagingBuffer>(reinterpret_cast<u8 *>(allocationInfo.pMappedData), size, vmaAllocator, buffer, allocation);
+        try {
+            return std::make_shared<memory::StagingBuffer>(reinterpret_cast<u8 *>(allocationInfo.pMappedData), size, vmaAllocator, buffer, allocation);
+        } catch (...) {
+            // No owner exists if allocating the shared object failed.
+            vmaDestroyBuffer(vmaAllocator, buffer, allocation);
+            throw;
+        }
     }
 
     Buffer MemoryManager::AllocateBuffer(vk::DeviceSize size) {
