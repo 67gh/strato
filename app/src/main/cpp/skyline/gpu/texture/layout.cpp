@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2022 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <limits>
 #include "layout.h"
 
 namespace skyline::gpu::texture {
@@ -438,7 +439,13 @@ namespace skyline::gpu::texture {
         auto inputLine{guestInput};
         auto outputLine{linearOutput};
 
-        for (size_t line{}; line < guest.dimensions.height; line++) {
+        if (sizeStride < sizeLine)
+            throw exception("Pitch texture stride is smaller than a block row");
+        const auto rowsPerSlice{util::DivideCeil<size_t>(guest.dimensions.height, guest.format->blockHeight)};
+        if (guest.dimensions.depth && rowsPerSlice > std::numeric_limits<size_t>::max() / guest.dimensions.depth)
+            throw exception("Pitch texture row count overflow");
+        const auto rows{rowsPerSlice * guest.dimensions.depth};
+        for (size_t line{}; line < rows; line++) {
             std::memcpy(outputLine, inputLine, sizeLine);
             inputLine += sizeStride;
             outputLine += sizeLine;
@@ -452,10 +459,17 @@ namespace skyline::gpu::texture {
         auto inputLine{linearInput};
         auto outputLine{guestOutput};
 
-        for (size_t line{}; line < guest.dimensions.height; line++) {
+        if (sizeStride < sizeLine)
+            throw exception("Pitch texture stride is smaller than a block row");
+        const auto rowsPerSlice{util::DivideCeil<size_t>(guest.dimensions.height, guest.format->blockHeight)};
+        if (guest.dimensions.depth && rowsPerSlice > std::numeric_limits<size_t>::max() / guest.dimensions.depth)
+            throw exception("Pitch texture row count overflow");
+        const auto rows{rowsPerSlice * guest.dimensions.depth};
+        for (size_t line{}; line < rows; line++) {
             std::memcpy(outputLine, inputLine, sizeLine);
             inputLine += sizeLine;
             outputLine += sizeStride;
         }
     }
 }
+

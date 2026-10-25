@@ -10,6 +10,7 @@
 #include "layout.h"
 #include "adreno_aliasing.h"
 #include "bc_decoder.h"
+#include "bc_encoder.h"
 #include "format.h"
 
 namespace skyline::gpu {
@@ -26,8 +27,13 @@ namespace skyline::gpu {
             case texture::TileMode::Linear:
                 return static_cast<u32>(format->GetSize(dimensions));
 
-            case texture::TileMode::Pitch:
-                return dimensions.height * tileConfig.pitch;
+            case texture::TileMode::Pitch: {
+                const auto rows{util::DivideCeil<size_t>(dimensions.height, format->blockHeight)};
+                const auto size{bcn::readback::Product(bcn::readback::Product(rows, dimensions.depth), tileConfig.pitch)};
+                if (size > std::numeric_limits<u32>::max())
+                    throw exception("Pitch texture layer exceeds the guest stride range");
+                return static_cast<u32>(size);
+            }
 
             case texture::TileMode::Block:
                 return static_cast<u32>(texture::GetBlockLinearLayerSize(dimensions, format->blockHeight, format->blockWidth, format->bpb, tileConfig.blockHeight, tileConfig.blockDepth, mipLevelCount, layerCount > 1));
@@ -315,51 +321,60 @@ namespace skyline::gpu {
 
         if (!deswizzleBuffer.empty()) {
             for (const auto &level : mipLayouts) {
-                size_t levelHeight{level.dimensions.height * layerCount}; //!< The height of an image representing all layers in the entire level
-                switch (guest->format->vkFormat) {
-                    case vk::Format::eBc1RgbaUnormBlock:
-                    case vk::Format::eBc1RgbaSrgbBlock:
-                        bcn::DecodeBc1(deswizzleOutput, bufferData, level.dimensions.width, levelHeight, true);
-                        break;
+                if (!level.dimensions.depth)
+                    throw exception("BC texture depth cannot be zero");
+                const size_t slices{bcn::readback::Product(layerCount, level.dimensions.depth)};
+                const auto sourceSlice{level.linearSize / level.dimensions.depth};
+                const auto targetSlice{level.targetLinearSize / level.dimensions.depth};
+                for (size_t slice{}; slice < slices; ++slice) {
+                    auto *source{deswizzleOutput + slice * sourceSlice};
+                    auto *destination{bufferData + slice * targetSlice};
+                    switch (guest->format->vkFormat) {
+                        case vk::Format::eBc1RgbaUnormBlock:
+                        case vk::Format::eBc1RgbaSrgbBlock:
+                            bcn::DecodeBc1(source, destination, level.dimensions.width, level.dimensions.height, true);
+                            break;
 
-                    case vk::Format::eBc2UnormBlock:
-                    case vk::Format::eBc2SrgbBlock:
-                        bcn::DecodeBc2(deswizzleOutput, bufferData, level.dimensions.width, levelHeight);
-                        break;
+                        case vk::Format::eBc2UnormBlock:
+                        case vk::Format::eBc2SrgbBlock:
+                            bcn::DecodeBc2(source, destination, level.dimensions.width, level.dimensions.height);
+                            break;
 
-                    case vk::Format::eBc3UnormBlock:
-                    case vk::Format::eBc3SrgbBlock:
-                        bcn::DecodeBc3(deswizzleOutput, bufferData, level.dimensions.width, levelHeight);
-                        break;
+                        case vk::Format::eBc3UnormBlock:
+                        case vk::Format::eBc3SrgbBlock:
+                            bcn::DecodeBc3(source, destination, level.dimensions.width, level.dimensions.height);
+                            break;
 
-                    case vk::Format::eBc4UnormBlock:
-                        bcn::DecodeBc4(deswizzleOutput, bufferData, level.dimensions.width, levelHeight, false);
-                        break;
-                    case vk::Format::eBc4SnormBlock:
-                        bcn::DecodeBc4(deswizzleOutput, bufferData, level.dimensions.width, levelHeight, true);
-                        break;
+                        case vk::Format::eBc4UnormBlock:
+                            bcn::DecodeBc4(source, destination, level.dimensions.width, level.dimensions.height, false);
+                            break;
+                        case vk::Format::eBc4SnormBlock:
+                            bcn::DecodeBc4(source, destination, level.dimensions.width, level.dimensions.height, true);
+                            break;
 
-                    case vk::Format::eBc5UnormBlock:
-                        bcn::DecodeBc5(deswizzleOutput, bufferData, level.dimensions.width, levelHeight, false);
-                        break;
-                    case vk::Format::eBc5SnormBlock:
-                        bcn::DecodeBc5(deswizzleOutput, bufferData, level.dimensions.width, levelHeight, true);
-                        break;
+                        case vk::Format::eBc5UnormBlock:
+                            bcn::DecodeBc5(source, destination, level.dimensions.width, level.dimensions.height, false);
+                            break;
+                        case vk::Format::eBc5SnormBlock:
+                            bcn::DecodeBc5(source, destination, level.dimensions.width, level.dimensions.height, true);
+                            break;
 
-                    case vk::Format::eBc6HUfloatBlock:
-                        bcn::DecodeBc6(deswizzleOutput, bufferData, level.dimensions.width, levelHeight, false);
-                        break;
-                    case vk::Format::eBc6HSfloatBlock:
-                        bcn::DecodeBc6(deswizzleOutput, bufferData, level.dimensions.width, levelHeight, true);
-                        break;
+                        case vk::Format::eBc6HUfloatBlock:
+                            bcn::DecodeBc6(source, destination, level.dimensions.width, level.dimensions.height, false);
+                            break;
+                        case vk::Format::eBc6HSfloatBlock:
+                            bcn::DecodeBc6(source, destination, level.dimensions.width, level.dimensions.height, true);
+                            break;
 
-                    case vk::Format::eBc7UnormBlock:
-                    case vk::Format::eBc7SrgbBlock:
-                        bcn::DecodeBc7(deswizzleOutput, bufferData, level.dimensions.width, levelHeight);
-                        break;
+                        case vk::Format::eBc7UnormBlock:
+                        case vk::Format::eBc7SrgbBlock:
+                            bcn::DecodeBc7(source, destination, level.dimensions.width, level.dimensions.height);
+                            break;
 
-                    default:
-                        throw exception("Unsupported guest format '{}'", vk::to_string(guest->format->vkFormat));
+                        default:
+                            throw exception("Unsupported guest format '{}'", vk::to_string(guest->format->vkFormat));
+                    }
+
                 }
 
                 deswizzleOutput += level.linearSize * layerCount;
@@ -455,7 +470,88 @@ namespace skyline::gpu {
         }, {});
     }
 
+    static std::optional<bcn::readback::Format> BcReadbackFormat(vk::Format host, vk::Format guest) {
+        using BcFormat = bcn::readback::Format;
+        switch (guest) {
+            case vk::Format::eBc1RgbaUnormBlock: if (host == vk::Format::eR8G8B8A8Unorm) return BcFormat::Bc1; break;
+            case vk::Format::eBc1RgbaSrgbBlock: if (host == vk::Format::eR8G8B8A8Srgb) return BcFormat::Bc1; break;
+            case vk::Format::eBc2UnormBlock: if (host == vk::Format::eR8G8B8A8Unorm) return BcFormat::Bc2; break;
+            case vk::Format::eBc2SrgbBlock: if (host == vk::Format::eR8G8B8A8Srgb) return BcFormat::Bc2; break;
+            case vk::Format::eBc3UnormBlock: if (host == vk::Format::eR8G8B8A8Unorm) return BcFormat::Bc3; break;
+            case vk::Format::eBc3SrgbBlock: if (host == vk::Format::eR8G8B8A8Srgb) return BcFormat::Bc3; break;
+            case vk::Format::eBc4UnormBlock: if (host == vk::Format::eR8Unorm) return BcFormat::Bc4; break;
+            case vk::Format::eBc4SnormBlock: if (host == vk::Format::eR8Snorm) return BcFormat::Bc4Signed; break;
+            case vk::Format::eBc5UnormBlock: if (host == vk::Format::eR8G8Unorm) return BcFormat::Bc5; break;
+            case vk::Format::eBc5SnormBlock: if (host == vk::Format::eR8G8Snorm) return BcFormat::Bc5Signed; break;
+            case vk::Format::eBc6HUfloatBlock: if (host == vk::Format::eR16G16B16A16Float) return BcFormat::Bc6; break;
+            case vk::Format::eBc6HSfloatBlock: if (host == vk::Format::eR16G16B16A16Float) return BcFormat::Bc6Signed; break;
+            case vk::Format::eBc7UnormBlock: if (host == vk::Format::eR8G8B8A8Unorm) return BcFormat::Bc7; break;
+            case vk::Format::eBc7SrgbBlock: if (host == vk::Format::eR8G8B8A8Srgb) return BcFormat::Bc7; break;
+            default: break;
+        }
+        return std::nullopt;
+    }
+
     void Texture::CopyToGuest(u8 *hostBuffer) {
+        std::vector<u8> recompressed;
+        size_t readbackLayerStride{layerStride};
+        if (format != guest->format) {
+            TRACE_EVENT("gpu", "Texture::RecompressGuest");
+            const auto encoding{BcReadbackFormat(format->vkFormat, guest->format->vkFormat)};
+            if (!encoding)
+                throw exception("Unsupported texture readback conversion: {} -> {}", vk::to_string(format->vkFormat), vk::to_string(guest->format->vkFormat));
+            if (!layerCount || !levelCount || mipLayouts.size() != levelCount)
+                throw exception("Invalid BC texture readback layer/mip count");
+            if (levelCount > 1 && guest->tileConfig.mode != texture::TileMode::Block)
+                throw exception("Mipmapped BC readback requires block-linear guest layout");
+            recompressed.resize(deswizzledSurfaceSize);
+            size_t hostOffset{}, linearOffset{}, guestLevelOffset{};
+            const size_t guestStride{guest->GetLayerStride()};
+            auto checkedRange{[](size_t offset, size_t length, size_t size) {
+                if (offset > size || length > size - offset)
+                    throw exception("BC texture readback range exceeds backing buffer");
+            }};
+            for (const auto &level : mipLayouts) {
+                const auto &extent{level.dimensions};
+                if (level.linearSize != bcn::readback::EncodedSize(*encoding, extent.width, extent.height, extent.depth) ||
+                    level.targetLinearSize != bcn::readback::DecodedSize(*encoding, extent.width, extent.height, extent.depth))
+                    throw exception("BC texture readback layout size mismatch");
+                const auto hostLevelBytes{bcn::readback::Product(level.targetLinearSize, layerCount)};
+                const auto guestLevelBytes{bcn::readback::Product(level.linearSize, layerCount)};
+                checkedRange(hostOffset, hostLevelBytes, surfaceSize);
+                checkedRange(linearOffset, guestLevelBytes, recompressed.size());
+                for (size_t layer{}; layer < layerCount; ++layer) {
+                    const auto base{bcn::readback::Product(layer, guestStride)};
+                    checkedRange(base, guestLevelOffset, mirror.size());
+                    const auto offset{base + guestLevelOffset};
+                    auto *destination{recompressed.data() + linearOffset + layer * level.linearSize};
+                    // Read the original compressed blocks so unchanged blocks remain byte-identical.
+                    if (guest->tileConfig.mode == texture::TileMode::Block) {
+                        checkedRange(offset, level.blockLinearSize, mirror.size());
+                        texture::CopyBlockLinearToLinear(extent, guest->format->blockWidth, guest->format->blockHeight, guest->format->bpb,
+                                                         level.blockHeight, level.blockDepth, mirror.data() + offset, destination);
+                    } else if (guest->tileConfig.mode == texture::TileMode::Pitch) {
+                        checkedRange(offset, guest->CalculateLayerSize(), mirror.size());
+                        texture::CopyPitchLinearToLinear(*guest, mirror.data() + offset, destination);
+                    } else if (guest->tileConfig.mode == texture::TileMode::Linear) {
+                        checkedRange(offset, level.linearSize, mirror.size());
+                        std::memcpy(destination, mirror.data() + offset, level.linearSize);
+                    } else {
+                        throw exception("Unsupported BC guest tiling");
+                    }
+                    bcn::readback::Recompress(*encoding,
+                        std::span<const u8>{hostBuffer + hostOffset + layer * level.targetLinearSize, level.targetLinearSize},
+                        std::span<u8>{destination, level.linearSize}, extent.width, extent.height, extent.depth);
+                }
+                hostOffset += hostLevelBytes;
+                linearOffset += guestLevelBytes;
+                if (level.blockLinearSize > std::numeric_limits<size_t>::max() - guestLevelOffset)
+                    throw exception("BC texture mip offset overflow");
+                guestLevelOffset += level.blockLinearSize;
+            }
+            hostBuffer = recompressed.data();
+            readbackLayerStride = deswizzledLayerStride;
+        }
         auto guestOutput{mirror.data()};
 
         auto guestLayerStride{guest->GetLayerStride()};
@@ -466,9 +562,9 @@ namespace skyline::gpu {
                 else if (guest->tileConfig.mode == texture::TileMode::Pitch)
                     texture::CopyLinearToPitchLinear(*guest, hostBuffer, guestOutput);
                 else if (guest->tileConfig.mode == texture::TileMode::Linear)
-                    std::memcpy(guestOutput, hostBuffer, layerStride);
+                    std::memcpy(guestOutput, hostBuffer, readbackLayerStride);
                 guestOutput += guestLayerStride;
-                hostBuffer += layerStride;
+                hostBuffer += readbackLayerStride;
             }
         } else if (levelCount > 1 && guest->tileConfig.mode == texture::TileMode::Block) {
             // We need to copy into the Tegra X1 layout holds all mip levels for a given layer while the input buffer has all layers for a given mip level
@@ -846,7 +942,7 @@ namespace skyline::gpu {
                 return;
             }
 
-            if (layout != vk::ImageLayout::eUndefined && format != guest->format) {
+            if (layout != vk::ImageLayout::eUndefined && format != guest->format && !BcReadbackFormat(format->vkFormat, guest->format->vkFormat)) {
                 // A successful trap callback must never expose stale bytes as a completed readback.
                 LOGE("Texture readback conversion unavailable: host {} -> guest {}", vk::to_string(format->vkFormat), vk::to_string(guest->format->vkFormat));
                 throw exception("Unsupported texture readback conversion: {} -> {}", vk::to_string(format->vkFormat), vk::to_string(guest->format->vkFormat));
@@ -1091,3 +1187,4 @@ namespace skyline::gpu {
         dstStageMask |= dstStage;
     }
 }
+
