@@ -41,21 +41,18 @@ namespace skyline::soc::host1x {
         auto readValue{value.fetch_add(1, std::memory_order_acq_rel) + 1}; // We don't want to constantly do redundant atomic loads
 
         std::scoped_lock lock(mutex);
-        bool signalCondition{};
         auto it{waiters.begin()};
         while (it != waiters.end() && readValue >= it->threshold) {
             auto &waiter{*it};
             if (waiter.callback)
                 waiter.callback();
-            else
-                signalCondition = true;
             it++;
         }
 
         waiters.erase(waiters.begin(), it);
 
-        if (signalCondition)
-            incrementCondition.notify_all();
+        // Blocking waits use a predicate, not list entries that can outlive a timeout.
+        incrementCondition.notify_all();
 
         return readValue;
     }
@@ -63,13 +60,9 @@ namespace skyline::soc::host1x {
     bool Syncpoint::Wait(u32 threshold, std::chrono::steady_clock::duration timeout) {
         if (value.load(std::memory_order_acquire) >= threshold)
             // (Fast Path) We don't need to wait on the mutex and can just get away with atomics
-            return {};
+            return true;
 
         std::unique_lock lock(mutex);
-        auto it{waiters.begin()};
-        while (it != waiters.end() && threshold >= it->threshold)
-            it++;
-        waiters.emplace(it, threshold, nullptr);
 
         if (timeout == std::chrono::steady_clock::duration::max()) {
             incrementCondition.wait(lock, [&] { return value.load(std::memory_order_relaxed) >= threshold; });
@@ -79,4 +72,3 @@ namespace skyline::soc::host1x {
         }
     }
 }
-

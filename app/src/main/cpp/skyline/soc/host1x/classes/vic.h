@@ -8,7 +8,7 @@
 
 namespace skyline::soc::host1x {
     /**
-     * @brief The VIC Host1x class implements hardware accelerated image operations
+     * @brief Diagnostic register capture for VIC; execution is explicitly unsupported
      */
     class VicClass {
       private:

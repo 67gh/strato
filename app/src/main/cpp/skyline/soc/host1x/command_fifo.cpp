@@ -7,44 +7,9 @@
 #include <kernel/types/KProcess.h>
 #include <soc.h>
 #include "command_fifo.h"
+#include "command_parser.h"
 
 namespace skyline::soc::host1x {
-    /**
-     * @url https://github.com/torvalds/linux/blob/477f70cd2a67904e04c2c2b9bd0fa2e95222f2f6/drivers/gpu/host1x/hw/debug_hw.c#L16
-     */
-    enum class Host1xOpcode : u8 {
-        SetClass = 0x00,
-        Incr = 0x01,
-        NonIncr = 0x02,
-        Mask = 0x03,
-        Imm = 0x04,
-        Restart = 0x05,
-        Gather = 0x06,
-        SetStrmId = 0x07,
-        SetAppId = 0x08,
-        SetPlyd = 0x09,
-        IncrW = 0x0a,
-        NonIncrW = 0x0b,
-        GatherW = 0x0c,
-        RestartW = 0x0d,
-        Extend = 0x0e,
-    };
-
-    union ChannelCommandFifoMethodHeader {
-        u32 raw{};
-        u16 immdData : 12;
-        u16 methodCount;
-        u16 offsetMask;
-
-        struct {
-            u8 classMethodMask : 6;
-            ClassId classId : 10;
-            u16 methodAddress : 12;
-            Host1xOpcode opcode : 4;
-        };
-    };
-    static_assert(sizeof(ChannelCommandFifoMethodHeader) == sizeof(u32));
-
     ChannelCommandFifo::ChannelCommandFifo(const DeviceState &state, SyncpointSet &syncpoints) : state(state), gatherQueue(GatherQueueSize), host1XClass(syncpoints), nvDecClass(syncpoints, state), vicClass(syncpoints, state) {}
 
     void ChannelCommandFifo::Send(ClassId targetClass, u32 method, u32 argument) {
@@ -61,49 +26,16 @@ namespace skyline::soc::host1x {
                 vicClass.CallMethod(method, argument);
                 break;
             default:
-                LOGE("Sending method to unimplemented class: 0x{:X}", targetClass);
-                break;
+                throw exception("Unsupported Host1x class: 0x{:X}", static_cast<u16>(targetClass));
         }
     }
 
     void ChannelCommandFifo::Process(span<u32> gather) {
-        ClassId targetClass{ClassId::Host1x};
-
-        for (auto entry{gather.begin()}; entry != gather.end(); entry++) {
-            ChannelCommandFifoMethodHeader methodHeader{.raw = *entry};
-
-            switch (methodHeader.opcode) {
-                case Host1xOpcode::SetClass:
-                    targetClass = methodHeader.classId;
-
-                    for (u32 i{}; i < std::numeric_limits<u8>::digits; i++)
-                        if (methodHeader.classMethodMask & (1 << i))
-                            Send(targetClass, methodHeader.methodAddress + i, *++entry);
-
-                    break;
-                case Host1xOpcode::Incr:
-                    for (u32 i{}; i < methodHeader.methodCount; i++)
-                        Send(targetClass, methodHeader.methodAddress + i, *++entry);
-
-                    break;
-                case Host1xOpcode::NonIncr:
-                    for (u32 i{}; i < methodHeader.methodCount; i++)
-                        Send(targetClass, methodHeader.methodAddress, *++entry);
-
-                    break;
-                case Host1xOpcode::Mask:
-                    for (u32 i{}; i < std::numeric_limits<u16>::digits; i++)
-                        if (methodHeader.offsetMask & (1 << i))
-                            Send(targetClass, methodHeader.methodAddress + i, *++entry);
-
-                    break;
-                case Host1xOpcode::Imm:
-                    Send(targetClass, methodHeader.methodAddress, methodHeader.immdData);
-                    break;
-                default:
-                    throw exception("Unimplemented Host1x command FIFO opcode: 0x{:X}", static_cast<u8>(methodHeader.opcode));
-            }
-        }
+        targetClass = static_cast<ClassId>(ParseCommandBuffer(
+            std::span<const u32>{gather.data(), gather.size()}, static_cast<u16>(targetClass),
+            [this](u16 classId, u32 method, u32 argument) {
+                Send(static_cast<ClassId>(classId), method, argument);
+            }));
     }
 
     void ChannelCommandFifo::Start() {
@@ -119,9 +51,9 @@ namespace skyline::soc::host1x {
         AsyncLogger::UpdateTag();
 
         try {
-            gatherQueue.Process([this](span<u32> gather) {
+            gatherQueue.Process([this](std::vector<u32> &gather) {
                 LOGD("Processing pushbuffer: {}, size: 0x{:X}", fmt::ptr(gather.data()), gather.size());
-                Process(gather);
+                Process(span<u32>{gather.data(), gather.size()});
             }, [] {});
         } catch (const signal::SignalException &e) {
             if (e.signal != SIGINT) {
@@ -141,7 +73,10 @@ namespace skyline::soc::host1x {
     }
 
     void ChannelCommandFifo::Push(span<u32> gather) {
-        gatherQueue.Push(gather);
+        if (gather.empty())
+            return;
+        // The caller may unmap or reuse the original memory as soon as Push returns.
+        gatherQueue.Push(std::vector<u32>(gather.begin(), gather.end()));
     }
 
     ChannelCommandFifo::~ChannelCommandFifo() {

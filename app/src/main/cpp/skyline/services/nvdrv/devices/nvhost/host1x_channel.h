@@ -15,6 +15,8 @@ namespace skyline::service::nvdrv::device::nvhost {
     class Host1xChannel : public NvDevice {
       private:
         core::ChannelType channelType; //!< The specific host1x channel that this instance refers to
+        bool reportedUnsupported{}; //!< Rate-limits the missing backend warning per channel
+        u32 submitTimeout{}; //!< Requested timeout; submissions are rejected until execution is supported
         std::mutex channelMutex; //!< Synchronises submit operations
 
       public:

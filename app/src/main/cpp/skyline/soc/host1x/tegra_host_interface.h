@@ -53,6 +53,9 @@ namespace skyline::soc::host1x {
                 case IncrementSyncpointMethodId: {
                     IncrementSyncpointMethod incrSyncpoint{.raw = argument};
 
+                    if (incrSyncpoint.index >= syncpoints.size())
+                        throw exception("Invalid THI syncpoint: {}", incrSyncpoint.index);
+
                     switch (incrSyncpoint.condition) {
                         case IncrementSyncpointMethod::Condition::Immediate:
                             LOGD("Increment syncpoint: {}", incrSyncpoint.index);
@@ -61,11 +64,9 @@ namespace skyline::soc::host1x {
                         case IncrementSyncpointMethod::Condition::OpDone:
                             LOGD("Queue syncpoint for OpDone: {}", incrSyncpoint.index);
                             AddIncr(incrSyncpoint.index);
-                            SubmitPendingIncrs(); // FIXME: immediately submit the incrs as classes are not yet implemented
                             break;
                         default:
-                            LOGW("Unimplemented syncpoint condition: {}", static_cast<u8>(incrSyncpoint.condition));
-                            break;
+                            throw exception("Unsupported THI syncpoint condition: {}", static_cast<u8>(incrSyncpoint.condition));
                     }
                     break;
                 }
@@ -76,8 +77,7 @@ namespace skyline::soc::host1x {
                     deviceClass.CallMethod(storedMethod, argument);
                     break;
                 default:
-                    LOGE("Unknown THI method called: 0x{:X}, argument: 0x{:X}", method, argument);
-                    break;
+                    throw exception("Unknown THI method: 0x{:X}, argument: 0x{:X}", method, argument);
             }
         }
     };

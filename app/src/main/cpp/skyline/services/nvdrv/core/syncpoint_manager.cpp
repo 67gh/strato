@@ -45,7 +45,8 @@ namespace skyline::service::nvdrv::core {
     }
 
     bool SyncpointManager::IsSyncpointAllocated(u32 id) {
-        return (id <= soc::host1x::SyncpointCount) && syncpoints[id].reserved;
+        std::scoped_lock lock(reservationLock);
+        return (id < syncpoints.size()) && syncpoints[id].reserved;
     }
 
     bool SyncpointManager::HasSyncpointExpired(u32 id, u32 threshold) {

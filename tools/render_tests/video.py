@@ -26,6 +26,7 @@ inline unsigned warnings{};
 #define LOGD(...) ((void)0)
 #define LOGE(...) ((void)0)
 namespace skyline {
+struct exception : std::runtime_error {template<typename... T> exception(const char *text, T...):std::runtime_error(text){}};
 struct Memory{
  std::vector<u8> bytes=std::vector<u8>(0x10000);int reads=0;
  void Read(u8*dst,u64 address,u32 size){++reads;if(address>bytes.size()||size>bytes.size()-address)throw std::runtime_error("unmapped input");std::memcpy(dst,bytes.data()+address,size);}
@@ -51,15 +52,24 @@ namespace skyline::diagnostics {
 }
 namespace skyline::soc::host1x {
  struct TestSyncpoint{int count=0;void Increment(){++count;}};
- using SyncpointSet=std::array<TestSyncpoint,256>;
+ using SyncpointSet=std::array<TestSyncpoint,192>;
 }
 """
 MAIN=r"""
+struct CompletingBackend {
+ std::function<void()> done;
+ CompletingBackend(std::function<void()> done,const skyline::DeviceState&):done(std::move(done)){}
+ void CallMethod(u32,u32){done();}
+};
 int main(int argc,char**argv){
  using namespace skyline;using namespace skyline::soc::host1x;using namespace skyline::diagnostics;
  assert(argc==2);DeviceState state;auto&mem=state.soc->smmu;SyncpointSet sync;
+ TegraHostInterface<CompletingBackend> completed(sync,state);
+ completed.CallMethod(0,8|(1U<<8));assert(sync[8].count==0);
+ completed.CallMethod(0x10,1);completed.CallMethod(0x11,0);assert(sync[8].count==1);
+ for(u32 arg: {192U,7U|(2U<<8),7U|(3U<<8)}){bool bad=false;try{completed.CallMethod(0,arg);}catch(const exception&){bad=true;}assert(bad);}
  TegraHostInterface<NvDecClass> nv(sync,state);
- auto nvMethod=[&](u32 m,u32 v){nv.CallMethod(0x10,m);nv.CallMethod(0x11,v);};
+ auto nvMethod=[&](u32 m,u32 v){nv.CallMethod(0x10,m);bool rejected=false;try{nv.CallMethod(0x11,v);}catch(const exception&){rejected=true;}assert(rejected==(m==VideoCapture::ExecuteMethod));};
  mem.word(0x1048,4);mem.word(0x4000,0x12345678);
  nvMethod(0x80,3);nvMethod(0x101,0x10);nvMethod(0x102,0x40);
  enabled=false;nvMethod(0xc0,1);assert(saved.empty()&&mem.reads==0);
@@ -68,10 +78,13 @@ int main(int argc,char**argv){
  ++request;nvMethod(0xc0,1);assert(saved.size()==3);
  for(int i=0;i<20;++i){++request;nvMethod(0xc0,1);}assert(saved.size()==8);
  nv.CallMethod(0,7);assert(sync[7].count==1); // Existing immediate syncpoint behavior.
+ nv.CallMethod(0,7|(1U<<8));assert(sync[7].count==1); // OpDone must not fabricate completion.
+ nvMethod(0xc0,1);assert(sync[7].count==1); // Unsupported execution must not release it.
+
  auto read=[&](u8*p,u64 address,u32 size){mem.Read(p,address,size);};
  VideoCapture vp8(VideoCapture::Engine::Nvdec);vp8.Method(0x80,5,read);vp8.Method(0x101,0x10,read);vp8.Method(0x102,0x40,read);vp8.Method(0xc0,1,read);
  VideoCapture vp9(VideoCapture::Engine::Nvdec);mem.word(0x1030,4);vp9.Method(0x80,9,read);vp9.Method(0x101,0x10,read);vp9.Method(0x102,0x40,read);vp9.Method(0x170,0x50,read);vp9.Method(0xc0,1,read);
- TegraHostInterface<VicClass> vic(sync,state);vic.CallMethod(0x10,0x1c2);vic.CallMethod(0x11,0x60);vic.CallMethod(0x10,0xc0);vic.CallMethod(0x11,1);
+ TegraHostInterface<VicClass> vic(sync,state);vic.CallMethod(0x10,0x1c2);vic.CallMethod(0x11,0x60);vic.CallMethod(0x10,0xc0);bool vicRejected=false;try{vic.CallMethod(0x11,1);}catch(const exception&){vicRejected=true;}assert(vicRejected);
  assert(warnings==2&&saved.size()==11);
  VideoCapture bad(VideoCapture::Engine::Nvdec);bad.Method(0x80,3,read);bad.Method(0x101,0x10,read);bad.Method(0x102,0x1000,read);bad.Method(0xc0,1,read);assert(incomplete==1);
  auto before=saved.size();bad.Method(0x10000,0,read);assert(saved.size()==before);
@@ -99,5 +112,5 @@ def main():
    try:module.parse(broken)
    except ValueError:pass
    else:raise AssertionError('malformed snapshot accepted')
- print('PASS: real video hooks/THI, H264/VP8/VP9/VIC capture, bounds, disabled mode, quotas, one warning per engine, binary parser (ASan/UBSan)')
+ print('PASS: real video hooks/THI, unsupported execution rejected without fake completion, H264/VP8/VP9/VIC capture, bounds, disabled mode, quotas, one warning per engine, binary parser (ASan/UBSan)')
 if __name__=='__main__':main()

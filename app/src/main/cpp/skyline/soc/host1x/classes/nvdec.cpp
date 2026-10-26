@@ -16,5 +16,7 @@ namespace skyline::soc::host1x {
         capture.Method(method, argument, [this](u8 *destination, u64 address, u32 size) {
             state.soc->smmu.Read(destination, address, size);
         });
+        if (method == VideoCapture::ExecuteMethod)
+            throw exception("NVDEC execution unavailable: no output surface was produced");
     }
 }

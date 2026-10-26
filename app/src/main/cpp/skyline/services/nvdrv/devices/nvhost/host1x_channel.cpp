@@ -2,6 +2,8 @@
 // Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
 #include <soc.h>
+#include <limits>
+#include <common/diagnostic_recorder.h>
 #include <services/nvdrv/devices/deserialisation/deserialisation.h>
 #include "host1x_channel.h"
 
@@ -12,12 +14,11 @@ namespace skyline::service::nvdrv::device::nvhost {
                                  const SessionContext &ctx,
                                  core::ChannelType channelType)
         : NvDevice(state, driver, core, ctx),
-          channelType(channelType) {
-        state.soc->host1x.channels[static_cast<size_t>(channelType)].Start();
-    }
+          channelType(channelType) {}
 
     PosixResult Host1xChannel::SetNvmapFd(In<FileDescriptor> fd) {
         LOGD("fd: {}", fd);
+        // Compatibility no-op: all channel handles resolve through Core's shared NvMap.
         return PosixResult::Success;
     }
 
@@ -27,52 +28,60 @@ namespace skyline::service::nvdrv::device::nvhost {
         LOGD("numCmdBufs: {}, numRelocs: {}, numSyncpointIncrs: {}, numFenceThresholds: {}",
                             cmdBufs.size(), relocs.size(), syncpointIncrs.size(), fenceThresholds.size());
 
-        if (fenceThresholds.size() > syncpointIncrs.size())
+        if (fenceThresholds.size() > syncpointIncrs.size() || relocs.size() != relocShifts.size())
             return PosixResult::InvalidArgument;
 
-        if (!relocs.empty())
-            throw exception("Relocations are unimplemented!");
-
         std::scoped_lock lock(channelMutex);
-
-        for (size_t i{}; i < syncpointIncrs.size(); i++) {
-            const auto &incr{syncpointIncrs[i]};
-
-            u32 max{core.syncpointManager.IncrementSyncpointMaxExt(incr.syncpointId, incr.numIncrs)};
-
-            // Increment syncpoints on the CPU to avoid needing to pass through the emulated nvdec code which currently does nothing
-            for (size_t j{}; j < incr.numIncrs; j++)
-                state.soc->host1x.syncpoints[incr.syncpointId].Increment();
-
-            if (i < fenceThresholds.size())
-                fenceThresholds[i] = max;
+        // Validate without modifying counters or output fences. A rejected submission
+        // must not make an earlier/later job appear complete.
+        for (const auto &incr : syncpointIncrs) {
+            if (!core.syncpointManager.IsSyncpointAllocated(incr.syncpointId))
+                return PosixResult::InvalidArgument;
         }
-
         for (const auto &cmdBuf : cmdBufs) {
             auto handleDesc{core.nvMap.GetHandle(cmdBuf.mem)};
             if (!handleDesc)
-                throw exception("Invalid handle passed for a command buffer!");
-
-            u64 gatherAddress{handleDesc->address + cmdBuf.offset};
-            LOGD("Submit gather, CPU address: 0x{:X}, words: 0x{:X}", gatherAddress, cmdBuf.words);
-
-            span gather(reinterpret_cast<u32 *>(gatherAddress), cmdBuf.words);
-            // Skip submitting the cmdbufs as no functionality is implemented
-            // state.soc->host1x.channels[static_cast<size_t>(channelType)].Push(gather);
+                return PosixResult::InvalidArgument;
+            std::scoped_lock handleLock(handleDesc->mutex);
+            if (!handleDesc->allocated || !handleDesc->address ||
+                (handleDesc->address & (alignof(u32) - 1)) || (cmdBuf.offset & (alignof(u32) - 1)) ||
+                cmdBuf.offset > handleDesc->size ||
+                static_cast<u64>(cmdBuf.words) > (handleDesc->size - cmdBuf.offset) / sizeof(u32))
+                return PosixResult::InvalidArgument;
+            const u64 bytes{static_cast<u64>(cmdBuf.words) * sizeof(u32)};
+            const u64 maxAddress{std::numeric_limits<u64>::max()};
+            if (cmdBuf.offset > maxAddress - handleDesc->address ||
+                bytes > maxAddress - (handleDesc->address + cmdBuf.offset))
+                return PosixResult::InvalidArgument;
         }
 
-        return PosixResult::Success;
+        if (cmdBufs.empty() && relocs.empty() && syncpointIncrs.empty())
+            return PosixResult::Success;
+
+        // There is no execution backend for these channels yet. Do not enqueue
+        // borrowed pointers, read guest memory, or fabricate completion on the CPU.
+        // Returning an error is intentional: callers must not consume stale surfaces.
+        if (!reportedUnsupported) {
+            reportedUnsupported = true;
+            LOGW("Host1x channel {}: submit rejected; video execution/relocations are unsupported ({} command buffers)",
+                 static_cast<u32>(channelType), cmdBufs.size());
+            diagnostics::Unsupported("host1x_submit", static_cast<u32>(channelType),
+                                     "no execution backend; submission rejected without signalling fences");
+        }
+        return PosixResult::NotSupported;
     }
 
     PosixResult Host1xChannel::GetSyncpoint(In<u32> channelSyncpointIdx, Out<u32> syncpointId) {
         LOGD("channelSyncpointIdx: {}", channelSyncpointIdx);
 
         if (channelSyncpointIdx > 0)
-            throw exception("Multiple channel syncpoints are unimplemented!");
+            return PosixResult::InvalidArgument;
 
+        if (static_cast<size_t>(channelType) >= core::SyncpointManager::ChannelSyncpoints.size())
+            return PosixResult::InvalidArgument;
         u32 id{core::SyncpointManager::ChannelSyncpoints[static_cast<u32>(channelType)]};
         if (!id)
-            throw exception("Requested syncpoint for a channel with none specified!");
+            return PosixResult::NotSupported;
 
         LOGD("syncpointId: {}", id);
         syncpointId = id;
@@ -87,6 +96,8 @@ namespace skyline::service::nvdrv::device::nvhost {
 
     PosixResult Host1xChannel::SetSubmitTimeout(In<u32> timeout) {
         LOGD("timeout: {}", timeout);
+        std::scoped_lock lock(channelMutex);
+        submitTimeout = timeout;
         return PosixResult::Success;
     }
 

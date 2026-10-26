@@ -5,6 +5,7 @@
 
 #include <common.h>
 #include <common/circular_queue.h>
+#include <vector>
 #include "syncpoint.h"
 #include "classes/class.h"
 #include "classes/host1x.h"
@@ -22,7 +23,8 @@ namespace skyline::soc::host1x {
         const DeviceState &state;
 
         static constexpr size_t GatherQueueSize{0x1000}; //!< Maximum size of the gather queue, this value is arbritary
-        CircularQueue<span<u32>> gatherQueue;
+        CircularQueue<std::vector<u32>> gatherQueue; //!< Owns commands until the consumer finishes
+        ClassId targetClass{ClassId::Host1x}; //!< Persists across gathers on this channel
         std::thread thread; //!< The thread that manages processing of pushbuffers within gathers
         std::mutex threadStartMutex; //!< Protects the thread from being started multiple times
 

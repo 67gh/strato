@@ -8,7 +8,7 @@
 
 namespace skyline::soc::host1x {
     /**
-     * @brief The NVDEC Host1x class implements hardware accelerated video decoding for the VP9/VP8/H264/VC1 codecs
+     * @brief Diagnostic register capture for NVDEC; execution is explicitly unsupported
      */
     class NvDecClass {
       private:
