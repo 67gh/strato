@@ -483,8 +483,8 @@ namespace skyline::gpu {
             case vk::Format::eBc4SnormBlock: if (host == vk::Format::eR8Snorm) return BcFormat::Bc4Signed; break;
             case vk::Format::eBc5UnormBlock: if (host == vk::Format::eR8G8Unorm) return BcFormat::Bc5; break;
             case vk::Format::eBc5SnormBlock: if (host == vk::Format::eR8G8Snorm) return BcFormat::Bc5Signed; break;
-            case vk::Format::eBc6HUfloatBlock: if (host == vk::Format::eR16G16B16A16Float) return BcFormat::Bc6; break;
-            case vk::Format::eBc6HSfloatBlock: if (host == vk::Format::eR16G16B16A16Float) return BcFormat::Bc6Signed; break;
+            case vk::Format::eBc6HUfloatBlock: if (host == vk::Format::eR16G16B16A16Sfloat) return BcFormat::Bc6; break;
+            case vk::Format::eBc6HSfloatBlock: if (host == vk::Format::eR16G16B16A16Sfloat) return BcFormat::Bc6Signed; break;
             case vk::Format::eBc7UnormBlock: if (host == vk::Format::eR8G8B8A8Unorm) return BcFormat::Bc7; break;
             case vk::Format::eBc7SrgbBlock: if (host == vk::Format::eR8G8B8A8Srgb) return BcFormat::Bc7; break;
             default: break;
@@ -1187,4 +1187,3 @@ namespace skyline::gpu {
         dstStageMask |= dstStage;
     }
 }
-
