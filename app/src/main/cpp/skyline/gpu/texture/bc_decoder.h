@@ -42,4 +42,3 @@ namespace bcn {
      */
     void DecodeBc7(const uint8_t *src, uint8_t *dst, size_t width, size_t height);
 }
-
