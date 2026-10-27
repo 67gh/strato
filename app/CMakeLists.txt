@@ -250,6 +250,8 @@ add_subdirectory("libraries/audio-core")
 include_directories(SYSTEM "libraries/audio-core/include")
 target_link_libraries_system(audio_core Boost::intrusive Boost::container range-v3)
 
+include("cmake/VideoDecoder.cmake")
+
 # Skyline
 add_library(skyline SHARED
         ${source_DIR}/driver_jni.cpp
@@ -332,6 +334,8 @@ add_library(skyline SHARED
         ${source_DIR}/skyline/soc/host1x/classes/host1x.cpp
         ${source_DIR}/skyline/soc/host1x/classes/vic.cpp
         ${source_DIR}/skyline/soc/host1x/classes/nvdec.cpp
+        ${source_DIR}/skyline/soc/host1x/video/decoder.cpp
+        ${source_DIR}/skyline/soc/host1x/video/compositor.cpp
         ${source_DIR}/skyline/soc/gm20b/channel.cpp
         ${source_DIR}/skyline/soc/gm20b/gpfifo.cpp
         ${source_DIR}/skyline/soc/gm20b/gmmu.cpp
@@ -539,3 +543,6 @@ if (STRATO_JIT_ENABLED)
 endif ()
 target_link_libraries_system(skyline android perfetto fmt lz4_static tzcode vkma mbedcrypto opus Boost::intrusive Boost::container Boost::preprocessor Boost::regex range-v3 adrenotools tsl::robin_map)
 add_dependencies(skyline frame_gen_shaders)
+
+add_dependencies(skyline strato_video_ffmpeg)
+target_link_libraries(skyline PRIVATE strato_avcodec strato_avutil m)

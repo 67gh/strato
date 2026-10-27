@@ -3,14 +3,14 @@
 
 #pragma once
 
-#include <queue>
 #include <common.h>
 #include "syncpoint.h"
 #include "classes/class.h"
 
 namespace skyline::soc::host1x {
     /**
-     * @brief The 'Tegra Host Interface' or THI sits inbetween the Host1x and the class falcons, implementing syncpoint queueing and a method interface
+     * @note Device CallMethod executes synchronously; an OpDone method observes completion of all preceding work.
+     * @brief The 'Tegra Host Interface' or THI sits inbetween the Host1x and the class falcons, implementing completion signalling and a method interface
      */
     template<typename ClassType>
     class TegraHostInterface {
@@ -20,29 +20,9 @@ namespace skyline::soc::host1x {
 
         u32 storedMethod{}; //!< Method that will be used for deviceClass.CallMethod, set using Method0
 
-        std::queue<u32> incrQueue; //!< Queue of syncpoint IDs to be incremented when a device operation is finished, the same syncpoint may be held multiple times within the queue
-        std::mutex incrMutex;
-
-        void AddIncr(u32 syncpointId) {
-            std::scoped_lock lock(incrMutex);
-            incrQueue.push(syncpointId);
-        }
-
-        void SubmitPendingIncrs() {
-            std::scoped_lock lock(incrMutex);
-
-            while (!incrQueue.empty()) {
-                u32 syncpointId{incrQueue.front()};
-                incrQueue.pop();
-
-                LOGD("Increment syncpoint: {}", syncpointId);
-                syncpoints.at(syncpointId).Increment();
-            }
-        }
-
       public:
         TegraHostInterface(SyncpointSet &syncpoints, const DeviceState &state)
-            : deviceClass([&] { SubmitPendingIncrs(); }, state),
+            : deviceClass([] {}, state),
               syncpoints(syncpoints) {}
 
         void CallMethod(u32 method, u32 argument)  {
@@ -62,8 +42,8 @@ namespace skyline::soc::host1x {
                             syncpoints.at(incrSyncpoint.index).Increment();
                             break;
                         case IncrementSyncpointMethod::Condition::OpDone:
-                            LOGD("Queue syncpoint for OpDone: {}", incrSyncpoint.index);
-                            AddIncr(incrSyncpoint.index);
+                            LOGD("Synchronous OpDone syncpoint: {}", incrSyncpoint.index);
+                            syncpoints.at(incrSyncpoint.index).Increment(); // synchronous backend: all preceding writes are visible
                             break;
                         default:
                             throw exception("Unsupported THI syncpoint condition: {}", static_cast<u8>(incrSyncpoint.condition));

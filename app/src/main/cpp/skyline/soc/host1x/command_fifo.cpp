@@ -30,6 +30,24 @@ namespace skyline::soc::host1x {
         }
     }
 
+    void ChannelCommandFifo::Validate(span<u32> gather) {
+        ParseCommandBuffer(std::span<const u32>{gather.data(),gather.size()},static_cast<u16>(targetClass),
+            [](u16 cls,u32 method,u32 argument) {
+                if (cls!=static_cast<u16>(ClassId::Host1x) && cls!=static_cast<u16>(ClassId::NvDec) && cls!=static_cast<u16>(ClassId::VIC))
+                    throw exception("Unsupported video class: {}",cls);
+                if (cls==static_cast<u16>(ClassId::Host1x)) {
+                    if (method!=0 && method!=0x4e && method!=0x50)
+                        throw exception("Unsupported Host1x method: {}",method);
+                    if (method==0x50 && (argument&0xffU)>=SyncpointCount)
+                        throw exception("Invalid Host1x wait syncpoint");
+                } else if (method!=0 && method!=0x10 && method!=0x11) {
+                    throw exception("Unsupported THI method: {}",method);
+                }
+                if (!method && (argument&0xffU)>=SyncpointCount)
+                    throw exception("Invalid video syncpoint");
+            });
+    }
+
     void ChannelCommandFifo::Process(span<u32> gather) {
         targetClass = static_cast<ClassId>(ParseCommandBuffer(
             std::span<const u32>{gather.data(), gather.size()}, static_cast<u16>(targetClass),

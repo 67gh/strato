@@ -5,16 +5,17 @@
 
 #include <common.h>
 #include <soc/host1x/video_capture.h>
+#include <soc/host1x/video/decoder.h>
 
 namespace skyline::soc::host1x {
     /**
-     * @brief Diagnostic register capture for NVDEC; execution is explicitly unsupported
+     * @brief NVDEC software decoding: progressive H264 and VP8, with diagnostic capture
      */
     class NvDecClass {
       private:
         const DeviceState &state;
         VideoCapture capture{VideoCapture::Engine::Nvdec};
-        bool reportedUnsupported{};
+        video::Decoder engine;
         std::function<void()> opDoneCallback;
 
       public:

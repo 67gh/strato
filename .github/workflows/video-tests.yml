@@ -1,0 +1,21 @@
+name: NVDEC and VIC CPU tests
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'app/src/main/cpp/skyline/soc/host1x/**'
+      - 'app/src/main/cpp/skyline/services/nvdrv/devices/nvhost/host1x_channel.*'
+      - 'app/cmake/VideoDecoder.cmake'
+      - 'app/patches/ffmpeg/**'
+      - 'tools/video_tests/**'
+      - '.github/workflows/video-tests.yml'
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host test dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg cmake g++ make patch
+      - name: Build decoder and test real video under ASan/UBSan
+        run: bash tools/video_tests/run.sh

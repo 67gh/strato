@@ -5,16 +5,17 @@
 
 #include <common.h>
 #include <soc/host1x/video_capture.h>
+#include <soc/host1x/video/compositor.h>
 
 namespace skyline::soc::host1x {
     /**
-     * @brief Diagnostic register capture for VIC; execution is explicitly unsupported
+     * @brief VIC software single-slot conversion, scaling and surface writes
      */
     class VicClass {
       private:
         const DeviceState &state;
         VideoCapture capture{VideoCapture::Engine::Vic};
-        bool reportedUnsupported{};
+        video::Compositor engine;
         std::function<void()> opDoneCallback;
 
       public:

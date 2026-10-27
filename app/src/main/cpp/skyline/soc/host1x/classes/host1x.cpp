@@ -30,13 +30,13 @@ namespace skyline::soc::host1x {
                 u32 syncpointId{static_cast<u8>(argument)};
                 LOGD("Wait syncpoint: {}, thresh: {}", syncpointId, syncpointPayload);
 
-                syncpoints.at(syncpointId).host.Wait(syncpointPayload, std::chrono::steady_clock::duration::max());
+                if (!syncpoints.at(syncpointId).host.Wait(syncpointPayload, waitTimeout))
+                    throw exception("Host1x wait timed out: syncpoint {}, threshold {}",syncpointId,syncpointPayload);
                 break;
             }
 
             default:
-                LOGE("Unknown host1x class method called: 0x{:X}", method);
-                break;
+                throw exception("Unsupported host1x class method: 0x{:X}", method);
         }
     }
 }

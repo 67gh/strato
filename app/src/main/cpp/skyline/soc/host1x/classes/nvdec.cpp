@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
-// Copyright © 2021 Skyline Team and Contributors (https://github.com/skyline-emu/)
-
-#include <soc.h>
+#include <soc/host1x/video/skyline_memory.h>
 #include "nvdec.h"
-
 namespace skyline::soc::host1x {
-    NvDecClass::NvDecClass(std::function<void()> opDoneCallback, const DeviceState &state)
-        : state{state}, opDoneCallback(std::move(opDoneCallback)) {}
-
+    NvDecClass::NvDecClass(std::function<void()> callback, const DeviceState &state)
+        : state(state), opDoneCallback(std::move(callback)) {}
     void NvDecClass::CallMethod(u32 method, u32 argument) {
-        if (!reportedUnsupported) {
-            reportedUnsupported = true;
-            LOGW("NVDEC is unimplemented: video jobs currently produce no output image");
-        }
-        capture.Method(method, argument, [this](u8 *destination, u64 address, u32 size) {
-            state.soc->smmu.Read(destination, address, size);
+        capture.Method(method,argument,[this](u8 *destination,u64 address,u32 size) {
+            state.soc->smmu.Read(destination,address,size);
         });
-        if (method == VideoCapture::ExecuteMethod)
-            throw exception("NVDEC execution unavailable: no output surface was produced");
+        try {
+            engine.Method(method,argument,video::GuestMemory(state));
+            if (method==VideoCapture::ExecuteMethod) opDoneCallback();
+        } catch (const std::exception &error) {
+            LOGE("NVDEC execution failed (method 0x{:X}): {}",method,error.what());
+            throw;
+        }
     }
 }

@@ -1,0 +1,12 @@
+--- a/libavcodec/h264_slice.c
++++ b/libavcodec/h264_slice.c
+@@ -1302,0 +1303,9 @@
++    /* Strato NVDEC owns presentation ordering. Keep the reference DPB, but
++     * return the current decoded picture (single-thread, complete pictures). */
++    if (h->avctx->flags & AV_CODEC_FLAG_LOW_DELAY) {
++        h->next_output_pic = cur;
++        h->frame_recovered |= cur->recovered;
++        cur->recovered |= h->frame_recovered & FRAME_RECOVERED_SEI;
++        return 0;
++    }
++

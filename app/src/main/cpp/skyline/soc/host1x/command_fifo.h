@@ -40,7 +40,7 @@ namespace skyline::soc::host1x {
         /**
          * @brief Processes the pushbuffer contained within the given gather, calling methods as needed
          */
-        void Process(span<u32> gather);
+
 
         /**
          * @brief Executes all pending gathers in the FIFO and polls for more
@@ -56,6 +56,11 @@ namespace skyline::soc::host1x {
          * @brief Starts the pushbuffer processing thread if it hasn't already been started
          */
         void Start();
+
+        // Synchronous path used by video ioctls; must not be mixed with Start/Push.
+        void Process(span<u32> gather);
+        void Validate(span<u32> gather);
+        void SetWaitTimeout(std::chrono::milliseconds timeout) { host1XClass.SetWaitTimeout(timeout); }
 
         /**
          * @brief Pushes a single gather into the FIFO to be processed asynchronously

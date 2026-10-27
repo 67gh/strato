@@ -3,6 +3,7 @@
 
 #include <soc.h>
 #include <limits>
+#include <soc/host1x/command_parser.h>
 #include <common/diagnostic_recorder.h>
 #include <services/nvdrv/devices/deserialisation/deserialisation.h>
 #include "host1x_channel.h"
@@ -35,7 +36,7 @@ namespace skyline::service::nvdrv::device::nvhost {
         // Validate without modifying counters or output fences. A rejected submission
         // must not make an earlier/later job appear complete.
         for (const auto &incr : syncpointIncrs) {
-            if (!core.syncpointManager.IsSyncpointAllocated(incr.syncpointId))
+            if (!core.syncpointManager.IsSyncpointAllocated(incr.syncpointId) || incr.numIncrs>0x7fffffffU)
                 return PosixResult::InvalidArgument;
         }
         for (const auto &cmdBuf : cmdBufs) {
@@ -55,20 +56,94 @@ namespace skyline::service::nvdrv::device::nvhost {
                 return PosixResult::InvalidArgument;
         }
 
-        if (cmdBufs.empty() && relocs.empty() && syncpointIncrs.empty())
-            return PosixResult::Success;
+        if (channelType!=core::ChannelType::NvDec && channelType!=core::ChannelType::VIC)
+            return PosixResult::NotSupported;
+        if (executionFailed) return PosixResult::InvalidArgument;
+        if (cmdBufs.empty() && relocs.empty() && syncpointIncrs.empty()) return PosixResult::Success;
 
-        // There is no execution backend for these channels yet. Do not enqueue
-        // borrowed pointers, read guest memory, or fabricate completion on the CPU.
-        // Returning an error is intentional: callers must not consume stale surfaces.
-        if (!reportedUnsupported) {
-            reportedUnsupported = true;
-            LOGW("Host1x channel {}: submit rejected; video execution/relocations are unsupported ({} command buffers)",
-                 static_cast<u32>(channelType), cmdBufs.size());
-            diagnostics::Unsupported("host1x_submit", static_cast<u32>(channelType),
-                                     "no execution backend; submission rejected without signalling fences");
+        // Copy first; relocations patch this owned copy, never application memory.
+        // A synchronous ioctl keeps all relocation pins alive through output writes.
+        std::vector<u32> commands;
+        std::vector<size_t> starts;
+        for (const auto &cmd : cmdBufs) {
+            if (cmd.words > 4*1024*1024 - commands.size()) return PosixResult::InvalidArgument;
+            auto handle=core.nvMap.GetHandle(cmd.mem);
+            if (!handle) return PosixResult::InvalidArgument;
+            std::scoped_lock handleLock(handle->mutex);
+            if (!handle->allocated || !handle->address || cmd.offset>handle->size ||
+                static_cast<u64>(cmd.words)>(handle->size-cmd.offset)/sizeof(u32))
+                return PosixResult::InvalidArgument;
+            starts.push_back(commands.size());
+            const auto begin=commands.size();
+            commands.resize(begin+cmd.words);
+            if (cmd.words) std::memcpy(commands.data()+begin,reinterpret_cast<const void *>(handle->address+cmd.offset),cmd.words*sizeof(u32));
         }
-        return PosixResult::NotSupported;
+        if (commands.empty()) return PosixResult::InvalidArgument;
+        struct Pins {
+            core::NvMap &map;
+            std::vector<u32> handles;
+            ~Pins() { for (auto id : handles) map.UnpinHandle(id); }
+        } pins{core.nvMap,{}};
+        pins.handles.reserve(relocs.size());
+        // Validate every relocation before pinning or changing any syncpoint.
+        for (size_t i=0;i<relocs.size();++i) {
+            const auto &reloc=relocs[i];
+            auto target=core.nvMap.GetHandle(reloc.pinMem);
+            if (!target || relocShifts[i]>31 || (reloc.patchOffset&3)) return PosixResult::InvalidArgument;
+            std::scoped_lock targetLock(target->mutex);
+            if (!target->allocated || !target->address || reloc.pinOffset>=target->size) return PosixResult::InvalidArgument;
+            bool found{};
+            for (const auto &cmd : cmdBufs)
+                if (cmd.mem==reloc.patchMem && reloc.patchOffset>=cmd.offset &&
+                    static_cast<u64>(reloc.patchOffset-cmd.offset)/4<cmd.words) found=true;
+            if (!found) return PosixResult::InvalidArgument;
+        }
+        try {
+            for (size_t i=0;i<relocs.size();++i) {
+                const auto &reloc=relocs[i];
+                const u64 base=core.nvMap.PinHandle(reloc.pinMem);
+                if (!base) return PosixResult::InvalidArgument;
+                pins.handles.push_back(reloc.pinMem);
+                const u64 address=base+reloc.pinOffset;
+                if (address>std::numeric_limits<u32>::max()) return PosixResult::InvalidArgument;
+                for (size_t j=0;j<cmdBufs.size();++j) {
+                    const auto &cmd=cmdBufs[j];
+                    if (cmd.mem==reloc.patchMem && reloc.patchOffset>=cmd.offset &&
+                        static_cast<u64>(reloc.patchOffset-cmd.offset)/4<cmd.words)
+                        commands[starts[j]+(reloc.patchOffset-cmd.offset)/4]=static_cast<u32>(address>>relocShifts[i]);
+                }
+            }
+            if (!videoChannel) videoChannel=std::make_unique<soc::host1x::ChannelCommandFifo>(state,state.soc->host1x.syncpoints);
+            // Each gather must end on a packet boundary. Concatenating before this
+            // check could make a truncated packet consume the next gather's header.
+            for (size_t j=0;j<cmdBufs.size();++j)
+                soc::host1x::ParseCommandBuffer(std::span<const u32>{commands.data()+starts[j],cmdBufs[j].words},1,
+                                               [](u16,u32,u32) {});
+            // Parse without dispatch before reserving counters, including malformed tails.
+            videoChannel->Validate(span<u32>{commands.data(),commands.size()});
+        } catch (const std::exception &error) {
+            LOGE("Host1x submit validation failed: {}",error.what());
+            return PosixResult::InvalidArgument;
+        }
+        std::vector<u32> thresholds;
+        thresholds.reserve(syncpointIncrs.size());
+        for (const auto &incr : syncpointIncrs)
+            thresholds.push_back(core.syncpointManager.IncrementSyncpointMaxExt(incr.syncpointId,incr.numIncrs));
+        try {
+            videoChannel->SetWaitTimeout(std::chrono::milliseconds(submitTimeout ? submitTimeout : 5000));
+            videoChannel->Process(span<u32>{commands.data(),commands.size()});
+            for (size_t i=0;i<syncpointIncrs.size();++i) {
+                const auto completed=core.syncpointManager.UpdateMin(syncpointIncrs[i].syncpointId);
+                if (static_cast<i32>(completed-thresholds[i])<0)
+                    throw exception("Host1x completed without requested syncpoint increments (id {})",syncpointIncrs[i].syncpointId);
+            }
+        } catch (const std::exception &error) {
+            executionFailed=true;
+            LOGE("Host1x video submit failed: {}; channel disabled; restart the emulation session",error.what());
+            return PosixResult::InvalidArgument;
+        }
+        for (size_t i=0;i<fenceThresholds.size();++i) fenceThresholds[i]=thresholds[i];
+        return PosixResult::Success;
     }
 
     PosixResult Host1xChannel::GetSyncpoint(In<u32> channelSyncpointIdx, Out<u32> syncpointId) {
