@@ -124,6 +124,7 @@ add_subdirectory("libraries/range")
 add_subdirectory("libraries/sirit")
 
 # libadrenotools
+include(cmake/ApplyCustomDriverPatch.cmake)
 add_subdirectory("libraries/adrenotools")
 
 # Tessil Robin Map

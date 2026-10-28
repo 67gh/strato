@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+<string name="gpu_driver_mali_experimental">Mali / PanVK — experimental. Requires an Android driver compatible with your GPU and kernel.</string>
+<string name="gpu_driver_incompatible_gpu">This driver targets a different GPU. Use PanVK for Mali or Turnip for Adreno.</string>
+<string name="gpu_driver_invalid_library">The package must contain the ARM64 Android shared library named in meta.json.</string>
+</resources>

@@ -9,6 +9,7 @@
 #include <common/settings.h>
 #include "gpu.h"
 #include "gpu/diagnostics.h"
+#include "gpu/driver_platform.h"
 #include "gpu/diagnostic_snapshot.h"
 
 namespace skyline::gpu {
@@ -376,9 +377,11 @@ namespace skyline::gpu {
                 queueString += fmt::format("\n* {}x{}{}{}{}{}: TSB{} MIG({}x{}x{}){}", queueFamily.queueCount, queueFamily.queueFlags & vk::QueueFlagBits::eGraphics ? 'G' : '-', queueFamily.queueFlags & vk::QueueFlagBits::eCompute ? 'C' : '-', queueFamily.queueFlags & vk::QueueFlagBits::eTransfer ? 'T' : '-', queueFamily.queueFlags & vk::QueueFlagBits::eSparseBinding ? 'S' : '-', queueFamily.queueFlags & vk::QueueFlagBits::eProtected ? 'P' : '-', queueFamily.timestampValidBits, queueFamily.minImageTransferGranularity.width, queueFamily.minImageTransferGranularity.height, queueFamily.minImageTransferGranularity.depth, familyIndex++ == vkQueueFamilyIndex ? " <--" : "");
 
             auto properties{deviceProperties2.get<vk::PhysicalDeviceProperties2>().properties};
-            LOGI("Vulkan Device:\nName: {}\nType: {}\nDriver ID: {}\nVulkan Version: {}.{}.{}\nDriver Version: {}.{}.{}\nQueues:{}\nExtensions:{}\nTraits:{}\nQuirks:{}",
+            LOGI("Vulkan Device:\nName: {}\nType: {}\nDriver ID: {}\nDriver Name: {}\nDriver Info: {}\nVulkan Version: {}.{}.{}\nDriver Version: {}.{}.{}\nQueues:{}\nExtensions:{}\nTraits:{}\nQuirks:{}",
                          properties.deviceName, vk::to_string(properties.deviceType),
                          vk::to_string(deviceProperties2.get<vk::PhysicalDeviceDriverProperties>().driverID),
+                         deviceProperties2.get<vk::PhysicalDeviceDriverProperties>().driverName,
+                         deviceProperties2.get<vk::PhysicalDeviceDriverProperties>().driverInfo,
                          VK_API_VERSION_MAJOR(properties.apiVersion), VK_API_VERSION_MINOR(properties.apiVersion), VK_API_VERSION_PATCH(properties.apiVersion),
                          VK_API_VERSION_MAJOR(properties.driverVersion), VK_API_VERSION_MINOR(properties.driverVersion), VK_API_VERSION_PATCH(properties.driverVersion),
                          queueString, extensionString, traits.Summary(), traits.quirks.Summary());
@@ -398,27 +401,35 @@ namespace skyline::gpu {
 
     static PFN_vkGetInstanceProcAddr LoadVulkanDriver(const DeviceState &state, adrenotools_gpu_mapping *mapping) {
         void *libvulkanHandle{};
+        const auto platform{driver::Detect()};
+        const bool adreno{platform == driver::Platform::Adreno};
+        if (mapping) *mapping = {};
 
         // If the user has selected a custom driver, try to load it
         if (!(*state.settings->gpuDriver).empty()) {
+            if (platform == driver::Platform::Unsupported || !driver::SafeComponent(*state.settings->gpuDriver) ||
+                !driver::SafeComponent(*state.settings->gpuDriverLibraryName))
+                throw exception("Invalid custom GPU driver selection; select the system driver in settings");
+            LOGI("Loading Vulkan driver {}/{} for {}", *state.settings->gpuDriver,
+                 *state.settings->gpuDriverLibraryName, adreno ? "Adreno" : "Mali (experimental)");
             libvulkanHandle = adrenotools_open_libvulkan(
                 RTLD_NOW,
-                ADRENOTOOLS_DRIVER_FILE_REDIRECT | ADRENOTOOLS_DRIVER_CUSTOM | ADRENOTOOLS_DRIVER_GPU_MAPPING_IMPORT,
+                ADRENOTOOLS_DRIVER_CUSTOM | (adreno ? ADRENOTOOLS_DRIVER_FILE_REDIRECT | ADRENOTOOLS_DRIVER_GPU_MAPPING_IMPORT : 0),
                 nullptr, // We require Android 10 so don't need to supply
                 state.os->nativeLibraryPath.c_str(),
                 (state.os->privateAppFilesPath + "gpu_drivers/" + *state.settings->gpuDriver + "/").c_str(),
                 (*state.settings->gpuDriverLibraryName).c_str(),
-                (state.os->publicAppFilesPath + "gpu/vk_file_redirect/").c_str(),
-                mapping
+                adreno ? (state.os->publicAppFilesPath + "gpu/vk_file_redirect/").c_str() : nullptr,
+                adreno ? mapping : nullptr
             );
 
             if (!libvulkanHandle) {
                 char *error = dlerror();
-                LOGW("Failed to load custom Vulkan driver {}/{}: {}", *state.settings->gpuDriver, *state.settings->gpuDriverLibraryName, error ? error : "");
+                throw exception("Failed to load custom Vulkan driver {}/{}: {}. Select the system driver in GPU settings", *state.settings->gpuDriver, *state.settings->gpuDriverLibraryName, error ? error : "loader failure");
             }
         }
 
-        if (!libvulkanHandle) {
+        if (!libvulkanHandle && adreno) {
             libvulkanHandle = adrenotools_open_libvulkan(
                 RTLD_NOW,
                 ADRENOTOOLS_DRIVER_FILE_REDIRECT | ADRENOTOOLS_DRIVER_GPU_MAPPING_IMPORT,
@@ -435,9 +446,9 @@ namespace skyline::gpu {
                 LOGW("Failed to load builtin Vulkan driver: {}", error ? error : "");
             }
 
-            if (!libvulkanHandle)
-            libvulkanHandle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
         }
+        if (!libvulkanHandle)
+            libvulkanHandle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
 
         if (!libvulkanHandle) {
             const char *error{dlerror()};

@@ -35,6 +35,7 @@ interface GpuDriverHelper {
          * @return `true` if the device supports loading custom drivers, `false` otherwise
          */
         external fun supportsCustomDriverLoading() : Boolean
+        external fun customDriverPlatform() : String
 
         /**
          * Queries the driver for manual max clock forcing support
@@ -105,6 +106,7 @@ interface GpuDriverHelper {
          * @param stream The input stream to read the driver from
          * @return The exit status of the installation process
          */
+        @Synchronized
         fun installDriver(context : Context, stream : InputStream) : GpuDriverInstallResult {
             val installTempDir = File(context.cacheDir.canonicalPath, GPU_DRIVER_INSTALL_TEMP_DIR).apply {
                 deleteRecursively()
@@ -126,6 +128,7 @@ interface GpuDriverHelper {
          * @param file The file to read the driver from
          * @return The exit status of the installation process
          */
+        @Synchronized
         fun installDriver(context : Context, file : File) : GpuDriverInstallResult {
             val installTempDir = File(context.cacheDir.canonicalPath, GPU_DRIVER_INSTALL_TEMP_DIR).apply {
                 deleteRecursively()
@@ -162,11 +165,34 @@ interface GpuDriverHelper {
             // Check that the driver metadata is valid
             val driverMetadata = try {
                 GpuDriverMetadata.deserialize(metadataFile)
-            } catch (e : SerializationException) {
+            } catch (e : Exception) {
+                Log.w(TAG, "Invalid GPU driver metadata", e)
                 cleanup()
                 return GpuDriverInstallResult.InvalidMetadata
             }
 
+            if (!DriverPackageValidation.safeComponent(driverMetadata.label) ||
+                !DriverPackageValidation.safeComponent(driverMetadata.libraryName) ||
+                driverMetadata.name.isBlank() || driverMetadata.minApi < 0 ||
+                driverMetadata.targetGpu !in listOf("", "mali", "adreno")) {
+                cleanup()
+                return GpuDriverInstallResult.InvalidMetadata
+            }
+            val family = DriverPackageValidation.family(driverMetadata.name, driverMetadata.vendor,
+                driverMetadata.libraryName, driverMetadata.targetGpu)
+            if (!DriverPackageValidation.compatible(customDriverPlatform(), family)) {
+                cleanup()
+                return GpuDriverInstallResult.IncompatibleGpu
+            }
+            try {
+                if (!DriverPackageValidation.arm64SharedLibrary(File(unpackDir, driverMetadata.libraryName))) {
+                    cleanup()
+                    return GpuDriverInstallResult.InvalidLibrary
+                }
+            } catch (e : IOException) {
+                cleanup()
+                return GpuDriverInstallResult.InvalidLibrary
+            }
             // Check that the device satisfies the driver's minimum Android version requirements
             if (Build.VERSION.SDK_INT < driverMetadata.minApi) {
                 cleanup()
@@ -233,4 +259,6 @@ enum class GpuDriverInstallResult {
     InvalidMetadata,
     UnsupportedAndroidVersion,
     AlreadyInstalled,
+    IncompatibleGpu,
+    InvalidLibrary,
 }

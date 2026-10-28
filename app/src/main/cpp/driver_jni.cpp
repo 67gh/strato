@@ -4,6 +4,8 @@
 #include <jni.h>
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <android/log.h>
+#include "skyline/gpu/driver_platform.h"
 #include <vulkan/vulkan_raii.hpp>
 #include <adrenotools/driver.h>
 #include "skyline/common/format.h"
@@ -11,23 +13,35 @@
 #include "skyline/common/utils.h"
 
 extern "C" JNIEXPORT jobjectArray JNICALL Java_org_stratoemu_strato_utils_GpuDriverHelper_00024Companion_getSystemDriverInfo(JNIEnv *env, jobject) {
-    auto libvulkanHandle{dlopen("libvulkan.so", RTLD_NOW)};
-
-    vk::raii::Context vkContext{reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(libvulkanHandle, "vkGetInstanceProcAddr"))};
-    vk::raii::Instance vkInstance{vkContext, vk::InstanceCreateInfo{}};
-    vk::raii::PhysicalDevice physicalDevice{std::move(vk::raii::PhysicalDevices(vkInstance).front())}; // Get the first device as we aren't expecting multiple GPUs
-
-    auto deviceProperties2{physicalDevice.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceDriverProperties>()};
-    auto properties{deviceProperties2.get<vk::PhysicalDeviceProperties2>().properties};
-
-    auto driverId{vk::to_string(deviceProperties2.get<vk::PhysicalDeviceDriverProperties>().driverID)};
-    auto driverVersion{fmt::format("{}.{}.{}", VK_API_VERSION_MAJOR(properties.driverVersion), VK_API_VERSION_MINOR(properties.driverVersion), VK_API_VERSION_PATCH(properties.driverVersion))};
-
-    auto array = env->NewObjectArray(2, env->FindClass("java/lang/String"), nullptr);
-    env->SetObjectArrayElement(array, 0, env->NewStringUTF(driverId.c_str()));
-    env->SetObjectArrayElement(array, 1, env->NewStringUTF(driverVersion.c_str()));
-
-    return array;
+    auto libvulkanHandle{dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL)};
+    if (!libvulkanHandle) {
+        const auto error{dlerror()};
+        __android_log_print(ANDROID_LOG_WARN, "StratoDriver", "System Vulkan unavailable: %s", error ? error : "unknown");
+        return nullptr;
+    }
+    jobjectArray result{};
+    try {
+        auto proc = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(libvulkanHandle, "vkGetInstanceProcAddr"));
+        if (proc) {
+            vk::raii::Context context{proc};
+            vk::raii::Instance instance{context, vk::InstanceCreateInfo{}};
+            auto devices{vk::raii::PhysicalDevices(instance)};
+            if (!devices.empty()) {
+                // Core properties do not require enabling the driver-properties extension.
+                auto properties{devices.front().getProperties()};
+                auto version{fmt::format("{}.{}.{}", VK_API_VERSION_MAJOR(properties.driverVersion), VK_API_VERSION_MINOR(properties.driverVersion), VK_API_VERSION_PATCH(properties.driverVersion))};
+                result = env->NewObjectArray(2, env->FindClass("java/lang/String"), nullptr);
+                if (result) {
+                    env->SetObjectArrayElement(result, 0, env->NewStringUTF(properties.deviceName.data()));
+                    env->SetObjectArrayElement(result, 1, env->NewStringUTF(version.c_str()));
+                }
+            } else __android_log_print(ANDROID_LOG_WARN, "StratoDriver", "No system Vulkan device");
+        } else __android_log_print(ANDROID_LOG_WARN, "StratoDriver", "System Vulkan entry point missing");
+    } catch (const std::exception &error) {
+        __android_log_print(ANDROID_LOG_WARN, "StratoDriver", "System Vulkan query failed: %s", error.what());
+    }
+    dlclose(libvulkanHandle);
+    return result;
 }
 
 static bool CheckKgslPresent() {
@@ -37,8 +51,7 @@ static bool CheckKgslPresent() {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_org_stratoemu_strato_utils_GpuDriverHelper_00024Companion_supportsCustomDriverLoading(JNIEnv *env, jobject instance) {
-    // If the KGSL device exists custom drivers can be loaded using adrenotools
-    return CheckKgslPresent();
+    return skyline::gpu::driver::Detect() != skyline::gpu::driver::Platform::Unsupported;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_org_stratoemu_strato_utils_GpuDriverHelper_00024Companion_supportsForceMaxGpuClocks(JNIEnv *env, jobject instance) {
@@ -47,5 +60,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_stratoemu_strato_utils_GpuDriverH
 }
 
 extern "C" JNIEXPORT void JNICALL Java_org_stratoemu_strato_utils_GpuDriverHelper_00024Companion_forceMaxGpuClocks(JNIEnv *env, jobject instance, jboolean enable) {
-    adrenotools_set_turbo(enable);
+    if (CheckKgslPresent()) adrenotools_set_turbo(enable);
+}
+
+extern "C" JNIEXPORT jstring JNICALL Java_org_stratoemu_strato_utils_GpuDriverHelper_00024Companion_customDriverPlatform(JNIEnv *env, jobject) {
+    using namespace skyline::gpu::driver;
+    const auto platform{Detect()};
+    return env->NewStringUTF(platform == Platform::Mali ? "mali" : platform == Platform::Adreno ? "adreno" : "unsupported");
 }

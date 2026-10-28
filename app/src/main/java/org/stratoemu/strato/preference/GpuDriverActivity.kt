@@ -136,7 +136,8 @@ class GpuDriverActivity : AppCompatActivity() {
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)
             title = getString(R.string.gpu_driver_config)
-            subtitle = item?.title
+            subtitle = item?.title ?: if (GpuDriverHelper.customDriverPlatform() == "mali")
+                getString(R.string.gpu_driver_mali_experimental) else null
         }
 
         emulationSettings = if (item == null) {
@@ -198,6 +199,8 @@ class GpuDriverActivity : AppCompatActivity() {
         GpuDriverInstallResult.MissingMetadata -> getString(R.string.gpu_driver_install_missing_metadata)
         GpuDriverInstallResult.InvalidMetadata -> getString(R.string.gpu_driver_install_invalid_metadata)
         GpuDriverInstallResult.UnsupportedAndroidVersion -> getString(R.string.gpu_driver_install_unsupported_android_version)
+        GpuDriverInstallResult.IncompatibleGpu -> getString(R.string.gpu_driver_incompatible_gpu)
+        GpuDriverInstallResult.InvalidLibrary -> getString(R.string.gpu_driver_invalid_library)
         GpuDriverInstallResult.AlreadyInstalled -> getString(R.string.gpu_driver_install_already_installed)
     }
 }

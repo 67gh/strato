@@ -42,7 +42,10 @@ class GpuDriverPreference @JvmOverloads constructor(context : Context, attrs : A
                     if (it == EmulationSettings.SYSTEM_GPU_DRIVER)
                         driver = context.getString(R.string.system_driver)
 
-                    context.getString(R.string.gpu_driver_config_desc, driver)
+                    val active = context.getString(R.string.gpu_driver_config_desc, driver)
+                    if (GpuDriverHelper.customDriverPlatform() == "mali")
+                        active + "\n" + context.getString(R.string.gpu_driver_mali_experimental)
+                    else active
                 }
             }
         } else {

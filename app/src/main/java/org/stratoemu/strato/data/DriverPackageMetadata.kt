@@ -19,6 +19,7 @@ data class GpuDriverMetadata(
     val minApi : Int,
     val description : String,
     val libraryName : String,
+    val targetGpu : String = "",
 ) {
     private constructor(metadataV1 : GpuDriverMetadataV1) : this(
         name = metadataV1.name,
@@ -29,18 +30,21 @@ data class GpuDriverMetadata(
         minApi = metadataV1.minApi,
         description = metadataV1.description,
         libraryName = metadataV1.libraryName,
+        targetGpu = metadataV1.targetGpu,
     )
 
     val label get() = "${name}-v${packageVersion}"
 
     companion object {
         private const val SCHEMA_VERSION_V1 = 1
+        private val parser = Json { ignoreUnknownKeys = true }
 
         fun deserialize(metadataFile : File) : GpuDriverMetadata {
-            val metadataJson = Json.parseToJsonElement(metadataFile.readText())
+            if (metadataFile.length() > 1024 * 1024) throw SerializationException("Driver metadata too large")
+            val metadataJson = parser.parseToJsonElement(metadataFile.readText())
 
             return when (metadataJson.jsonObject["schemaVersion"]?.jsonPrimitive?.intOrNull) {
-                SCHEMA_VERSION_V1 -> GpuDriverMetadata(Json.decodeFromJsonElement<GpuDriverMetadataV1>(metadataJson))
+                SCHEMA_VERSION_V1 -> GpuDriverMetadata(parser.decodeFromJsonElement<GpuDriverMetadataV1>(metadataJson))
                 else -> throw SerializationException("Unsupported metadata version")
             }
         }
@@ -58,4 +62,5 @@ private data class GpuDriverMetadataV1(
     val minApi : Int,
     val description : String,
     val libraryName : String,
+    val targetGpu : String = "",
 )

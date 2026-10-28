@@ -1,0 +1,9 @@
+--- a/src/hook/hook_impl.cpp
++++ b/src/hook/hook_impl.cpp
+@@ -36 +36,5 @@
+-    auto fallback{[&]() {
++    auto fallback{[&]() -> void * {
++        if (hook_params->featureFlags & ADRENOTOOLS_DRIVER_CUSTOM) {
++            LOGI("Custom Vulkan driver failed; refusing silent system fallback");
++            return nullptr;
++        }
