@@ -32,8 +32,15 @@ VIC: one opaque slot or background fill; NV12/NV21 and RGBA/BGRA/RGBX/BGRX;
 linear and Tegra block-linear; source/destination rectangles, bilinear scaling,
 flip X/Y, signed color/gamut/output matrices, constant alpha and clamp; output
 NV12/NV21 or packed 32-bit RGB. Unsupported blending, deinterlacing, advanced
-filters, compression, transpose, partial output target rectangles and nonzero
-alpha-fill modes fail explicitly. This is a subset of VIC, not full hardware
+filters, compression, transpose and alpha-fill modes 3/4/5 fail explicitly.
+Alpha-fill modes 0 (opaque), 1 (background), and 2 (preserve destination)
+are supported; RGBX/BGRX outputs always have an opaque unused alpha byte.
+Partial output target rectangles preserve the pixels outside the rectangle;
+YUV targets must cover complete 2x2 chroma groups (or the outer image edge).
+The output clipping semantics are checked against NVIDIA's VIC register
+documentation: https://github.com/NVIDIA/open-gpu-doc/blob/master/classes/video/vic_ceb6_types.h
+(consulted blob SHA: 60f1b58d97c9d1920c750a6554fbcd752b6f073a).
+This is a subset of VIC, not full hardware
 emulation. Bilinear sampling does not emulate programmable filter coefficients.
 
 Submit is synchronous (including memory writes); it copies commands, applies

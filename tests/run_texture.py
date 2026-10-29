@@ -63,16 +63,16 @@ int main(){using namespace skyline::gpu;using namespace skyline::gpu::texture;us
  Pair{B::Bc4Signed,vk::Format::eBc4SnormBlock,vk::Format::eR8Snorm},
  Pair{B::Bc5,vk::Format::eBc5UnormBlock,vk::Format::eR8G8Unorm},
  Pair{B::Bc5Signed,vk::Format::eBc5SnormBlock,vk::Format::eR8G8Snorm},
- Pair{B::Bc6,vk::Format::eBc6HUfloatBlock,vk::Format::eR16G16B16A16Float},
- Pair{B::Bc6Signed,vk::Format::eBc6HSfloatBlock,vk::Format::eR16G16B16A16Float},
+ Pair{B::Bc6,vk::Format::eBc6HUfloatBlock,vk::Format::eR16G16B16A16Sfloat},
+ Pair{B::Bc6Signed,vk::Format::eBc6HSfloatBlock,vk::Format::eR16G16B16A16Sfloat},
  Pair{B::Bc7,vk::Format::eBc7UnormBlock,vk::Format::eR8G8B8A8Unorm},
  Pair{B::Bc7,vk::Format::eBc7SrgbBlock,vk::Format::eR8G8B8A8Srgb}})
- for(auto mode:{TileMode::Linear,TileMode::Pitch,TileMode::Block})for(auto dims:{Dimensions{1,1,1},Dimensions{3,5,2},Dimensions{17,9,3}})for(size_t layers:{1U,3U})for(size_t levels:{1U,3U}){
+ for(auto mode:{TileMode::Linear,TileMode::Pitch,TileMode::Block})for(auto dims:{Dimensions{1,1,1},Dimensions{3,5,2},Dimensions{17,9,3},Dimensions{65,33,3}})for(size_t layers:{1U,3U})for(size_t levels:{1U,3U}){
   if(mode!=TileMode::Block&&levels>1)continue;
   const auto bpb=bcn::readback::BlockBytes(pair.bc),bpp=bcn::readback::PixelBytes(pair.bc);
   Fmt guestFmt{pair.guest,4,4,bpb},hostFmt{pair.host,1,1,bpp};Texture t;t.format=&hostFmt;t.layerCount=layers;t.levelCount=levels;
   t.mipLayouts=GetBlockLinearMipLayout(dims,4,4,bpb,1,1,bpp,1,1,levels);size_t guestSize{};for(auto &l:t.mipLayouts){t.deswizzledSurfaceSize+=l.linearSize*layers;t.surfaceSize+=l.targetLinearSize*layers;guestSize+=l.blockLinearSize;}
-  GuestTexture guest{dims,&guestFmt};guest.tileConfig.mode=mode;guest.mipLevelCount=static_cast<u32>(levels);guest.layerCount=static_cast<u32>(layers);guest.tileConfig.pitch=128;
+  GuestTexture guest{dims,&guestFmt};guest.tileConfig.mode=mode;guest.mipLevelCount=static_cast<u32>(levels);guest.layerCount=static_cast<u32>(layers);guest.tileConfig.pitch=static_cast<u32>(util::AlignUp(util::DivideCeil<size_t>(dims.width,4)*bpb,64UL));
   if(mode==TileMode::Linear)guestSize=t.mipLayouts[0].linearSize;else if(mode==TileMode::Pitch)guestSize=guest.CalculateLayerSize();
   guest.layerStride=static_cast<u32>(guestSize+32);t.guest=guest;t.deswizzledLayerStride=t.mipLayouts[0].linearSize;t.layerStride=t.mipLayouts[0].targetLinearSize;
   std::vector<u8>mirror(guest.layerStride*layers+32,0xcc);t.mirror={mirror.data()+16,guest.layerStride*layers};std::vector<u8>linear(t.deswizzledSurfaceSize),host(t.surfaceSize),expected(t.deswizzledSurfaceSize);

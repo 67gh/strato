@@ -167,15 +167,26 @@ namespace skyline::gpu::interconnect {
         auto texture{textures.GetTexture(ctx, handle.textureIndex, desc.type)};
         ctx.executor.AttachTexture(texture);
 
-        texture->texture->PopulateReadBarrier(dstStage, srcStageMask, dstStageMask);
-        texture->texture->TransitionLayout(vk::ImageLayout::eGeneral);
-        if (desc.is_written)
+        if (texture->texture->layout != vk::ImageLayout::eGeneral)
+            texture->texture->TransitionLayout(vk::ImageLayout::eGeneral);
+        if (desc.is_written) {
+            texture->texture->PrepareShaderWrite(dstStage, srcStageMask, dstStageMask);
             texture->texture->MarkGpuDirty(ctx.executor.usageTracker);
+        } else {
+            texture->texture->PopulateReadBarrier(dstStage, srcStageMask, dstStageMask);
+        }
+
+        // Storage descriptors require identity swizzles and exactly one mip.
+        // The sampled view can legitimately have channel remapping and a mip chain.
+        auto range{texture->range};
+        range.levelCount = 1;
+        auto storageView{texture->texture->GetView(texture->type, range, texture->format, {})};
+        auto imageView{storageView->GetView()};
 
         return {
             vk::DescriptorImageInfo{
                 .sampler = nullptr,
-                .imageView = texture->GetView(),
+                .imageView = imageView,
                 .imageLayout = vk::ImageLayout::eGeneral,
             },
             texture

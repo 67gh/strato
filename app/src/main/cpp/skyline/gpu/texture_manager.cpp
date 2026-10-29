@@ -87,9 +87,11 @@ namespace skyline::gpu {
                                     matchLevel = level;
                                     break;
                                 }
-                                level++;
-                                levelMemOffset += mipLevel.blockLinearSize;
                             }
+                            // Advance even when this mip does not start at the requested
+                            // address; otherwise only mip zero can ever be matched.
+                            level++;
+                            levelMemOffset += mipLevel.blockLinearSize;
                         }
 
                         if (matched)

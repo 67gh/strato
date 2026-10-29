@@ -1,0 +1,78 @@
+{
+  "base_head": "0b4c3badd498ad4d6322e2125a5ab83f0e3fb165",
+  "input_sha256": "0bde12ab1aa4a8d44d25fcac1b2dea07257367bebb0c11b143d467d7df34944b",
+  "apk_built": false,
+  "on_device_tested": false,
+  "files": [
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp",
+      "old_sha256": "11a0394b9fe9d27ab26e306696d005d13aa759ccd3bab908b94866fbe30923c2",
+      "new_sha256": "88afef5a9165be05c1c63fa9187108a892e962a5a8279bb69914297558cb4afa"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/command_nodes.cpp",
+      "old_sha256": "ae75bb8d61285b4d67056f1685b33bb5aa3c98c6b97a2cc45027ed483479d73e",
+      "new_sha256": "3e2c4b6da76e13dfe63e97f886ab9229b18a67c5a331fc0a458e3b5899d4fff8"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc",
+      "old_sha256": "12c177c1b6ae4be077180db9cdd891c93c088cca9856b42b0368fb7b6d2818fb",
+      "new_sha256": "39035f95a493e9410235cd2a0e041e68d545d8e13226354f2afcb65b0ca6a748"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/texture/layout.cpp",
+      "old_sha256": "d74b5eb44756f89068e554b6df7976492b00e94cf128bf41688bc1701fc24350",
+      "new_sha256": "e1c378ef74e5d318fc4a33b08d81180f11e244074a73d905e3424e4eab1b2219"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/texture/texture.cpp",
+      "old_sha256": "aa4f13b166419eadcea7ee531f12ab07f99e953c8311f9e91d64f0f71ae5d1f3",
+      "new_sha256": "f705d6747c1262b21f76fe49a8f3b7d4e2f8dbbfdda93c7df4f0ba3c6e0c582a"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/texture/texture.h",
+      "old_sha256": "40eb35fb3a4f6d5ce2ae24eef527a03d93c7e4a9b49cebcf87978e626ac8426a",
+      "new_sha256": "259d91a521a3379b270447d5ca2572a375bb733901171b40eac62607d10ffdd4"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/gpu/texture_manager.cpp",
+      "old_sha256": "07c6c432239464edfb71508e46758c6e31d86f638d9e33a93092822540beaf72",
+      "new_sha256": "abe642259b0d6485deb73143fc70f0856bb5d7d0750aedb433923155d244b48c"
+    },
+    {
+      "path": "app/src/main/cpp/skyline/soc/host1x/video/compositor.cpp",
+      "old_sha256": "6f5143d1200225ae8a274d09ecfc604a2f99406c6c4cf433cc3a981e0a00d742",
+      "new_sha256": "de635592d4e2a3cd4e4fb6eec05cbe8f5ea3d1a18686c881b9e1de1e3b299ea2"
+    },
+    {
+      "path": "app/third_party/video/THIRD_PARTY.md",
+      "old_sha256": "a7ec14cc694732a4f33d50560cdc6b298ecc6cfcdd531435935f3f663f4796ad",
+      "new_sha256": "bad442c2c40241865b85ebefdfef52e95fce76f10f5610b0ef825058bdebdedd"
+    },
+    {
+      "path": "tests/run_texture.py",
+      "old_sha256": "cebd95f671a79336ae807752d16a7c56a4c19a90c85b6fc6de8872d849bf4bcb",
+      "new_sha256": "e8a8f72584421b73375720e87a02da52f0e8027878288459bddb0dec4dcdae65"
+    },
+    {
+      "path": "tools/video_tests/compositor_test.cpp",
+      "old_sha256": "c9055260dc0ba69a4f8353f97253bb2bf534942b0902a91fefa7fbe645178cd2",
+      "new_sha256": "177b546a4036e0f4058e4511a75ecd70b41fb456c67e36912098858daad66938"
+    },
+    {
+      "path": "tools/render_tests/image_coherence.py",
+      "old_sha256": null,
+      "new_sha256": "c7db5536d736513384052f919b8f12443d7dad37f69212fcfce7bcaaed74eed9"
+    },
+    {
+      "path": "tools/render_tests/storage_binding.py",
+      "old_sha256": null,
+      "new_sha256": "1cf716f53a05c2eed8453d6ed84a7f7f390ea65d5ac75c4a6f949f742fa77fa8"
+    },
+    {
+      "path": "CORRECTIFS_3D_VIDEO_20261028.md",
+      "old_sha256": null,
+      "new_sha256": "dbb72e31fa09e515e694ba3e2b64b694c3159c4c277cbdb12f63ae4c1f83ebb9"
+    }
+  ]
+}

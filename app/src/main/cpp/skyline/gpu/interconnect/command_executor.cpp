@@ -445,7 +445,11 @@ namespace skyline::gpu::interconnect {
                               std::equal(lastSubpassColorAttachments.begin(), lastSubpassColorAttachments.end(), colorAttachments.begin(), colorAttachments.end(), ViewsEqual) &&
                               ViewsEqual(lastSubpassDepthStencilAttachment, depthStencilAttachment)};
 
+        // Dependencies are emitted BEFORE a RenderPassNode. If a later draw
+        // depends on an earlier draw, merging them would put the barrier before
+        // the producer. Start a new pass so RAW/WAW/WAR dependencies stay ordered.
         bool splitRenderPass{renderPass == nullptr || renderPass->renderArea != renderArea || !attachmentsMatch ||
+            (srcStageMask && dstStageMask) ||
             !ranges::all_of(outputAttachmentViews, [this] (auto view) { return !view || view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget); }) ||
             !ranges::all_of(sampledImages, [this] (auto view) { return view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled); })};
 

@@ -23,11 +23,67 @@ int main(){
   std::copy(c.begin(),c.end(),ram.begin()+0x1000);
   Compositor vic;vic.Method(0x1c2,0x10,m);vic.Method(0x100,0x100,m);vic.Method(0x1c8,0x200,m);vic.Method(0xc0,1,m);
   for(unsigned y=0;y<3;++y)for(unsigned x=0;x<3;++x){unsigned sx=flags&1?2-x:x,sy=flags&2?2-y:y;
-   assert(ram[0x20000+out.Offset(x*4+oswap,y)]==sx*50+sy*25);assert(ram[0x20000+out.Offset(x*4+1,y)]==40);assert(ram[0x20000+out.Offset(x*4+2-oswap,y)]==200);assert(ram[0x20000+out.Offset(x*4+3,y)]==((inf>=35||outf>=35)?255:120));}
+   assert(ram[0x20000+out.Offset(x*4+oswap,y)]==sx*50+sy*25);assert(ram[0x20000+out.Offset(x*4+1,y)]==40);assert(ram[0x20000+out.Offset(x*4+2-oswap,y)]==200);assert(ram[0x20000+out.Offset(x*4+3,y)]==255);}
   // Padding survives writes. No transpose fallback or second-slot silent success.
   assert(ram[0x20000+out.Offset(15,0)]==0xe7);
+  // Alpha-fill modes operate after composition, independently of source alpha.
+  for(unsigned alphaMode:{1U,2U}){
+   std::fill_n(ram.begin()+0x20000,out.Size(),0xe7);
+   Field(c,0x10,0,3,alphaMode);Field(c,0x10,6,10,73*4);
+   std::copy(c.begin(),c.end(),ram.begin()+0x1000);vic.Method(0xc0,1,m);
+   for(unsigned y=0;y<3;++y)for(unsigned x=0;x<3;++x){
+    unsigned sx=flags&1?2-x:x,sy=flags&2?2-y:y;
+    assert(ram[0x20000+out.Offset(x*4+oswap,y)]==sx*50+sy*25);
+    const unsigned alpha=outf>=35?255:(alphaMode==1?73:0xe7);
+    assert(ram[0x20000+out.Offset(x*4+3,y)]==alpha);
+   }
+  }
+  Field(c,0x10,0,3,0);
+  // A clipped video update must retain the old image outside TargetRect,
+  // without rescaling the source into that smaller rectangle.
+  std::fill_n(ram.begin()+0x20000,out.Size(),0xe7);
+  Field(c,0x10,64,14,0);Field(c,0x10,80,14,1);
+  Field(c,0x10,96,14,1);Field(c,0x10,112,14,2);
+  std::copy(c.begin(),c.end(),ram.begin()+0x1000);
+  vic.Method(0xc0,1,m);
+  for(unsigned y=0;y<3;++y)for(unsigned x=0;x<3;++x){
+   if(x<=1 && y>=1){
+    unsigned sx=flags&1?2-x:x,sy=flags&2?2-y:y;
+    assert(ram[0x20000+out.Offset(x*4+oswap,y)]==sx*50+sy*25);
+    assert(ram[0x20000+out.Offset(x*4+1,y)]==40);
+    assert(ram[0x20000+out.Offset(x*4+2-oswap,y)]==200);
+    assert(ram[0x20000+out.Offset(x*4+3,y)]==255);
+   }else for(unsigned ch=0;ch<4;++ch)assert(ram[0x20000+out.Offset(x*4+ch,y)]==0xe7);
+  }
+  assert(ram[0x20000+out.Offset(15,0)]==0xe7);
+  auto invalidBefore=writes;Field(c,0x10,80,14,3);
+  std::copy(c.begin(),c.end(),ram.begin()+0x1000);
+  bool invalid=false;try{vic.Method(0xc0,1,m);}catch(const std::exception&){invalid=true;}
+  assert(invalid&&writes==invalidBefore);
+  Field(c,0x10,80,14,1);std::copy(c.begin(),c.end(),ram.begin()+0x1000);
   auto before=writes;ram[0x1000+0x140]=1;bool fail=false;try{vic.Method(0xc0,1,m);}catch(const std::exception&){fail=true;}assert(fail&&writes==before);
   ++count;
  }
- std::cout<<"PASS VIC "<<count<<" format/linear/block-linear/flip/bilinear scaling cases; padding preserved; unsupported multi-slot rejected\n";
+ std::cout<<"PASS VIC "<<count<<" full + "<<count<<" partial + "<<count*2<<" alpha-fill format/linear/block-linear/flip/bilinear cases; untouched pixels/padding preserved; invalid rectangles/multi-slot rejected\n";
+ for(unsigned fmt:{67U,68U})for(bool linear:{false,true}){
+  std::fill(ram.begin(),ram.end(),0xe7);Bytes c(0x610);
+  Field(c,0x20,0,7,fmt);Field(c,0x20,11,4,linear?0:1);Field(c,0x20,15,4,1);
+  Field(c,0x20,32,14,3);Field(c,0x20,46,14,3);Field(c,0x20,64,14,3);Field(c,0x20,78,14,3);
+  Field(c,0x20,96,14,1);Field(c,0x20,110,14,1);
+  Field(c,0x10,64,14,2);Field(c,0x10,80,14,3);Field(c,0x10,96,14,0);Field(c,0x10,112,14,1);
+  Field(c,0x10,16,10,100*4);Field(c,0x10,26,10,80*4);Field(c,0x10,36,10,180*4);
+  std::copy(c.begin(),c.end(),ram.begin()+0x1000);
+  Compositor vic;vic.Method(0x1c2,0x10,m);vic.Method(0x1c8,0x200,m);vic.Method(0x1c9,0x300,m);vic.Method(0xc0,1,m);
+  Plane yplane(4,4,linear,1),uvplane(4,2,linear,1);
+  for(unsigned y=0;y<4;++y)for(unsigned x=0;x<4;++x)
+   assert(ram[0x20000+yplane.Offset(x,y)]==(x>=2&&y<2?100:0xe7));
+  for(unsigned y=0;y<2;++y)for(unsigned x=0;x<2;++x){
+   unsigned swap=fmt==67?1:0;
+   assert(ram[0x30000+uvplane.Offset(x*2+swap,y)]==(x==1&&y==0?80:0xe7));
+   assert(ram[0x30000+uvplane.Offset(x*2+1-swap,y)]==(x==1&&y==0?180:0xe7));
+  }
+  auto before=writes;Field(c,0x10,64,14,1);std::copy(c.begin(),c.end(),ram.begin()+0x1000);
+  bool fail=false;try{vic.Method(0xc0,1,m);}catch(const std::exception&){fail=true;}assert(fail&&writes==before);
+ }
+ std::cout<<"PASS VIC partial NV12/NV21 linear/block output; untouched chroma retained; split chroma groups rejected\n";
 }

@@ -33,7 +33,7 @@ namespace skyline::gpu::interconnect::node {
                 .flags = vk::AttachmentDescriptionFlagBits::eMayAlias
             });
 
-            if (auto usage{view->texture->GetLastRenderPassUsage()}; usage != texture::RenderPassUsage::None) {
+            if (view->texture->GetWriteStageMask() || view->texture->GetReadStageMask()) {
                 vk::PipelineStageFlags attachmentDstStageMask{};
                 if (view->format->vkAspect & vk::ImageAspectFlagBits::eColor)
                     attachmentDstStageMask |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
@@ -42,10 +42,7 @@ namespace skyline::gpu::interconnect::node {
 
                 dependencyDstStageMask |= attachmentDstStageMask;
 
-                if (usage == texture::RenderPassUsage::RenderTarget)
-                    dependencySrcStageMask |= attachmentDstStageMask;
-                else if (usage == texture::RenderPassUsage::Sampled)
-                    dependencySrcStageMask |= view->texture->GetReadStageMask();
+                dependencySrcStageMask |= view->texture->GetWriteStageMask() | view->texture->GetReadStageMask();
             }
 
             return static_cast<u32>(attachments.size() - 1);

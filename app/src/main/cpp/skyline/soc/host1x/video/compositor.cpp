@@ -46,10 +46,19 @@ void Compositor::Execute(const Memory &memory) {
     const auto bytes=std::span<const std::uint8_t>(config);
     const auto output=bytes.subspan(0x10,16);
     const Surface dst(bytes.subspan(0x20,16));
-    if (Bits(output,50,1) || Bits(output,46,2) || Bits(output,0,3))
+    const auto alphaFill=Bits(output,0,3);
+    if (Bits(output,50,1) || Bits(output,46,2) || alphaFill>2)
         throw std::runtime_error("VIC: transpose/regamma/alpha fill mode unsupported");
-    if (Bits(output,64,14) || Bits(output,96,14) || Bits(output,80,14)!=dst.w-1 || Bits(output,112,14)!=dst.h-1)
-        throw std::runtime_error("VIC: partial output target rectangle unsupported");
+    const unsigned targetLeft=Bits(output,64,14), targetRight=Bits(output,80,14);
+    const unsigned targetTop=Bits(output,96,14), targetBottom=Bits(output,112,14);
+    if (targetLeft>targetRight || targetTop>targetBottom || targetRight>=dst.w || targetBottom>=dst.h)
+        throw std::runtime_error("VIC: invalid output target rectangle");
+    // A chroma texel is shared by a 2x2 luma group. Do not silently modify
+    // chroma belonging to pixels outside a partial target rectangle.
+    if (!dst.IsRgb() && ((targetLeft&1U) || (targetTop&1U) ||
+        ((targetRight+1<dst.w) && ((targetRight+1)&1U)) ||
+        ((targetBottom+1<dst.h) && ((targetBottom+1)&1U))))
+        throw std::runtime_error("VIC: partial YUV output rectangle must cover complete chroma groups");
     const auto outY=std::uint64_t(regs[0x1c8])<<8, outUV=std::uint64_t(regs[0x1c9])<<8;
     memory.Check(outY,dst.y.Size());
     if (!dst.IsRgb()) memory.Check(outUV,dst.uv.Size());
@@ -126,17 +135,26 @@ void Compositor::Execute(const Memory &memory) {
     auto pixel=[&](unsigned x,unsigned y) {
         return sample(Bits(output,48,1)?dst.w-1-x:x,Bits(output,49,1)?dst.h-1-y:y);
     };
-    for (unsigned y=0;y<dst.h;++y) for (unsigned x=0;x<dst.w;++x) {
+    // TargetRect clips the output writes, not the source-to-destination scale.
+    // Pixels outside it (and padding) must retain their previous bytes.
+    for (unsigned y=targetTop;y<=targetBottom;++y) for (unsigned x=targetLeft;x<=targetRight;++x) {
         const auto p=pixel(x,y);
         if (dst.IsRgb()) {
             const unsigned swap=(dst.format==32 || dst.format==36)?2:0;
             out[dst.y.Offset(x*4+swap,y)]=static_cast<std::uint8_t>(p[0]>>2);
             out[dst.y.Offset(x*4+1,y)]=static_cast<std::uint8_t>(p[1]>>2);
             out[dst.y.Offset(x*4+(2-swap),y)]=static_cast<std::uint8_t>(p[2]>>2);
-            out[dst.y.Offset(x*4+3,y)]=dst.format>=35?255:static_cast<std::uint8_t>(p[3]>>2);
+            // DXVAHD_ALPHA_FILL_MODE: 0=opaque, 1=background, 2=destination.
+            // Mode zero does NOT copy the source alpha (which may be zero in a
+            // video buffer); doing so can make a correctly decoded movie vanish.
+            if (dst.format>=35 || alphaFill==0)
+                out[dst.y.Offset(x*4+3,y)]=255;
+            else if (alphaFill==1)
+                out[dst.y.Offset(x*4+3,y)]=static_cast<std::uint8_t>(Bits(output,6,10)>>2);
+            // Destination mode keeps the alpha byte loaded from the old output.
         } else out[dst.y.Offset(x,y)]=static_cast<std::uint8_t>(p[0]>>2);
     }
-    if (!dst.IsRgb()) for (unsigned y=0;y<(dst.h+1)/2;++y) for (unsigned x=0;x<(dst.w+1)/2;++x) {
+    if (!dst.IsRgb()) for (unsigned y=targetTop/2;y<=targetBottom/2;++y) for (unsigned x=targetLeft/2;x<=targetRight/2;++x) {
         unsigned u{},v{},count{};
         for (unsigned dy=0;dy<2 && y*2+dy<dst.h;++dy) for (unsigned dx=0;dx<2 && x*2+dx<dst.w;++dx) {
             auto p=pixel(x*2+dx,y*2+dy); u+=static_cast<unsigned>(p[1]); v+=static_cast<unsigned>(p[2]); ++count;

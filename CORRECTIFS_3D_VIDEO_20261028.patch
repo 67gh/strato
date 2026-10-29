@@ -1,0 +1,849 @@
+diff --git a/app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp b/app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+index e0a474b2..28db9901 100644
+--- a/app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
++++ b/app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+@@ -445,7 +445,11 @@ namespace skyline::gpu::interconnect {
+                               std::equal(lastSubpassColorAttachments.begin(), lastSubpassColorAttachments.end(), colorAttachments.begin(), colorAttachments.end(), ViewsEqual) &&
+                               ViewsEqual(lastSubpassDepthStencilAttachment, depthStencilAttachment)};
+ 
++        // Dependencies are emitted BEFORE a RenderPassNode. If a later draw
++        // depends on an earlier draw, merging them would put the barrier before
++        // the producer. Start a new pass so RAW/WAW/WAR dependencies stay ordered.
+         bool splitRenderPass{renderPass == nullptr || renderPass->renderArea != renderArea || !attachmentsMatch ||
++            (srcStageMask && dstStageMask) ||
+             !ranges::all_of(outputAttachmentViews, [this] (auto view) { return !view || view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget); }) ||
+             !ranges::all_of(sampledImages, [this] (auto view) { return view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled); })};
+ 
+diff --git a/app/src/main/cpp/skyline/gpu/interconnect/command_nodes.cpp b/app/src/main/cpp/skyline/gpu/interconnect/command_nodes.cpp
+index 342b1556..05594de3 100644
+--- a/app/src/main/cpp/skyline/gpu/interconnect/command_nodes.cpp
++++ b/app/src/main/cpp/skyline/gpu/interconnect/command_nodes.cpp
+@@ -33,7 +33,7 @@ namespace skyline::gpu::interconnect::node {
+                 .flags = vk::AttachmentDescriptionFlagBits::eMayAlias
+             });
+ 
+-            if (auto usage{view->texture->GetLastRenderPassUsage()}; usage != texture::RenderPassUsage::None) {
++            if (view->texture->GetWriteStageMask() || view->texture->GetReadStageMask()) {
+                 vk::PipelineStageFlags attachmentDstStageMask{};
+                 if (view->format->vkAspect & vk::ImageAspectFlagBits::eColor)
+                     attachmentDstStageMask |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
+@@ -42,10 +42,7 @@ namespace skyline::gpu::interconnect::node {
+ 
+                 dependencyDstStageMask |= attachmentDstStageMask;
+ 
+-                if (usage == texture::RenderPassUsage::RenderTarget)
+-                    dependencySrcStageMask |= attachmentDstStageMask;
+-                else if (usage == texture::RenderPassUsage::Sampled)
+-                    dependencySrcStageMask |= view->texture->GetReadStageMask();
++                dependencySrcStageMask |= view->texture->GetWriteStageMask() | view->texture->GetReadStageMask();
+             }
+ 
+             return static_cast<u32>(attachments.size() - 1);
+diff --git a/app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc b/app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+index ed2e9d07..2835bc1c 100644
+--- a/app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
++++ b/app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+@@ -167,15 +167,26 @@ namespace skyline::gpu::interconnect {
+         auto texture{textures.GetTexture(ctx, handle.textureIndex, desc.type)};
+         ctx.executor.AttachTexture(texture);
+ 
+-        texture->texture->PopulateReadBarrier(dstStage, srcStageMask, dstStageMask);
+-        texture->texture->TransitionLayout(vk::ImageLayout::eGeneral);
+-        if (desc.is_written)
++        if (texture->texture->layout != vk::ImageLayout::eGeneral)
++            texture->texture->TransitionLayout(vk::ImageLayout::eGeneral);
++        if (desc.is_written) {
++            texture->texture->PrepareShaderWrite(dstStage, srcStageMask, dstStageMask);
+             texture->texture->MarkGpuDirty(ctx.executor.usageTracker);
++        } else {
++            texture->texture->PopulateReadBarrier(dstStage, srcStageMask, dstStageMask);
++        }
++
++        // Storage descriptors require identity swizzles and exactly one mip.
++        // The sampled view can legitimately have channel remapping and a mip chain.
++        auto range{texture->range};
++        range.levelCount = 1;
++        auto storageView{texture->texture->GetView(texture->type, range, texture->format, {})};
++        auto imageView{storageView->GetView()};
+ 
+         return {
+             vk::DescriptorImageInfo{
+                 .sampler = nullptr,
+-                .imageView = texture->GetView(),
++                .imageView = imageView,
+                 .imageLayout = vk::ImageLayout::eGeneral,
+             },
+             texture
+diff --git a/app/src/main/cpp/skyline/gpu/texture/layout.cpp b/app/src/main/cpp/skyline/gpu/texture/layout.cpp
+index d37fc0d0..9a059278 100644
+--- a/app/src/main/cpp/skyline/gpu/texture/layout.cpp
++++ b/app/src/main/cpp/skyline/gpu/texture/layout.cpp
+@@ -50,10 +50,15 @@ namespace skyline::gpu::texture {
+             // Iterate over every level, adding the size of the current level to the total size
+             totalSize += (GobWidth * gobsWidth) * (GobHeight * util::AlignUp(gobsHeight, gobBlockHeight)) * util::AlignUp(gobsDepth, gobBlockDepth);
+ 
+-            // Successively divide every dimension by 2 until the final level is reached, the division is rounded up to contain the padding GOBs
+-            gobsWidth = std::max(util::DivideCeil(gobsWidth, 2UL), 1UL);
+-            gobsHeight = std::max(util::DivideCeil(gobsHeight, 2UL), 1UL);
+-            gobsDepth = std::max(gobsDepth / 2, 1UL); // The GOB depth is the same as the depth dimension and needs to be rounded down during the division
++            // Mip extents are floor-halved in texels BEFORE block/GOB rounding.
++            // Halving padded GOB counts keeps an extra GOB for e.g. 65px RGBA
++            // (5 GOBs -> 3 instead of the 2 needed by its 32px mip).
++            dimensions.width = std::max(dimensions.width / 2, 1U);
++            dimensions.height = std::max(dimensions.height / 2, 1U);
++            dimensions.depth = std::max(dimensions.depth / 2, 1U);
++            gobsWidth = util::DivideCeil<size_t>(util::DivideCeil<size_t>(dimensions.width, formatBlockWidth) * formatBpb, GobWidth);
++            gobsHeight = util::DivideCeil<size_t>(util::DivideCeil<size_t>(dimensions.height, formatBlockHeight), GobHeight);
++            gobsDepth = dimensions.depth;
+ 
+             gobBlockHeight = CalculateBlockGobs(gobBlockHeight, gobsHeight);
+             gobBlockDepth = CalculateBlockGobs(gobBlockDepth, gobsDepth);
+@@ -82,13 +87,13 @@ namespace skyline::gpu::texture {
+                 gobBlockHeight, gobBlockDepth
+             );
+ 
+-            gobsWidth = std::max(util::DivideCeil(gobsWidth, 2UL), 1UL);
+-            gobsHeight = std::max(util::DivideCeil(gobsHeight, 2UL), 1UL);
+-
+             dimensions.width = std::max(dimensions.width / 2, 1U);
+             dimensions.height = std::max(dimensions.height / 2, 1U);
+             dimensions.depth = std::max(dimensions.depth / 2, 1U);
+ 
++            gobsWidth = util::DivideCeil<size_t>(util::DivideCeil<size_t>(dimensions.width, formatBlockWidth) * formatBpb, GobWidth);
++            gobsHeight = util::DivideCeil<size_t>(util::DivideCeil<size_t>(dimensions.height, formatBlockHeight), GobHeight);
++
+             gobBlockHeight = CalculateBlockGobs(gobBlockHeight, gobsHeight);
+             gobBlockDepth = CalculateBlockGobs(gobBlockDepth, static_cast<size_t>(dimensions.depth));
+         }
+diff --git a/app/src/main/cpp/skyline/gpu/texture/texture.cpp b/app/src/main/cpp/skyline/gpu/texture/texture.cpp
+index 6dcc9fca..410a2797 100644
+--- a/app/src/main/cpp/skyline/gpu/texture/texture.cpp
++++ b/app/src/main/cpp/skyline/gpu/texture/texture.cpp
+@@ -843,7 +843,7 @@ namespace skyline::gpu {
+             return;
+ 
+         // FIXME (TEXMAN): This should really be tracked on the texture usage side
+-        if (!*gpu.state.settings->freeGuestTextureMemory && !everUsedAsRt)
++        if (!*gpu.state.settings->freeGuestTextureMemory && !everGpuWritten)
+             gpuDirty = false;
+ 
+         TRACE_EVENT("gpu", "Texture::SynchronizeHost");
+@@ -891,7 +891,7 @@ namespace skyline::gpu {
+ 
+         TRACE_EVENT("gpu", "Texture::SynchronizeHostInline");
+         // FIXME (TEXMAN): This should really be tracked on the texture usage side
+-        if (!*gpu.state.settings->freeGuestTextureMemory && !everUsedAsRt)
++        if (!*gpu.state.settings->freeGuestTextureMemory && !everGpuWritten)
+             gpuDirty = false;
+ 
+         {
+@@ -1147,7 +1147,11 @@ namespace skyline::gpu {
+         lastRenderPassIndex = renderPassIndex;
+ 
+         if (renderPassUsage == texture::RenderPassUsage::RenderTarget) {
+-            everUsedAsRt = true;
++            everGpuWritten = true;
++            if (format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))
++                writeStageMask |= vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
++            else
++                writeStageMask |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
+             pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |
+                 vk::PipelineStageFlagBits::eTessellationControlShader |
+                 vk::PipelineStageFlagBits::eTessellationEvaluationShader |
+@@ -1156,6 +1160,7 @@ namespace skyline::gpu {
+                 vk::PipelineStageFlagBits::eComputeShader;
+             readStageMask = {};
+         } else if (renderPassUsage == texture::RenderPassUsage::None) {
++            writeStageMask = {};
+             pendingStageMask = {};
+             readStageMask = {};
+         }
+@@ -1169,6 +1174,24 @@ namespace skyline::gpu {
+         return readStageMask;
+     }
+ 
++    void Texture::PrepareShaderWrite(vk::PipelineStageFlagBits stage, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
++        if (writeStageMask || readStageMask) {
++            srcStageMask |= writeStageMask | readStageMask;
++            dstStageMask |= stage;
++        }
++        everGpuWritten = true;
++        // Keep all producers: the same image may be written by multiple shader
++        // stages in a draw. A later consumer must wait for every producer.
++        writeStageMask |= stage;
++        pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |
++            vk::PipelineStageFlagBits::eTessellationControlShader |
++            vk::PipelineStageFlagBits::eTessellationEvaluationShader |
++            vk::PipelineStageFlagBits::eGeometryShader |
++            vk::PipelineStageFlagBits::eFragmentShader |
++            vk::PipelineStageFlagBits::eComputeShader;
++        readStageMask = {};
++    }
++
+     void Texture::PopulateReadBarrier(vk::PipelineStageFlagBits dstStage, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
+         if (!guest)
+             return;
+@@ -1178,10 +1201,7 @@ namespace skyline::gpu {
+         if (!(pendingStageMask & dstStage))
+             return;
+ 
+-        if (format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))
+-            srcStageMask |= vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
+-        else if (format->vkAspect & vk::ImageAspectFlagBits::eColor)
+-            srcStageMask |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
++        srcStageMask |= writeStageMask;
+ 
+         pendingStageMask &= ~dstStage;
+         dstStageMask |= dstStage;
+diff --git a/app/src/main/cpp/skyline/gpu/texture/texture.h b/app/src/main/cpp/skyline/gpu/texture/texture.h
+index a2d57b09..6d197e33 100644
+--- a/app/src/main/cpp/skyline/gpu/texture/texture.h
++++ b/app/src/main/cpp/skyline/gpu/texture/texture.h
+@@ -412,9 +412,10 @@ namespace skyline::gpu {
+ 
+         u32 lastRenderPassIndex{}; //!< The index of the last render pass that used this texture
+         texture::RenderPassUsage lastRenderPassUsage{texture::RenderPassUsage::None}; //!< The type of usage in the last render pass
+-        bool everUsedAsRt{}; //!< If this texture has ever been used as a rendertarget
+-        vk::PipelineStageFlags pendingStageMask{}; //!< List of pipeline stages that are yet to be flushed for reads since the last time this texture was used an an RT
+-        vk::PipelineStageFlags readStageMask{}; //!< Set of pipeline stages that this texture has been read in since it was last used as an RT
++        bool everGpuWritten{}; //!< Render-target AND shader-image writes require guest readback
++        vk::PipelineStageFlags writeStageMask{}; //!< Producers since the last submission, including shader image stores
++        vk::PipelineStageFlags pendingStageMask{}; //!< Shader stages still needing visibility of the last write
++        vk::PipelineStageFlags readStageMask{}; //!< Readers since the last write (write-after-read dependencies)
+ 
+         friend TextureManager;
+         friend TextureView;
+@@ -633,6 +634,13 @@ namespace skyline::gpu {
+          */
+         vk::PipelineStageFlags GetReadStageMask();
+ 
++        vk::PipelineStageFlags GetWriteStageMask() const { return writeStageMask; }
++
++        /**
++         * @brief Orders a shader-image write after earlier readers/writers and tracks its output
++         */
++        void PrepareShaderWrite(vk::PipelineStageFlagBits stage, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
++
+         /**
+          * @brief Populates the input src and dst stage masks with appropriate read barrier parameters for the current texture state
+          */
+diff --git a/app/src/main/cpp/skyline/gpu/texture_manager.cpp b/app/src/main/cpp/skyline/gpu/texture_manager.cpp
+index d2ec29a1..bd50ccb4 100644
+--- a/app/src/main/cpp/skyline/gpu/texture_manager.cpp
++++ b/app/src/main/cpp/skyline/gpu/texture_manager.cpp
+@@ -87,9 +87,11 @@ namespace skyline::gpu {
+                                     matchLevel = level;
+                                     break;
+                                 }
+-                                level++;
+-                                levelMemOffset += mipLevel.blockLinearSize;
+                             }
++                            // Advance even when this mip does not start at the requested
++                            // address; otherwise only mip zero can ever be matched.
++                            level++;
++                            levelMemOffset += mipLevel.blockLinearSize;
+                         }
+ 
+                         if (matched)
+diff --git a/app/src/main/cpp/skyline/soc/host1x/video/compositor.cpp b/app/src/main/cpp/skyline/soc/host1x/video/compositor.cpp
+index ea8ee812..457a53c0 100644
+--- a/app/src/main/cpp/skyline/soc/host1x/video/compositor.cpp
++++ b/app/src/main/cpp/skyline/soc/host1x/video/compositor.cpp
+@@ -46,10 +46,19 @@ void Compositor::Execute(const Memory &memory) {
+     const auto bytes=std::span<const std::uint8_t>(config);
+     const auto output=bytes.subspan(0x10,16);
+     const Surface dst(bytes.subspan(0x20,16));
+-    if (Bits(output,50,1) || Bits(output,46,2) || Bits(output,0,3))
++    const auto alphaFill=Bits(output,0,3);
++    if (Bits(output,50,1) || Bits(output,46,2) || alphaFill>2)
+         throw std::runtime_error("VIC: transpose/regamma/alpha fill mode unsupported");
+-    if (Bits(output,64,14) || Bits(output,96,14) || Bits(output,80,14)!=dst.w-1 || Bits(output,112,14)!=dst.h-1)
+-        throw std::runtime_error("VIC: partial output target rectangle unsupported");
++    const unsigned targetLeft=Bits(output,64,14), targetRight=Bits(output,80,14);
++    const unsigned targetTop=Bits(output,96,14), targetBottom=Bits(output,112,14);
++    if (targetLeft>targetRight || targetTop>targetBottom || targetRight>=dst.w || targetBottom>=dst.h)
++        throw std::runtime_error("VIC: invalid output target rectangle");
++    // A chroma texel is shared by a 2x2 luma group. Do not silently modify
++    // chroma belonging to pixels outside a partial target rectangle.
++    if (!dst.IsRgb() && ((targetLeft&1U) || (targetTop&1U) ||
++        ((targetRight+1<dst.w) && ((targetRight+1)&1U)) ||
++        ((targetBottom+1<dst.h) && ((targetBottom+1)&1U))))
++        throw std::runtime_error("VIC: partial YUV output rectangle must cover complete chroma groups");
+     const auto outY=std::uint64_t(regs[0x1c8])<<8, outUV=std::uint64_t(regs[0x1c9])<<8;
+     memory.Check(outY,dst.y.Size());
+     if (!dst.IsRgb()) memory.Check(outUV,dst.uv.Size());
+@@ -126,17 +135,26 @@ void Compositor::Execute(const Memory &memory) {
+     auto pixel=[&](unsigned x,unsigned y) {
+         return sample(Bits(output,48,1)?dst.w-1-x:x,Bits(output,49,1)?dst.h-1-y:y);
+     };
+-    for (unsigned y=0;y<dst.h;++y) for (unsigned x=0;x<dst.w;++x) {
++    // TargetRect clips the output writes, not the source-to-destination scale.
++    // Pixels outside it (and padding) must retain their previous bytes.
++    for (unsigned y=targetTop;y<=targetBottom;++y) for (unsigned x=targetLeft;x<=targetRight;++x) {
+         const auto p=pixel(x,y);
+         if (dst.IsRgb()) {
+             const unsigned swap=(dst.format==32 || dst.format==36)?2:0;
+             out[dst.y.Offset(x*4+swap,y)]=static_cast<std::uint8_t>(p[0]>>2);
+             out[dst.y.Offset(x*4+1,y)]=static_cast<std::uint8_t>(p[1]>>2);
+             out[dst.y.Offset(x*4+(2-swap),y)]=static_cast<std::uint8_t>(p[2]>>2);
+-            out[dst.y.Offset(x*4+3,y)]=dst.format>=35?255:static_cast<std::uint8_t>(p[3]>>2);
++            // DXVAHD_ALPHA_FILL_MODE: 0=opaque, 1=background, 2=destination.
++            // Mode zero does NOT copy the source alpha (which may be zero in a
++            // video buffer); doing so can make a correctly decoded movie vanish.
++            if (dst.format>=35 || alphaFill==0)
++                out[dst.y.Offset(x*4+3,y)]=255;
++            else if (alphaFill==1)
++                out[dst.y.Offset(x*4+3,y)]=static_cast<std::uint8_t>(Bits(output,6,10)>>2);
++            // Destination mode keeps the alpha byte loaded from the old output.
+         } else out[dst.y.Offset(x,y)]=static_cast<std::uint8_t>(p[0]>>2);
+     }
+-    if (!dst.IsRgb()) for (unsigned y=0;y<(dst.h+1)/2;++y) for (unsigned x=0;x<(dst.w+1)/2;++x) {
++    if (!dst.IsRgb()) for (unsigned y=targetTop/2;y<=targetBottom/2;++y) for (unsigned x=targetLeft/2;x<=targetRight/2;++x) {
+         unsigned u{},v{},count{};
+         for (unsigned dy=0;dy<2 && y*2+dy<dst.h;++dy) for (unsigned dx=0;dx<2 && x*2+dx<dst.w;++dx) {
+             auto p=pixel(x*2+dx,y*2+dy); u+=static_cast<unsigned>(p[1]); v+=static_cast<unsigned>(p[2]); ++count;
+diff --git a/app/third_party/video/THIRD_PARTY.md b/app/third_party/video/THIRD_PARTY.md
+index 781a5263..6a4cfae2 100644
+--- a/app/third_party/video/THIRD_PARTY.md
++++ b/app/third_party/video/THIRD_PARTY.md
+@@ -32,8 +32,15 @@ VIC: one opaque slot or background fill; NV12/NV21 and RGBA/BGRA/RGBX/BGRX;
+ linear and Tegra block-linear; source/destination rectangles, bilinear scaling,
+ flip X/Y, signed color/gamut/output matrices, constant alpha and clamp; output
+ NV12/NV21 or packed 32-bit RGB. Unsupported blending, deinterlacing, advanced
+-filters, compression, transpose, partial output target rectangles and nonzero
+-alpha-fill modes fail explicitly. This is a subset of VIC, not full hardware
++filters, compression, transpose and alpha-fill modes 3/4/5 fail explicitly.
++Alpha-fill modes 0 (opaque), 1 (background), and 2 (preserve destination)
++are supported; RGBX/BGRX outputs always have an opaque unused alpha byte.
++Partial output target rectangles preserve the pixels outside the rectangle;
++YUV targets must cover complete 2x2 chroma groups (or the outer image edge).
++The output clipping semantics are checked against NVIDIA's VIC register
++documentation: https://github.com/NVIDIA/open-gpu-doc/blob/master/classes/video/vic_ceb6_types.h
++(consulted blob SHA: 60f1b58d97c9d1920c750a6554fbcd752b6f073a).
++This is a subset of VIC, not full hardware
+ emulation. Bilinear sampling does not emulate programmable filter coefficients.
+ 
+ Submit is synchronous (including memory writes); it copies commands, applies
+diff --git a/tests/run_texture.py b/tests/run_texture.py
+index 94636cf5..38d2f2cd 100644
+--- a/tests/run_texture.py
++++ b/tests/run_texture.py
+@@ -63,16 +63,16 @@ int main(){using namespace skyline::gpu;using namespace skyline::gpu::texture;us
+  Pair{B::Bc4Signed,vk::Format::eBc4SnormBlock,vk::Format::eR8Snorm},
+  Pair{B::Bc5,vk::Format::eBc5UnormBlock,vk::Format::eR8G8Unorm},
+  Pair{B::Bc5Signed,vk::Format::eBc5SnormBlock,vk::Format::eR8G8Snorm},
+- Pair{B::Bc6,vk::Format::eBc6HUfloatBlock,vk::Format::eR16G16B16A16Float},
+- Pair{B::Bc6Signed,vk::Format::eBc6HSfloatBlock,vk::Format::eR16G16B16A16Float},
++ Pair{B::Bc6,vk::Format::eBc6HUfloatBlock,vk::Format::eR16G16B16A16Sfloat},
++ Pair{B::Bc6Signed,vk::Format::eBc6HSfloatBlock,vk::Format::eR16G16B16A16Sfloat},
+  Pair{B::Bc7,vk::Format::eBc7UnormBlock,vk::Format::eR8G8B8A8Unorm},
+  Pair{B::Bc7,vk::Format::eBc7SrgbBlock,vk::Format::eR8G8B8A8Srgb}})
+- for(auto mode:{TileMode::Linear,TileMode::Pitch,TileMode::Block})for(auto dims:{Dimensions{1,1,1},Dimensions{3,5,2},Dimensions{17,9,3}})for(size_t layers:{1U,3U})for(size_t levels:{1U,3U}){
++ for(auto mode:{TileMode::Linear,TileMode::Pitch,TileMode::Block})for(auto dims:{Dimensions{1,1,1},Dimensions{3,5,2},Dimensions{17,9,3},Dimensions{65,33,3}})for(size_t layers:{1U,3U})for(size_t levels:{1U,3U}){
+   if(mode!=TileMode::Block&&levels>1)continue;
+   const auto bpb=bcn::readback::BlockBytes(pair.bc),bpp=bcn::readback::PixelBytes(pair.bc);
+   Fmt guestFmt{pair.guest,4,4,bpb},hostFmt{pair.host,1,1,bpp};Texture t;t.format=&hostFmt;t.layerCount=layers;t.levelCount=levels;
+   t.mipLayouts=GetBlockLinearMipLayout(dims,4,4,bpb,1,1,bpp,1,1,levels);size_t guestSize{};for(auto &l:t.mipLayouts){t.deswizzledSurfaceSize+=l.linearSize*layers;t.surfaceSize+=l.targetLinearSize*layers;guestSize+=l.blockLinearSize;}
+-  GuestTexture guest{dims,&guestFmt};guest.tileConfig.mode=mode;guest.mipLevelCount=static_cast<u32>(levels);guest.layerCount=static_cast<u32>(layers);guest.tileConfig.pitch=128;
++  GuestTexture guest{dims,&guestFmt};guest.tileConfig.mode=mode;guest.mipLevelCount=static_cast<u32>(levels);guest.layerCount=static_cast<u32>(layers);guest.tileConfig.pitch=static_cast<u32>(util::AlignUp(util::DivideCeil<size_t>(dims.width,4)*bpb,64UL));
+   if(mode==TileMode::Linear)guestSize=t.mipLayouts[0].linearSize;else if(mode==TileMode::Pitch)guestSize=guest.CalculateLayerSize();
+   guest.layerStride=static_cast<u32>(guestSize+32);t.guest=guest;t.deswizzledLayerStride=t.mipLayouts[0].linearSize;t.layerStride=t.mipLayouts[0].targetLinearSize;
+   std::vector<u8>mirror(guest.layerStride*layers+32,0xcc);t.mirror={mirror.data()+16,guest.layerStride*layers};std::vector<u8>linear(t.deswizzledSurfaceSize),host(t.surfaceSize),expected(t.deswizzledSurfaceSize);
+diff --git a/tools/video_tests/compositor_test.cpp b/tools/video_tests/compositor_test.cpp
+index 7b6152e9..c8e4a7f8 100644
+--- a/tools/video_tests/compositor_test.cpp
++++ b/tools/video_tests/compositor_test.cpp
+@@ -23,11 +23,67 @@ int main(){
+   std::copy(c.begin(),c.end(),ram.begin()+0x1000);
+   Compositor vic;vic.Method(0x1c2,0x10,m);vic.Method(0x100,0x100,m);vic.Method(0x1c8,0x200,m);vic.Method(0xc0,1,m);
+   for(unsigned y=0;y<3;++y)for(unsigned x=0;x<3;++x){unsigned sx=flags&1?2-x:x,sy=flags&2?2-y:y;
+-   assert(ram[0x20000+out.Offset(x*4+oswap,y)]==sx*50+sy*25);assert(ram[0x20000+out.Offset(x*4+1,y)]==40);assert(ram[0x20000+out.Offset(x*4+2-oswap,y)]==200);assert(ram[0x20000+out.Offset(x*4+3,y)]==((inf>=35||outf>=35)?255:120));}
++   assert(ram[0x20000+out.Offset(x*4+oswap,y)]==sx*50+sy*25);assert(ram[0x20000+out.Offset(x*4+1,y)]==40);assert(ram[0x20000+out.Offset(x*4+2-oswap,y)]==200);assert(ram[0x20000+out.Offset(x*4+3,y)]==255);}
+   // Padding survives writes. No transpose fallback or second-slot silent success.
+   assert(ram[0x20000+out.Offset(15,0)]==0xe7);
++  // Alpha-fill modes operate after composition, independently of source alpha.
++  for(unsigned alphaMode:{1U,2U}){
++   std::fill_n(ram.begin()+0x20000,out.Size(),0xe7);
++   Field(c,0x10,0,3,alphaMode);Field(c,0x10,6,10,73*4);
++   std::copy(c.begin(),c.end(),ram.begin()+0x1000);vic.Method(0xc0,1,m);
++   for(unsigned y=0;y<3;++y)for(unsigned x=0;x<3;++x){
++    unsigned sx=flags&1?2-x:x,sy=flags&2?2-y:y;
++    assert(ram[0x20000+out.Offset(x*4+oswap,y)]==sx*50+sy*25);
++    const unsigned alpha=outf>=35?255:(alphaMode==1?73:0xe7);
++    assert(ram[0x20000+out.Offset(x*4+3,y)]==alpha);
++   }
++  }
++  Field(c,0x10,0,3,0);
++  // A clipped video update must retain the old image outside TargetRect,
++  // without rescaling the source into that smaller rectangle.
++  std::fill_n(ram.begin()+0x20000,out.Size(),0xe7);
++  Field(c,0x10,64,14,0);Field(c,0x10,80,14,1);
++  Field(c,0x10,96,14,1);Field(c,0x10,112,14,2);
++  std::copy(c.begin(),c.end(),ram.begin()+0x1000);
++  vic.Method(0xc0,1,m);
++  for(unsigned y=0;y<3;++y)for(unsigned x=0;x<3;++x){
++   if(x<=1 && y>=1){
++    unsigned sx=flags&1?2-x:x,sy=flags&2?2-y:y;
++    assert(ram[0x20000+out.Offset(x*4+oswap,y)]==sx*50+sy*25);
++    assert(ram[0x20000+out.Offset(x*4+1,y)]==40);
++    assert(ram[0x20000+out.Offset(x*4+2-oswap,y)]==200);
++    assert(ram[0x20000+out.Offset(x*4+3,y)]==255);
++   }else for(unsigned ch=0;ch<4;++ch)assert(ram[0x20000+out.Offset(x*4+ch,y)]==0xe7);
++  }
++  assert(ram[0x20000+out.Offset(15,0)]==0xe7);
++  auto invalidBefore=writes;Field(c,0x10,80,14,3);
++  std::copy(c.begin(),c.end(),ram.begin()+0x1000);
++  bool invalid=false;try{vic.Method(0xc0,1,m);}catch(const std::exception&){invalid=true;}
++  assert(invalid&&writes==invalidBefore);
++  Field(c,0x10,80,14,1);std::copy(c.begin(),c.end(),ram.begin()+0x1000);
+   auto before=writes;ram[0x1000+0x140]=1;bool fail=false;try{vic.Method(0xc0,1,m);}catch(const std::exception&){fail=true;}assert(fail&&writes==before);
+   ++count;
+  }
+- std::cout<<"PASS VIC "<<count<<" format/linear/block-linear/flip/bilinear scaling cases; padding preserved; unsupported multi-slot rejected\n";
++ std::cout<<"PASS VIC "<<count<<" full + "<<count<<" partial + "<<count*2<<" alpha-fill format/linear/block-linear/flip/bilinear cases; untouched pixels/padding preserved; invalid rectangles/multi-slot rejected\n";
++ for(unsigned fmt:{67U,68U})for(bool linear:{false,true}){
++  std::fill(ram.begin(),ram.end(),0xe7);Bytes c(0x610);
++  Field(c,0x20,0,7,fmt);Field(c,0x20,11,4,linear?0:1);Field(c,0x20,15,4,1);
++  Field(c,0x20,32,14,3);Field(c,0x20,46,14,3);Field(c,0x20,64,14,3);Field(c,0x20,78,14,3);
++  Field(c,0x20,96,14,1);Field(c,0x20,110,14,1);
++  Field(c,0x10,64,14,2);Field(c,0x10,80,14,3);Field(c,0x10,96,14,0);Field(c,0x10,112,14,1);
++  Field(c,0x10,16,10,100*4);Field(c,0x10,26,10,80*4);Field(c,0x10,36,10,180*4);
++  std::copy(c.begin(),c.end(),ram.begin()+0x1000);
++  Compositor vic;vic.Method(0x1c2,0x10,m);vic.Method(0x1c8,0x200,m);vic.Method(0x1c9,0x300,m);vic.Method(0xc0,1,m);
++  Plane yplane(4,4,linear,1),uvplane(4,2,linear,1);
++  for(unsigned y=0;y<4;++y)for(unsigned x=0;x<4;++x)
++   assert(ram[0x20000+yplane.Offset(x,y)]==(x>=2&&y<2?100:0xe7));
++  for(unsigned y=0;y<2;++y)for(unsigned x=0;x<2;++x){
++   unsigned swap=fmt==67?1:0;
++   assert(ram[0x30000+uvplane.Offset(x*2+swap,y)]==(x==1&&y==0?80:0xe7));
++   assert(ram[0x30000+uvplane.Offset(x*2+1-swap,y)]==(x==1&&y==0?180:0xe7));
++  }
++  auto before=writes;Field(c,0x10,64,14,1);std::copy(c.begin(),c.end(),ram.begin()+0x1000);
++  bool fail=false;try{vic.Method(0xc0,1,m);}catch(const std::exception&){fail=true;}assert(fail&&writes==before);
++ }
++ std::cout<<"PASS VIC partial NV12/NV21 linear/block output; untouched chroma retained; split chroma groups rejected\n";
+ }
+diff --git a/tools/render_tests/image_coherence.py b/tools/render_tests/image_coherence.py
+new file mode 100644
+--- /dev/null
++++ b/tools/render_tests/image_coherence.py
+@@ -0,0 +1,190 @@
++#!/usr/bin/env python3
++"""Compile production texture bookkeeping/layout code with ASan/UBSan.
++
++Uses the bundled Vulkan types, but no Vulkan device. These are CPU regression
++tests, not proof of correct rendering in a game. --baseline layout/mip uses
++HEAD's old implementation of that part and must fail its regression test.
++"""
++from pathlib import Path
++import argparse
++import os
++import subprocess
++import tempfile
++
++ROOT = Path(__file__).resolve().parents[2]
++SRC = ROOT / 'app/src/main/cpp/skyline'
++
++
++def block(text, marker):
++    start = text.index(marker)
++    pos = text.index('{', start + len(marker)) + 1
++    depth = 1
++    while depth:
++        depth += (text[pos] == '{') - (text[pos] == '}')
++        pos += 1
++    return text[start:pos]
++
++
++PREFIX = r'''
++#include <algorithm>
++#include <bit>
++#include <cassert>
++#include <cstdint>
++#include <iostream>
++#include <optional>
++#include <ranges>
++#include <utility>
++#include <vector>
++#include <vulkan/vulkan.hpp>
++using u32=uint32_t;
++namespace util {
++template<class T> T DivideCeil(T a,T b){return a/b+(a%b!=0);}
++template<class A,class B> auto AlignUp(A a,B b){using T=std::common_type_t<A,B>;return (T(a)+T(b)-1)/T(b)*T(b);}
++}
++struct Dimensions {u32 width,height,depth;};
++struct MipLevelLayout {
++ Dimensions dimensions;size_t linearSize,targetLinearSize,blockLinearSize,blockHeight,blockDepth;
++};
++constexpr size_t GobWidth=64,GobHeight=8;
++namespace texture {enum class RenderPassUsage {None,Sampled,RenderTarget};}
++struct Format {vk::ImageAspectFlags vkAspect=vk::ImageAspectFlagBits::eColor;};
++struct Texture {
++ bool guest=true,everGpuWritten=false;u32 lastRenderPassIndex=0;
++ texture::RenderPassUsage lastRenderPassUsage=texture::RenderPassUsage::None;
++ Format fmt;Format*format=&fmt;
++ vk::PipelineStageFlags writeStageMask{},pendingStageMask{},readStageMask{};
++ void UpdateRenderPassUsage(u32,texture::RenderPassUsage);
++ void PrepareShaderWrite(vk::PipelineStageFlagBits,vk::PipelineStageFlags&,vk::PipelineStageFlags&);
++ void PopulateReadBarrier(vk::PipelineStageFlagBits,vk::PipelineStageFlags&,vk::PipelineStageFlags&);
++};
++'''
++
++TESTS = r'''
++int main(){
++ using S=vk::PipelineStageFlagBits;
++ Texture t;vk::PipelineStageFlags src{},dst{};
++ t.PrepareShaderWrite(S::eComputeShader,src,dst);
++ assert(t.everGpuWritten && !src && !dst);
++ t.PopulateReadBarrier(S::eFragmentShader,src,dst);
++ assert(src==S::eComputeShader && dst==S::eFragmentShader);
++ src={};dst={};t.PopulateReadBarrier(S::eFragmentShader,src,dst);
++ assert(!src && !dst); // same read visibility need not be flushed again
++ t.PrepareShaderWrite(S::eComputeShader,src,dst);
++ assert((src&S::eFragmentShader) && (src&S::eComputeShader) && dst==S::eComputeShader);
++ src={};dst={};t.PopulateReadBarrier(S::eFragmentShader,src,dst);
++ assert(src==S::eComputeShader && dst==S::eFragmentShader); // new write invalidates it
++ t.PrepareShaderWrite(S::eVertexShader,src,dst);
++ assert((t.writeStageMask&S::eComputeShader) && (t.writeStageMask&S::eVertexShader));
++ t.UpdateRenderPassUsage(0,texture::RenderPassUsage::None);
++ assert(!t.writeStageMask && !t.readStageMask && !t.pendingStageMask && t.everGpuWritten);
++ Texture sampled;src={};dst={};sampled.PopulateReadBarrier(S::eComputeShader,src,dst);
++ assert(!sampled.everGpuWritten && !src && !dst);
++ sampled.PrepareShaderWrite(S::eFragmentShader,src,dst);
++ assert(src==S::eComputeShader && dst==S::eFragmentShader); // read -> write
++ for(auto aspect:{vk::ImageAspectFlagBits::eColor,vk::ImageAspectFlagBits::eDepth}){
++  Texture rt;rt.fmt.vkAspect=aspect;rt.UpdateRenderPassUsage(1,texture::RenderPassUsage::RenderTarget);
++  src={};dst={};rt.PopulateReadBarrier(S::eComputeShader,src,dst);
++  const auto writer=aspect==vk::ImageAspectFlagBits::eColor?vk::PipelineStageFlags(S::eColorAttachmentOutput):S::eEarlyFragmentTests|S::eLateFragmentTests;
++  assert(src==writer && dst==S::eComputeShader && rt.everGpuWritten);
++ }
++ std::cout<<"PASS: shader-image RAW/WAR/WAW, repeated writes, multiple producers, RT/depth, submission reset\n";
++ size_t cases=0;
++ for(u32 w:{1U,17U,65U,129U,257U})for(u32 h:{1U,9U,33U,65U})for(u32 d:{1U,3U,17U})
++ for(size_t bw:{1U,4U})for(size_t bpb:{4U,8U,16U})for(size_t bh:{1U,2U,8U}){
++  const size_t bd=d==1?1:4,levels=8;
++  const auto actual=GetBlockLinearMipLayout({w,h,d},bw,bw,bpb,1,1,4,bh,bd,levels);
++  size_t total=0,blockH=bh,blockD=bd;
++  for(size_t i=0;i<levels;++i){
++   const size_t x=std::max(w>>i,1U),y=std::max(h>>i,1U),z=std::max(d>>i,1U);
++   const size_t rows=(y+bw-1)/bw,bytes=(x+bw-1)/bw*bpb;
++   if(i){while(blockH>1 && blockH/2*8>=rows)blockH/=2;while(blockD>1 && blockD/2>=z)blockD/=2;}
++   const auto expected=((bytes+63)/64)*512*blockH*blockD*((rows+8*blockH-1)/(8*blockH))*((z+blockD-1)/blockD);
++   assert(actual[i].blockLinearSize==expected);
++   assert(actual[i].linearSize==bytes*rows*z);
++   assert(actual[i].targetLinearSize==x*y*z*4);
++   assert(actual[i].blockHeight==blockH && actual[i].blockDepth==blockD);
++   total+=expected;
++  }
++  assert((GetBlockLinearLayerSize({w,h,d},bw,bw,bpb,bh,bd,levels,false)==total));
++  const size_t alignment=512*bh*bd;
++  assert((GetBlockLinearLayerSize({w,h,d},bw,bw,bpb,bh,bd,levels,true)==(total+alignment-1)/alignment*alignment));
++  ++cases;
++ }
++ std::cout<<"PASS: "<<cases<<" NPOT/compressed/3D mip chains vs independent byte-size oracle\n";
++ for(u32 layer=0;layer<3;++layer)for(u32 mip=0;mip<3;++mip){
++  const size_t sizes[]={4096,1024,512},offsets[]={0,4096,5120};
++  auto found=FindMip(layer*8192+offsets[mip],sizes[mip]);
++  assert(found && found->first==layer && found->second==mip);
++ }
++ assert(!FindMip(4097,1024));assert(!FindMip(4096,512));assert(!FindMip(3*8192,4096));
++ std::cout<<"PASS: all layer/mip aliases, wrong offsets/sizes rejected\n";
++ PassFixture pass;
++ assert(!pass.Split({},{}));
++ assert(pass.Split(S::eComputeShader,S::eFragmentShader));
++ assert(pass.Split(S::eFragmentShader,S::eFragmentShader));
++ assert(!pass.Split({},S::eFragmentShader));
++ pass.attachmentsMatch=false;assert(pass.Split({},{}));pass.attachmentsMatch=true;
++ pass.renderArea=2;assert(pass.Split({},{}));pass.renderArea=1;
++ pass.texture.compatible=false;assert(pass.Split({},{}));
++ std::cout<<"PASS: production pass-splitting condition keeps dependent draws in separate passes\n";
++}
++'''
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--baseline', choices=['layout', 'mip'])
++    args = parser.parse_args()
++
++    def read(path):
++        if (args.baseline == 'layout' and path.name == 'layout.cpp') or (args.baseline == 'mip' and path.name == 'texture_manager.cpp'):
++            return subprocess.check_output(['git', 'show', 'HEAD:' + str(path.relative_to(ROOT))], cwd=ROOT, text=True)
++        return path.read_text()
++
++    cpp = (SRC / 'gpu/texture/texture.cpp').read_text()
++    code = PREFIX + '\n'.join(block(cpp, m) for m in [
++        'void Texture::UpdateRenderPassUsage(', 'void Texture::PrepareShaderWrite(',
++        'void Texture::PopulateReadBarrier('])
++    layout = read(SRC / 'gpu/texture/layout.cpp')
++    code += '\n' + block(layout, 'template<typename Type>')
++    code += '\n' + block(layout, 'size_t GetBlockLinearLayerSize(Dimensions dimensions, size_t formatBlockHeight')
++    code += '\n' + block(layout, 'std::vector<MipLevelLayout> GetBlockLinearMipLayout(')
++    lookup = block(read(SRC / 'gpu/texture_manager.cpp'), 'for (u32 layer{};')
++    code += r'''
++std::optional<std::pair<u32,u32>> FindMip(size_t memOffset,size_t wanted){
++ struct Guest{size_t stride;size_t GetLayerStride(){return stride;}size_t CalculateLayerSize(){return stride;}};
++ struct Mip{size_t blockLinearSize;};
++ struct Tex{u32 layerCount=3;std::vector<Mip>mipLayouts{{4096},{1024},{512}};}tex;
++ struct Mapping{Tex*texture;}mapping{&tex};auto*hostMapping=&mapping;
++ Guest matchGuestTexture{8192},guestTexture{wanted};
++ size_t layerMemOffset=0;bool matched=false;u32 matchLevel=99,matchLayer=99;
++''' + lookup + r'''
++ if(matched)return std::pair{matchLayer,matchLevel};return {};
++}
++'''
++    split = block((SRC/'gpu/interconnect/command_executor.cpp').read_text(), 'bool splitRenderPass')
++    code += r'''
++namespace ranges=std::ranges;
++struct PassFixture {
++ struct Pass{int renderArea=1;}p;Pass*renderPass=&p;
++ int renderArea=1;bool attachmentsMatch=true;u32 renderPassIndex=1;
++ struct T{bool compatible=true;bool ValidateRenderPassUsage(u32,texture::RenderPassUsage){return compatible;}}texture;
++ struct V{T*texture;}view{&texture};
++ std::vector<V*>outputAttachmentViews{&view},sampledImages;
++ bool Split(vk::PipelineStageFlags srcStageMask,vk::PipelineStageFlags dstStageMask){
++''' + split + '; return splitRenderPass; } };\n' + TESTS
++    with tempfile.TemporaryDirectory(prefix='strato-image-coherence-') as tmp:
++        cpp_path = Path(tmp) / 'test.cpp'
++        exe = Path(tmp) / 'test'
++        cpp_path.write_text(code)
++        subprocess.run([os.environ.get('CXX', 'g++'), '-std=c++20', '-O1', '-g',
++                        '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-no-pie',
++                        '-I' + str(ROOT / 'app/libraries/vkhpp'),
++                        '-I' + str(ROOT / 'app/libraries/vkhpp/Vulkan-Headers/include'),
++                        str(cpp_path), '-o', str(exe)], check=True)
++        subprocess.run([str(exe)], check=True, timeout=30,
++                       env={**os.environ, 'ASAN_OPTIONS':'detect_leaks=0', 'UBSAN_OPTIONS':'halt_on_error=1'})
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/tools/render_tests/storage_binding.py b/tools/render_tests/storage_binding.py
+new file mode 100644
+--- /dev/null
++++ b/tools/render_tests/storage_binding.py
+@@ -0,0 +1,87 @@
++#!/usr/bin/env python3
++"""Exercise the production storage-image binding with CPU fakes and real Vulkan types."""
++from pathlib import Path
++import os
++import subprocess
++import tempfile
++from image_coherence import block, ROOT, SRC
++
++PREFIX = r'''
++#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
++#define VULKAN_HPP_NO_STRUCT_SETTERS
++#include <vulkan/vulkan.hpp>
++#include <cassert>
++#include <cstdint>
++#include <iostream>
++#include <memory>
++#include <utility>
++using u32=uint32_t;
++struct TextureView;
++struct Texture {
++ vk::ImageLayout layout=vk::ImageLayout::eGeneral;
++ int reads=0,writes=0,dirty=0,transitions=0;
++ vk::ImageSubresourceRange usedRange{};vk::ComponentMapping usedMapping{};
++ void TransitionLayout(vk::ImageLayout l){++transitions;layout=l;}
++ void PrepareShaderWrite(vk::PipelineStageFlagBits,vk::PipelineStageFlags&,vk::PipelineStageFlags&){++writes;}
++ void PopulateReadBarrier(vk::PipelineStageFlagBits,vk::PipelineStageFlags&,vk::PipelineStageFlags&){++reads;}
++ void MarkGpuDirty(int){++dirty;}
++ std::shared_ptr<TextureView> GetView(vk::ImageViewType,vk::ImageSubresourceRange,vk::Format,vk::ComponentMapping);
++};
++struct TextureView {
++ Texture*texture;
++ vk::ImageViewType type=vk::ImageViewType::e2DArray;
++ vk::Format format=vk::Format::eR8G8B8A8Unorm;
++ vk::ImageSubresourceRange range{vk::ImageAspectFlagBits::eColor,2,4,3,5};
++ vk::ComponentMapping mapping{vk::ComponentSwizzle::eB,vk::ComponentSwizzle::eG,vk::ComponentSwizzle::eR,vk::ComponentSwizzle::eA};
++ vk::ImageView GetView(){return vk::ImageView(reinterpret_cast<VkImageView>(uintptr_t{123}));}
++};
++std::shared_ptr<TextureView> Texture::GetView(vk::ImageViewType type,vk::ImageSubresourceRange r,vk::Format f,vk::ComponentMapping m){
++ assert(type==vk::ImageViewType::e2DArray && f==vk::Format::eR8G8B8A8Unorm);
++ usedRange=r;usedMapping=m;return std::make_shared<TextureView>(TextureView{this});
++}
++struct InterconnectContext {struct Executor{int usageTracker=0,attached=0;void AttachTexture(TextureView*){++attached;}}executor;};
++struct Textures{TextureView*view;TextureView*GetTexture(InterconnectContext&,u32 index,int type){assert(index==7&&type==9);return view;}};
++struct BindlessHandle{u32 textureIndex;};
++struct Descriptor{int type=9;bool is_written=false;};
++'''
++MAIN = r'''
++int main(){
++ Texture texture;TextureView sampled{&texture};Textures textures{&sampled};InterconnectContext ctx;
++ vk::PipelineStageFlags src{},dst{};Descriptor desc;
++ auto result=GetStorageImageBinding(ctx,desc,textures,BindlessHandle{7},vk::PipelineStageFlagBits::eComputeShader,src,dst);
++ assert(result.second==&sampled && result.first.imageLayout==vk::ImageLayout::eGeneral && !result.first.sampler);
++ assert(result.first.imageView==sampled.GetView());
++ assert(texture.usedRange.baseMipLevel==2 && texture.usedRange.levelCount==1);
++ assert(texture.usedRange.baseArrayLayer==3 && texture.usedRange.layerCount==5);
++ assert(texture.usedMapping==vk::ComponentMapping{});
++ assert(sampled.range.levelCount==4 && sampled.mapping.r==vk::ComponentSwizzle::eB);
++ assert(texture.reads==1 && !texture.writes && !texture.dirty && !texture.transitions);
++ desc.is_written=true;
++ GetStorageImageBinding(ctx,desc,textures,BindlessHandle{7},vk::PipelineStageFlagBits::eFragmentShader,src,dst);
++ assert(texture.reads==1 && texture.writes==1 && texture.dirty==1 && !texture.transitions);
++ texture.layout=vk::ImageLayout::eTransferDstOptimal;
++ GetStorageImageBinding(ctx,desc,textures,BindlessHandle{7},vk::PipelineStageFlagBits::eComputeShader,src,dst);
++ assert(texture.transitions==1 && texture.writes==2 && ctx.executor.attached==3);
++ std::cout<<"PASS: actual storage binding, write/read tracking, no redundant layout wait, one mip/identity swizzle, sampled view unchanged\n";
++}
++'''
++
++
++def main():
++    implementation = block((SRC/'gpu/interconnect/common/pipeline.inc').read_text(),
++                           'static std::pair<vk::DescriptorImageInfo, TextureView *> GetStorageImageBinding(')
++    with tempfile.TemporaryDirectory(prefix='strato-storage-binding-') as tmp:
++        cpp = Path(tmp)/'test.cpp'
++        exe = Path(tmp)/'test'
++        cpp.write_text(PREFIX + implementation + MAIN)
++        subprocess.run([os.environ.get('CXX','g++'),'-std=c++20','-O1','-g',
++                        '-fsanitize=address,undefined','-fno-omit-frame-pointer','-no-pie',
++                        '-I'+str(ROOT/'app/libraries/vkhpp'),
++                        '-I'+str(ROOT/'app/libraries/vkhpp/Vulkan-Headers/include'),
++                        str(cpp),'-o',str(exe)],check=True)
++        subprocess.run([str(exe)],check=True,timeout=30,
++                       env={**os.environ,'ASAN_OPTIONS':'detect_leaks=0','UBSAN_OPTIONS':'halt_on_error=1'})
++
++
++if __name__=='__main__':
++    main()
+diff --git a/CORRECTIFS_3D_VIDEO_20261028.md b/CORRECTIFS_3D_VIDEO_20261028.md
+new file mode 100644
+--- /dev/null
++++ b/CORRECTIFS_3D_VIDEO_20261028.md
+@@ -0,0 +1,132 @@
++# Correctifs 3D et vidéo — 28 octobre 2026
++
++Ces modifications corrigent des défauts identifiés dans les sources fournies.
++Elles visent le rendu utilisé par TOTK et Sparking Zero, et le parcours vidéo
++utilisé par des jeux comme Hollow Knight. Aucun de ces trois jeux n'a été
++exécuté ici : leur réparation complète et leurs performances restent à confirmer.
++
++## Base conservée
++
++- Archive fournie : `strato.zip`.
++- SHA-256 de l'archive d'entrée : `0bde12ab1aa4a8d44d25fcac1b2dea07257367bebb0c11b143d467d7df34944b`.
++- HEAD inclus : `0b4c3badd498ad4d6322e2125a5ab83f0e3fb165`.
++- Tous les fichiers d'origine sont conservés, avec remplacement des seuls
++  fichiers listés dans le manifeste et ajout des tests/du présent bilan.
++- Les changements préexistants du compilateur de shaders et de Vulkan-Hpp
++  sont conservés. Aucun commit distant ni publication GitHub n'a été effectué.
++- Le décodage H.264/VP8, VIC monocouche et le correctif SMMU préexistant restent
++  présents. Cette intervention n'ajoute pas VP9 ni le désentrelacement.
++
++## Modifications
++
++1. **Recherche des mipmaps.** La boucle de recherche d'une vue dans une texture
++   n'avançait son offset et son numéro de mip que lorsque l'offset correspondait
++   déjà. Les niveaux suivants pouvaient donc être manqués. Les compteurs avancent
++   maintenant à chaque niveau. Les correspondances couche/mip sont testées.
++2. **Dimensions des mipmaps.** Les dimensions en texels sont divisées avant
++   d'arrondir en blocs mémoire. L'ancien calcul divisait des tailles déjà
++   remplies de padding, ce qui faussait les offsets de certaines textures non
++   puissances de deux. Les chemins de calcul de taille et de chargement utilisent
++   maintenant le même calcul corrigé, y compris pour les textures compressées/3D.
++3. **Écritures de shaders dans les images.** Elles participent maintenant au
++   suivi des producteurs GPU, aux dépendances lecture/écriture et à la politique
++   de récupération des données par le processeur. Auparavant, cette dernière
++   reposait seulement sur l'utilisation comme cible de rendu.
++4. **Ordre des passes.** Une dépendance entre deux dessins force la séparation
++   des passes : la barrière ne doit pas être déplacée avant le dessin qui produit
++   les données. Les cibles de rendu attendent aussi les accès des shaders de calcul.
++5. **Vues d'images utilisées en écriture.** Elles utilisent un seul mip et des
++   canaux sans permutation, conformément aux contraintes des storage images
++   Vulkan. La vue d'échantillonnage reste intacte. Une transition de layout déjà
++   satisfaite n'impose plus une attente inutile du GPU.
++6. **VIC et transparence.** Le mode alpha 0 force désormais l'opacité au lieu
++   de recopier l'alpha de la source. Les modes 1 (alpha du fond) et 2 (alpha de
++   destination conservé) sont pris en charge. Cela supprime un défaut pouvant
++   rendre une image vidéo transparente, sans prouver que c'est la cause exacte
++   du problème signalé dans Hollow Knight.
++7. **VIC et mises à jour partielles.** Le rectangle de sortie peut couvrir une
++   partie de l'image. Les pixels et le padding en dehors sont préservés. Pour
++   NV12/NV21, le rectangle doit couvrir des groupes chroma complets ou le bord
++   extérieur de l'image ; les cas non pris en charge restent explicitement rejetés.
++
++## Vérifications réalisées
++
++Tests C++ hôte avec AddressSanitizer et UndefinedBehaviorSanitizer, selon les
++scripts concernés. Les méthodes GPU sont compilées avec des dépendances de
++test et les vrais types Vulkan ; elles ne s'exécutent pas sur un GPU Vulkan.
++
++| Vérification | Résultat |
++|---|---|
++| 1 080 chaînes de mipmaps, avec oracle indépendant de taille | Réussi |
++| Recherche des vues de toutes les couches/mips et rejets d'offsets invalides | Réussi |
++| Dépendances shader-image, écritures répétées, plusieurs producteurs, reset | Réussi |
++| Binding réel des storage images, mip unique et canaux identité | Réussi |
++| Condition réelle de séparation des passes | Réussi |
++| 120 cas de décodeur/encodeur BC | Réussi |
++| 448 cas d'intégration BC + swizzle + chargement/lecture de texture | Réussi |
++| 192 cas VIC plein écran, 192 partiels, 384 alpha, 4 NV12/NV21 partiels | Réussi |
++| SMMU : plage utilisée dans l'erreur Hollow Knight et bornes d'adressage | Réussi |
++| Sécurité des commandes Host1x | Réussi |
++| Anciens calcul/recherche des mips avec les nouveaux tests | Échec attendu : régressions reproduites |
++| Ancien VIC avec le test d'opacité | Échec attendu : défaut reproduit |
++| `git diff --check` | Réussi |
++
++Le test d'intégration BC a aussi été réparé : son enum Vulkan Float/Sfloat
++était obsolète, et son pitch de test devait être adapté aux nouvelles grandes
++dimensions testées. La production possédait déjà le bon enum Sfloat.
++
++## Limites et risques restants
++
++- **Pas d'APK construit.** Le wrapper Gradle échoue au téléchargement de Gradle
++  8.2 ; SDK/NDK Android absents et plusieurs dépendances natives non matérialisées.
++  Les tests hôte ne remplacent pas une compilation Android complète.
++- La suite complète de décodage H.264/VP8 n'a pas été relancée avec succès :
++  téléchargement de FFmpeg 7.1.2 bloqué (HTTP 503), archive de secours incomplète.
++  Le décodeur n'a pas été modifié. Les résultats historiques de 24 images ne sont
++  pas présentés comme une nouvelle validation.
++- Les nouveaux découpages de passes privilégient la cohérence des données et
++  peuvent augmenter le coût GPU. Aucun gain de FPS n'a été mesuré.
++- Pas de capture GPU ni de cinématique Hollow Knight permettant de reproduire
++  le symptôme exact. D'autres causes restent possibles : shaders, alias de
++  textures, pilotes, modes VIC/codecs non pris en charge ou problèmes CPU.
++
++## Reproduire les tests
++
++Depuis la racine du projet, avec Python 3 et g++ C++20 :
++
++```sh
++python tools/render_tests/image_coherence.py
++python tools/render_tests/storage_binding.py
++python tests/run_bc.py
++python tests/run_texture.py
++python tools/smmu_tests/run.py
++python tools/render_tests/host1x_safety.py
++```
++
++Le test VIC peut être exécuté séparément de FFmpeg :
++
++```sh
++g++ -std=c++20 -Wall -Wextra -Wconversion -Werror -g \
++  -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
++  -Iapp/src/main/cpp/skyline/soc/host1x/video \
++  tools/video_tests/compositor_test.cpp \
++  app/src/main/cpp/skyline/soc/host1x/video/compositor.cpp -o /tmp/strato-vic-test
++ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/strato-vic-test
++```
++
++Pour la validation appareil : utiliser la même version du jeu, le même pilote,
++la même sauvegarde et la même résolution avant/après. Vérifier une scène 3D et
++les changements de zone dans TOTK/Sparking Zero ; dans Hollow Knight, vérifier
++la cinématique du début à la fin, le son et le retour au jeu. Conserver les logs
++et les captures si un défaut persiste. Ne pas conclure à une réparation sur la
++seule base d'une capture correcte ou d'un démarrage réussi.
++
++## Références étudiées
++
++- [BOTWRecompAndroid, calcul Tegra](https://github.com/mamcjr/BOTWRecompAndroid/blob/main/runtime/nvn/tegra.c), blob `824523dc5ab0fc4bb7397dad699c76d85ac03d7a`.
++- [BOTWRecompAndroid, exécution Vulkan](https://github.com/mamcjr/BOTWRecompAndroid/blob/main/runtime/nvn/vulkan/exec.c), blob `f8143124bdf5a441eead44dd4da76a131b4ce207` : cibles persistantes et attente des pipelines. Strato attendait déjà ses pipelines ; ce mécanisme n'a pas été recopié.
++- [Spécification Vulkan : synchronisation](https://docs.vulkan.org/spec/latest/chapters/synchronization.html).
++- [Documentation NVIDIA VIC](https://github.com/NVIDIA/open-gpu-doc/blob/master/classes/video/vic_ceb6_types.h), blob `60f1b58d97c9d1920c750a6554fbcd752b6f073a` : sémantique du rectangle cible et des modes alpha. Le layout ABI existant de Strato est conservé.
++
++Les corrections ont été écrites pour l'architecture de Strato. Il n'y a pas
++d'intégration du moteur de BOTWRecompAndroid ni d'import de code du jeu.

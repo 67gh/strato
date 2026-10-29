@@ -843,7 +843,7 @@ namespace skyline::gpu {
             return;
 
         // FIXME (TEXMAN): This should really be tracked on the texture usage side
-        if (!*gpu.state.settings->freeGuestTextureMemory && !everUsedAsRt)
+        if (!*gpu.state.settings->freeGuestTextureMemory && !everGpuWritten)
             gpuDirty = false;
 
         TRACE_EVENT("gpu", "Texture::SynchronizeHost");
@@ -891,7 +891,7 @@ namespace skyline::gpu {
 
         TRACE_EVENT("gpu", "Texture::SynchronizeHostInline");
         // FIXME (TEXMAN): This should really be tracked on the texture usage side
-        if (!*gpu.state.settings->freeGuestTextureMemory && !everUsedAsRt)
+        if (!*gpu.state.settings->freeGuestTextureMemory && !everGpuWritten)
             gpuDirty = false;
 
         {
@@ -1147,7 +1147,11 @@ namespace skyline::gpu {
         lastRenderPassIndex = renderPassIndex;
 
         if (renderPassUsage == texture::RenderPassUsage::RenderTarget) {
-            everUsedAsRt = true;
+            everGpuWritten = true;
+            if (format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))
+                writeStageMask |= vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
+            else
+                writeStageMask |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
             pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |
                 vk::PipelineStageFlagBits::eTessellationControlShader |
                 vk::PipelineStageFlagBits::eTessellationEvaluationShader |
@@ -1156,6 +1160,7 @@ namespace skyline::gpu {
                 vk::PipelineStageFlagBits::eComputeShader;
             readStageMask = {};
         } else if (renderPassUsage == texture::RenderPassUsage::None) {
+            writeStageMask = {};
             pendingStageMask = {};
             readStageMask = {};
         }
@@ -1169,6 +1174,24 @@ namespace skyline::gpu {
         return readStageMask;
     }
 
+    void Texture::PrepareShaderWrite(vk::PipelineStageFlagBits stage, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
+        if (writeStageMask || readStageMask) {
+            srcStageMask |= writeStageMask | readStageMask;
+            dstStageMask |= stage;
+        }
+        everGpuWritten = true;
+        // Keep all producers: the same image may be written by multiple shader
+        // stages in a draw. A later consumer must wait for every producer.
+        writeStageMask |= stage;
+        pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |
+            vk::PipelineStageFlagBits::eTessellationControlShader |
+            vk::PipelineStageFlagBits::eTessellationEvaluationShader |
+            vk::PipelineStageFlagBits::eGeometryShader |
+            vk::PipelineStageFlagBits::eFragmentShader |
+            vk::PipelineStageFlagBits::eComputeShader;
+        readStageMask = {};
+    }
+
     void Texture::PopulateReadBarrier(vk::PipelineStageFlagBits dstStage, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
         if (!guest)
             return;
@@ -1178,10 +1201,7 @@ namespace skyline::gpu {
         if (!(pendingStageMask & dstStage))
             return;
 
-        if (format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))
-            srcStageMask |= vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
-        else if (format->vkAspect & vk::ImageAspectFlagBits::eColor)
-            srcStageMask |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        srcStageMask |= writeStageMask;
 
         pendingStageMask &= ~dstStage;
         dstStageMask |= dstStage;
