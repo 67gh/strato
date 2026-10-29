@@ -6,6 +6,7 @@ import androidx.preference.PreferenceManager
 import android.content.ClipData
 import android.content.Intent
 import android.os.Bundle
+import android.content.DialogInterface
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
@@ -16,6 +17,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.stratoemu.strato.R
@@ -28,14 +31,19 @@ import java.util.Date
 /** Reads persisted sessions, including runs whose emulation process no longer exists. */
 class DiagnosticActivity : AppCompatActivity() {
     private val binding by lazy { DiagnosticActivityBinding.inflate(layoutInflater) }
-    private data class Session(val directory : File, val label : String, val state : String)
+    private data class Session(val directory : File, val label : String, val state : String, val started : Long)
     private var sessions = emptyList<Session>()
     private var selectedName : String? = null
     private var busy = false
+    private val exportSelection = mutableSetOf<String>()
+    private var selectionOpen = false
+    private var selectionDialog : androidx.appcompat.app.AlertDialog? = null
 
     override fun onCreate(savedInstanceState : Bundle?) {
         super.onCreate(savedInstanceState)
         selectedName = savedInstanceState?.getString("selected_session")
+        exportSelection.addAll(savedInstanceState?.getStringArrayList("export_selection").orEmpty())
+        selectionOpen = savedInstanceState?.getBoolean("export_selection_open") ?: false
         setContentView(binding.root)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsHelper.applyToActivity(binding.root, binding.content)
@@ -73,7 +81,10 @@ class DiagnosticActivity : AppCompatActivity() {
                 }.show()
         }
         binding.refreshSessions.setOnClickListener { refresh() }
-        binding.exportDiagnostic.setOnClickListener { export() }
+        binding.exportDiagnostic.setOnClickListener {
+            sessions.firstOrNull { it.directory.name == selectedName }?.let { export(listOf(it)) }
+        }
+        binding.exportDiagnostics.setOnClickListener { chooseExportRange() }
         binding.deleteSession.setOnClickListener {
             val session = sessions.firstOrNull { it.directory.name == selectedName } ?: return@setOnClickListener
             MaterialAlertDialogBuilder(this)
@@ -92,6 +103,8 @@ class DiagnosticActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState : Bundle) {
         outState.putString("selected_session", selectedName)
+        outState.putStringArrayList("export_selection", ArrayList(exportSelection))
+        outState.putBoolean("export_selection_open", selectionOpen)
         super.onSaveInstanceState(outState)
     }
 
@@ -107,6 +120,7 @@ class DiagnosticActivity : AppCompatActivity() {
         binding.progress.isVisible = busy
         binding.chooseSession.isEnabled = !busy && sessions.isNotEmpty()
         binding.exportDiagnostic.isEnabled = !busy && selected != null
+        binding.exportDiagnostics.isEnabled = !busy && sessions.isNotEmpty()
         binding.deleteSession.isEnabled = !busy && selected != null
         binding.refreshSessions.isEnabled = !busy
     }
@@ -127,11 +141,12 @@ class DiagnosticActivity : AppCompatActivity() {
                             metadata?.optString("status") == "finished" -> R.string.diagnostic_ended
                             else -> R.string.diagnostic_interrupted
                         }
-                        Session(directory, "$game\n${DateFormat.getDateTimeInstance().format(Date(started))}", getString(state))
+                        Session(directory, "$game\n${DateFormat.getDateTimeInstance().format(Date(started))}", getString(state), started)
                     }
                 }
                 if (sessions.none { it.directory.name == selectedName })
                     selectedName = sessions.firstOrNull()?.directory?.name
+                exportSelection.retainAll(sessions.map { it.directory.name }.toSet())
             } catch (e : CancellationException) {
                 throw e
             } catch (_ : Exception) {
@@ -140,6 +155,7 @@ class DiagnosticActivity : AppCompatActivity() {
                 busy = false
                 render()
             }
+            if (selectionOpen) showExportSelection()
         }
     }
 
@@ -162,14 +178,98 @@ class DiagnosticActivity : AppCompatActivity() {
         }
     }
 
-    private fun export() {
-        val session = sessions.firstOrNull { it.directory.name == selectedName } ?: return
-        if (busy) return
+    private fun chooseExportRange() {
+        if (busy || sessions.isEmpty()) return
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.diagnostic_export_multiple)
+            .setItems(arrayOf(
+                getString(R.string.diagnostic_selection_custom),
+                getString(R.string.diagnostic_selection_today),
+                getString(R.string.diagnostic_selection_week),
+                getString(R.string.diagnostic_selection_all)
+            )) { _, choice ->
+                if (choice != 0) {
+                    exportSelection.clear()
+                    val window = diagnosticExportWindow(if (choice == 2) 7 else 1)
+                    exportSelection.addAll(sessions.filter {
+                        choice == 3 || it.started in window
+                    }.map { it.directory.name })
+                }
+                showExportSelection()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showExportSelection() {
+        if (selectionDialog?.isShowing == true) return
+        if (sessions.isEmpty()) {
+            selectionOpen = false
+            return
+        }
+        // Keep a stable snapshot while the dialog is open, even when onResume refreshes the list.
+        val available = sessions.toList()
+        val checked = BooleanArray(available.size) { available[it].directory.name in exportSelection }
+        selectionOpen = true
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.diagnostic_selection_custom)
+            .setMultiChoiceItems(available.map { it.label }.toTypedArray(), checked) { dialog, index, value ->
+                val name = available[index].directory.name
+                if (value) exportSelection.add(name) else exportSelection.remove(name)
+                checked[index] = value
+                val alert = dialog as androidx.appcompat.app.AlertDialog
+                alert.getButton(DialogInterface.BUTTON_POSITIVE).apply {
+                    isEnabled = checked.any { it }
+                    text = getString(R.string.diagnostic_export_count, checked.count { it })
+                }
+                alert.getButton(DialogInterface.BUTTON_NEUTRAL).setText(
+                    if (checked.all { it }) R.string.diagnostic_selection_none else R.string.diagnostic_selection_all)
+            }
+            .setPositiveButton(R.string.diagnostic_export_multiple) { _, _ ->
+                selectionOpen = false
+                export(available.filterIndexed { index, _ -> checked[index] }, batch = true)
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> selectionOpen = false }
+            .setNeutralButton(R.string.diagnostic_selection_all, null)
+            .setOnCancelListener { selectionOpen = false }
+            .create()
+        dialog.setOnShowListener {
+            fun updateButtons() {
+                dialog.getButton(DialogInterface.BUTTON_POSITIVE).apply {
+                    isEnabled = checked.any { it }
+                    text = getString(R.string.diagnostic_export_count, checked.count { it })
+                }
+                dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setText(
+                    if (checked.all { it }) R.string.diagnostic_selection_none else R.string.diagnostic_selection_all)
+            }
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
+                val select = !checked.all { it }
+                available.forEachIndexed { index, session ->
+                    checked[index] = select
+                    dialog.listView.setItemChecked(index, select)
+                    if (select) exportSelection.add(session.directory.name) else exportSelection.remove(session.directory.name)
+                }
+                updateButtons()
+            }
+            updateButtons()
+        }
+        selectionDialog = dialog
+        dialog.setOnDismissListener { selectionDialog = null }
+        dialog.show()
+    }
+
+    private fun export(selected : List<Session>, batch : Boolean = false) {
+        if (busy || selected.isEmpty()) return
         busy = true
         render()
         lifecycleScope.launch {
             try {
-                val file = withContext(Dispatchers.IO) { DiagnosticExporter.export(applicationContext, session.directory) }
+                val file = withContext(Dispatchers.IO) {
+                    val jobContext = currentCoroutineContext()
+                    if (batch) DiagnosticExporter.exportBatch(applicationContext, selected.map { it.directory }) {
+                        jobContext.ensureActive()
+                    } else DiagnosticExporter.export(applicationContext, selected.single().directory)
+                }
                 val uri = FileProvider.getUriForFile(this@DiagnosticActivity, "$packageName.fileprovider", file)
                 val share = Intent(Intent.ACTION_SEND).apply {
                     type = "application/zip"
@@ -180,6 +280,8 @@ class DiagnosticActivity : AppCompatActivity() {
                 startActivity(Intent.createChooser(share, getString(R.string.diagnostic_export)))
             } catch (e : CancellationException) {
                 throw e
+            } catch (_ : DiagnosticBatchArchive.TooLargeException) {
+                Toast.makeText(this@DiagnosticActivity, R.string.diagnostic_batch_too_large, Toast.LENGTH_LONG).show()
             } catch (_ : Exception) {
                 Toast.makeText(this@DiagnosticActivity, R.string.diagnostic_export_failed, Toast.LENGTH_LONG).show()
             } finally {

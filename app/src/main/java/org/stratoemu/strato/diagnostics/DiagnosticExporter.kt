@@ -18,7 +18,7 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** Export a single session with explicit provenance and a finite byte budget. Run off the UI thread. */
+/** Export sessions with explicit provenance and finite byte budgets. Run off the UI thread. */
 object DiagnosticExporter {
     private const val MIB = 1024L * 1024L
     private const val ZIP_LIMIT = 160 * MIB
@@ -183,6 +183,13 @@ object DiagnosticExporter {
             // Only an incomplete export owned by this call is removed; session evidence is retained.
             if (partial.exists()) partial.delete()
         }
+    }
+
+    /** One outer ZIP, with an unchanged diagnostic ZIP and manifest per selected session. */
+    fun exportBatch(context : Context, sessionDirectories : List<File>, checkCancelled : () -> Unit = {}) : File {
+        val sessions = sessionDirectories.map { validatedDirectory(context, it) }.distinct()
+        return DiagnosticBatchArchive.create(File(context.cacheDir, "diagnostics"), sessions,
+            exportSession = { export(context, it) }, checkCancelled = checkCancelled)
     }
 
     /** Explicit user action only. No automatic retention policy deletes diagnostic evidence. */

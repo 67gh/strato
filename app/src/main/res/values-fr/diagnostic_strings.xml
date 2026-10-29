@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="diagnostic_title">Diagnostic</string>
-    <string name="diagnostic_description">Partage un rapport technique pour une session de jeu. Les rapports restent accessibles après le redémarrage de l’application.</string>
+    <string name="diagnostic_description">Partage les diagnostics d’une ou plusieurs sessions de jeu. Les rapports restent accessibles après le redémarrage de l’application.</string>
     <string name="diagnostic_no_sessions">Aucune session enregistrée. Lance un jeu, puis reviens ici pour exporter son diagnostic.</string>
     <string name="diagnostic_unknown_game">Jeu inconnu</string>
     <string name="diagnostic_choose_session">Choisir une session</string>
     <string name="diagnostic_export">Exporter le diagnostic</string>
+    <string name="diagnostic_export_multiple">Exporter plusieurs diagnostics</string>
+    <string name="diagnostic_selection_custom">Sélectionner les diagnostics</string>
+    <string name="diagnostic_selection_today">Aujourd’hui</string>
+    <string name="diagnostic_selection_week">7 derniers jours (aujourd’hui inclus)</string>
+    <string name="diagnostic_selection_all">Tout sélectionner</string>
+    <string name="diagnostic_selection_none">Tout désélectionner</string>
+    <string name="diagnostic_export_count">Exporter (%1$d)</string>
+    <string name="diagnostic_batch_too_large">Ce lot dépasse 512 Mio. Sélectionne moins de diagnostics et exporte-les en plusieurs lots.</string>
     <string name="diagnostic_refresh">Actualiser</string>
     <string name="diagnostic_delete">Supprimer la session</string>
     <string name="diagnostic_delete_confirmation">Supprimer le diagnostic enregistré pour %1$s ? Cela libère de l’espace. Les ZIP déjà partagés sont conservés.</string>

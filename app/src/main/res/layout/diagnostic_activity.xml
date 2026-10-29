@@ -53,6 +53,12 @@
                 android:layout_height="wrap_content"
                 android:text="@string/diagnostic_export" />
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/export_diagnostics"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/diagnostic_export_multiple" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/refresh_sessions"
                 style="?attr/borderlessButtonStyle"
                 android:layout_width="match_parent"
