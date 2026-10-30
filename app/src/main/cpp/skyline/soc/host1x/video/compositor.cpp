@@ -118,12 +118,18 @@ void Compositor::Execute(const Memory &memory) {
             const auto fx=sx0+(right==left?0:(std::uint64_t(x-left)*(sx1-sx0)/(right-left)));
             const auto fy=sy0+(bottom==top?0:(std::uint64_t(y-top)*(sy1-sy0)/(bottom-top)));
             const auto ix=static_cast<unsigned>(fx>>16), iy=static_cast<unsigned>(fy>>16);
-            const auto a=readPixel(ix,iy), b=readPixel(std::min(ix+1,src->w-1),iy);
-            const auto c=readPixel(ix,std::min(iy+1,src->h-1)), d=readPixel(std::min(ix+1,src->w-1),std::min(iy+1,src->h-1));
-            for (unsigned channel=0;channel<4;++channel) {
-                const auto upper=std::uint64_t(a[channel])*(65536-(fx&65535))+std::uint64_t(b[channel])*(fx&65535);
-                const auto lower=std::uint64_t(c[channel])*(65536-(fx&65535))+std::uint64_t(d[channel])*(fx&65535);
-                p[channel]=static_cast<int>((upper*(65536-(fy&65535))+lower*(fy&65535)+(1ULL<<31))>>32);
+            if (((fx|fy)&65535)==0) {
+                // At an exact texel coordinate, the other three bilinear weights
+                // are zero. Video copies at native size need only one sample.
+                p=readPixel(ix,iy);
+            } else {
+                const auto a=readPixel(ix,iy), b=readPixel(std::min(ix+1,src->w-1),iy);
+                const auto c=readPixel(ix,std::min(iy+1,src->h-1)), d=readPixel(std::min(ix+1,src->w-1),std::min(iy+1,src->h-1));
+                for (unsigned channel=0;channel<4;++channel) {
+                    const auto upper=std::uint64_t(a[channel])*(65536-(fx&65535))+std::uint64_t(b[channel])*(fx&65535);
+                    const auto lower=std::uint64_t(c[channel])*(65536-(fx&65535))+std::uint64_t(d[channel])*(fx&65535);
+                    p[channel]=static_cast<int>((upper*(65536-(fy&65535))+lower*(fy&65535)+(1ULL<<31))>>32);
+                }
             }
             p=Matrix(slot.subspan(0x60,32),p);
             p=Matrix(slot.subspan(0x80,32),p);

@@ -20,6 +20,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Verify shared font source assets
+        run: python3 tools/check_shared_fonts.py app/src/main/assets/fonts
+
       - name: Initialize Git submodules
         run: |
           git submodule sync --recursive
@@ -59,6 +62,11 @@ jobs:
           CCACHE_COMPILERCHECK: "string:${{ env.NDK_VERSION }}" # Use NDK version instead of compiler timestamp
           PR_NUMBER: ${{ github.event.number }}
         run: ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleDevRelease assembleDevReldebug
+
+      - name: Verify packaged shared fonts
+        run: |
+          python3 tools/check_shared_fonts.py app/build/outputs/apk/dev/release/app-dev-release.apk
+          python3 tools/check_shared_fonts.py app/build/outputs/apk/dev/reldebug/app-dev-reldebug.apk
 
       - name: Rename APKs
         if: ${{ vars.UPLOAD_PR_ARTIFACTS == 'true' }}

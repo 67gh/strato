@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import zipfile
+from check_shared_fonts import verify_archive_fonts
 
 
 def verify_container(apk):
@@ -18,6 +19,9 @@ def verify_container(apk):
         for name in ['AndroidManifest.xml', 'classes.dex', 'lib/arm64-v8a/libskyline.so']:
             if name not in names or archive.getinfo(name).file_size == 0:
                 raise ValueError(f'Not a complete Strato APK: missing {name}')
+        # FontStandard is opened during ServiceManager construction, before the
+        # first guest instruction. An otherwise installable APK can still fail here.
+        verify_archive_fonts(archive)
         bad = archive.testzip()
         if bad is not None:
             raise ValueError(f'Corrupt APK entry: {bad}')

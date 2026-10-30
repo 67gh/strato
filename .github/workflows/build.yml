@@ -18,6 +18,9 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Verify shared font source assets
+        run: python3 tools/check_shared_fonts.py app/src/main/assets/fonts
+
       - name: Auto-increment versionCode
         run: |
           CURRENT_CODE=$(perl -ne 'print $1 if /versionCode\s+(\d+)/' app/build.gradle)
