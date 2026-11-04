@@ -95,7 +95,7 @@ namespace skyline::service::fssrv {
         if (!state.loader->romFs)
             return result::NoRomFsAvailable;
 
-        manager.RegisterService(std::make_shared<IStorage>(state.loader->romFs, state, manager), session, response);
+        manager.RegisterService(std::make_shared<IStorage>(state.loader->romFs, state, manager, true), session, response);
         return {};
     }
 

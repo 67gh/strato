@@ -1,0 +1,25 @@
+STRATO — Correctif MP4, 4 novembre 2026
+
+Application du correctif
+Décompresser à la racine de Strato, à côté de app/ et tools/. La référence est strato.zip fourni. Les quatre sources du précédent correctif sont identiques octet par octet à celles de cette référence avant modification.
+
+Ce qui fonctionne par conception
+Le menu Diagnostic > Tester un MP4 Android (overlay) ouvre un document choisi par l’utilisateur. Le jeu conserve son exécution et son affichage derrière le lecteur. La fermeture rend la vue du jeu accessible. Ce test manuel ne fait pas avancer une cinématique invitée. Aucune validation Android n’a été réalisée.
+
+Sources Android
+• AndroidVideoOverlay.kt — une session par lecture. MediaExtractor identifie les pistes sur le descripteur du fournisseur Android. MediaPlayer gère leur décodage et leur horloge commune. TextureView centrée avec ratio ajusté, fond noir plein écran, bouton Passer sans commandes de pause ni de recherche. Préparation, analyse et libération sur un HandlerThread. Traces de durée, MIME, erreurs et transitions sans URI.
+• EmulationActivity.kt — annulation de l’overlay en quittant le premier plan et à la destruction. Le résultat du test est local. Le menu existant reste son point d’entrée.
+• jvm.cpp et jvm.h — retrait du pont expérimental sans appelant, qui prenait seulement un chemin sur le téléphone et ne pouvait exprimer ni la session, ni la fin, ni le saut attendu. Le reste de JNI conserve ses signatures.
+
+Sources du moteur
+• IFileSystemProxy.cpp — marque uniquement le RomFS ouvert par OpenDataStorageByCurrentProcess.
+• IStorage.h et IStorage.cpp — identifiant de stockage propre à l’ouverture, observation des lectures terminées. Contrôle du tampon IPC, de l’offset, de la taille et de la fin du backing avant la lecture. L’ancienne implémentation lisait le tampon de sortie entier, même lorsque la taille demandée était inférieure.
+• mp4_probe.h — reconnaît les boîtes ftyp complètes de certaines marques ISO/MP4 au début d’une lecture. Pas d’allocation, de parcours du jeu, de sonde supplémentaire sur disque ni de décision de lecture.
+• video_capture.h — identifiant de codec NVDEC réellement soumis, résultat de la commande et durée CPU incluant les accès mémoire. Retrait de l’ancien message qui déclarait systématiquement le moteur non implémenté. Les captures binaires existantes sont limitées à une par nouvelle demande de capture et par moteur, huit au maximum. Le moteur peut lui-même émettre une demande de capture.
+• classes/nvdec.cpp et classes/vic.cpp — mesure autour de la commande Execute réelle. Les exceptions remontent par le chemin existant. OpDone reste après le retour normal.
+• classes/host1x.cpp — journal de niveau debug du seuil et de la valeur observée après une attente réussie, en complément des traces d’attente et de timeout.
+• tools/video_tests/adapters_test.py — mise à jour du double de capture du test existant.
+• tools/video_tests/mp4_probe_test.cpp — cas positifs et négatifs du détecteur compilable indépendamment.
+
+Limite principale
+Aucun jeu n’a de contrat de lecture plein écran établi dans les sources et traces examinées. La détection automatique produit des diagnostics. Elle ne lance pas le lecteur Android. En particulier, Passer ferme le test manuel et ne saute pas l’intro de Hollow Knight. Voir AUDIT.txt pour les interfaces manquantes.

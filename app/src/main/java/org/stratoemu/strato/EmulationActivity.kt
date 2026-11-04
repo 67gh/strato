@@ -21,6 +21,7 @@ import android.graphics.PointF
 import android.graphics.drawable.Icon
 import android.hardware.display.DisplayManager
 import android.net.DhcpInfo
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.*
 import android.util.Log
@@ -29,6 +30,7 @@ import android.util.TypedValue
 import android.view.*
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.getSystemService
 import androidx.core.view.isGone
@@ -53,6 +55,7 @@ import org.stratoemu.strato.data.AppItemTag
 import org.stratoemu.strato.databinding.EmuActivityBinding
 import org.stratoemu.strato.diagnostics.DiagnosticSession
 import org.stratoemu.strato.emulation.PipelineLoadingFragment
+import org.stratoemu.strato.emulation.AndroidVideoOverlay
 import org.stratoemu.strato.input.*
 import org.stratoemu.strato.loader.RomFile
 import org.stratoemu.strato.loader.getRomFormat
@@ -170,6 +173,21 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     lateinit var inputManager : InputManager
 
     lateinit var inputHandler : InputHandler
+
+    // Android MP4 overlay: explicit opt-in while guest video interception is being developed.
+    // No guest completion/syncpoint is fabricated here.
+    private val androidVideoOverlay by lazy { AndroidVideoOverlay(this, binding.root as android.widget.FrameLayout) }
+    private val pickOverlayVideo = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) playAndroidVideoOverlay(uri)
+    }
+
+    private fun playAndroidVideoOverlay(uri: Uri) {
+        if (!androidVideoOverlay.play(uri) { result ->
+            Log.i(Tag, "Android MP4 overlay ended: $result; guest state unchanged")
+            if (!isDestroyed && !isFinishing && result == AndroidVideoOverlay.Result.FAILED)
+                Toast.makeText(this, "Échec de lecture du MP4 de test", Toast.LENGTH_SHORT).show()
+        }) Log.w(Tag, "An Android video overlay is already playing")
+    }
 
     private var gameSurface : Surface? = null
 
@@ -358,9 +376,13 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
         binding.diagnosticCapture.setOnClickListener {
             MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.diagnostic_capture_title)
-                .setItems(arrayOf(getString(R.string.diagnostic_capture_now), getString(R.string.diagnostic_capture_gpu))) { _, choice ->
-                    val request = requestDiagnosticCapture(choice == 1)
-                    Toast.makeText(this, if (request > 0) getString(R.string.diagnostic_capture_requested, request) else getString(R.string.diagnostic_capture_unavailable), Toast.LENGTH_LONG).show()
+                .setItems(arrayOf(getString(R.string.diagnostic_capture_now), getString(R.string.diagnostic_capture_gpu), "Tester un MP4 Android (overlay)")) { _, choice ->
+                    if (choice == 2) {
+                        pickOverlayVideo.launch("video/mp4")
+                    } else {
+                        val request = requestDiagnosticCapture(choice == 1)
+                        Toast.makeText(this, if (request > 0) getString(R.string.diagnostic_capture_requested, request) else getString(R.string.diagnostic_capture_unavailable), Toast.LENGTH_LONG).show()
+                    }
                 }.setNegativeButton(android.R.string.cancel, null).show()
         }
 
@@ -475,6 +497,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     }
 
     override fun onPause() {
+        androidVideoOverlay.stop()
         super.onPause()
 
         if (emulationSettings.forceMaxGpuClocks)
@@ -619,6 +642,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     }
 
     override fun onDestroy() {
+        androidVideoOverlay.stop()
         super.onDestroy()
         diagnosticHandler.removeCallbacks(diagnosticStatistics)
         diagnosticHandler.removeCallbacks(performanceStatistics)

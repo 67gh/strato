@@ -154,6 +154,7 @@ namespace skyline {
          */
         void InitializeControllers();
 
+
         /**
          * @brief A call to EmulationActivity.vibrateDevice in Kotlin
          */

@@ -9,8 +9,13 @@ namespace skyline::soc::host1x {
             state.soc->smmu.Read(destination,address,size);
         });
         try {
-            engine.Method(method,argument,video::GuestMemory(state));
-            if (method==VideoCapture::ExecuteMethod) opDoneCallback();
+            auto dispatch = [&] { engine.Method(method,argument,video::GuestMemory(state)); };
+            if (method == VideoCapture::ExecuteMethod) {
+                capture.Execute(dispatch);
+                opDoneCallback();
+            } else {
+                dispatch();
+            }
         } catch (const std::exception &error) {
             LOGE("NVDEC execution failed (method 0x{:X}): {}",method,error.what());
             throw;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 #pragma once
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -36,6 +37,27 @@ namespace skyline::soc::host1x {
       public:
         explicit VideoCapture(Engine engine) : engine{engine} {}
 
+        template<typename Run>
+        void Execute(Run &&run) {
+            if (!diagnostics::RecorderEnabled()) {
+                run();
+                return;
+            }
+            const auto start = std::chrono::steady_clock::now();
+            auto report = [&](std::string_view result) {
+                const auto elapsed = std::chrono::steady_clock::now() - start;
+                const auto us = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+                diagnostics::Event("video_job_result", channel, sequence, us, result);
+            };
+            try {
+                run();
+            } catch (...) {
+                report("failed");
+                throw;
+            }
+            report("returned");
+        }
+
         // The reader must read the SMMU, including across mapping boundaries.
         template<typename Reader>
         void Method(std::uint32_t method, std::uint32_t argument, Reader &&read) {
@@ -48,12 +70,14 @@ namespace skyline::soc::host1x {
             if (method != ExecuteMethod)
                 return;
             ++sequence;
-            diagnostics::Unsupported(component, ExecuteMethod, "video engine not implemented; no output image produced");
+            // Submission only. The guest may use these pictures as textures.
+            if (engine == Engine::Nvdec)
+                diagnostics::Event("nvdec_codec", channel, registers[0x80], sequence, "guest output surfaces");
             diagnostics::Event("video_execute", channel, static_cast<std::uint32_t>(engine), sequence, component);
             if (!diagnostics::ShaderCaptureEnabled())
                 return;
             const auto request{diagnostics::CaptureRequest()};
-            if (captures >= 8 || (captures >= 2 && request == lastRequest))
+            if (!request || captures >= 8 || request == lastRequest)
                 return;
             ++captures;
             lastRequest = request;

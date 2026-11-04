@@ -1,0 +1,20 @@
+Vérifications exécutées sans construire Strato
+• Comparaison binaire des quatre sources du patch initial avec la version jointe.
+• Test du détecteur C++ sur l’hôte avec UBSan et avertissements traités en erreurs. Réussi pour les marques principale/compatible, les préfixes tronqués, la confusion avec minor_version, les longueurs invalides et la fausse signature.
+  g++ -std=c++20 -Wall -Wextra -Werror -fsanitize=undefined -Iapp/src/main/cpp/skyline tools/video_tests/mp4_probe_test.cpp -o /tmp/strato_probe && /tmp/strato_probe
+• python3 tools/render_tests/host1x_safety.py sur l’hôte. Réussis : analyse du FIFO dont 50 000 entrées de fuzz, bornes de syncpoints, 1 000 timeouts, 300 courses wait/increment, huit attentes sans limite, propriété du gather, validation Submit, conservation des pins et absence de publication de fence après erreur. Avertissement existant du compilateur hôte sur Syncpoint::Load constexpr. Cette suite utilise des doubles et ne teste pas le lecteur Android.
+• Aucun build Gradle/NDK, APK, exécution Android ou jeu lancé. La suite FFmpeg complète tools/video_tests/run.sh et le test d’adaptateur FFmpeg n’ont pas été exécutés.
+
+Sur téléphone ARM64 — activer les diagnostics. Utiliser des fichiers de test non privés.
+1. Pendant un jeu, ouvrir Diagnostic > Tester un MP4 Android (overlay). Choisir un H.264 16:9 puis un 4:3. Vérifier les proportions, l’absence de contrôles de pause/recherche et le maintien de la surface du jeu. Exporter la session et chercher StratoMp4.
+2. Choisir un MP4 H.264/AAC avec marqueurs audio/vidéo simultanés. Vérifier leur synchronisation au début et à la fin. Distinguer l’audio du jeu et celui du test.
+3. Appuyer sur Passer en préparation, en lecture puis juste avant la fin. Une seule issue terminale par lecture, disparition du son et de la couche, contrôles du jeu accessibles. Aucun saut invité à attendre de ce test manuel.
+4. Laisser finir naturellement. Vérifier COMPLETING → RESTORING → IDLE, retour de l’image et des interactions, sans redémarrage.
+5. Essayer un MP4 avec codec indisponible, une piste audio seule, un fichier tronqué et un fournisseur lent. Vérifier le motif dans logcat. Pour un vrai jeu utilisant des textures vidéo, aucune ouverture de l’overlay à la lecture RomFS.
+6. Alterner deux vidéos une cinquantaine de fois, EOF et Passer. Aucun callback de la lecture A ne doit fermer B. Vérifier que le thread StratoMp4 de la lecture précédente disparaît.
+7. Tester Accueil, verrouillage, retour, fermeture du jeu et du processus pendant la préparation et la lecture. Pas d’audio résiduel, pas de reprise automatique du test annulé.
+8. Tester rotation et recréation forcée de l’activité. Si la configuration est traitée sans recréation, vérifier les proportions après redimensionnement. En cas de recréation, vérifier l’annulation de l’ancienne session. Contrôler le cycle Vulkan séparément.
+9. Tester un MP4 valide dont les derniers échantillons sont corrompus. Examiner erreur ou EOF selon le décodeur, puis relancer un fichier sain. Le jeu n’a aucune fence vidéo Android à attendre.
+10. Comparer PSS, allocations natives, descripteurs, threads et instances MediaCodec avant et après plusieurs séries, après stabilisation. Une croissance persistante ou une surface retenue mérite une nouvelle trace.
+11. Hollow Knight, démarrage puis intro, avec capture de shaders désactivée. Comparer à une session de la même version chargée après l’intro. Exporter les deux diagnostics. Relever le dernier romfs_mp4_candidate, les canaux video_execute/nvdec_codec, video_job_result et timeouts. Si blocage, conserver le hang_snapshot et le seuil Host1x. Si crash, vérifier native_failure.json, native_crash.bin et le tombstone Android. Aucun de ces événements pris isolément ne démontre qu’un saut est disponible.
+12. Régression IStorage sur cible : lecture avec tampon plus grand que la taille demandée (sentinelles dans la queue), lecture de taille nulle à EOF, taille supérieure au tampon et plage hors stockage. Vérifier les codes IPC et que les octets de queue restent intacts.

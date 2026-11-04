@@ -45,6 +45,7 @@ capture=r'''
 namespace skyline::soc::host1x{struct VideoCapture{
  enum class Engine{Nvdec,Vic};static constexpr unsigned ExecuteMethod=0xc0;
  explicit VideoCapture(Engine){}
+ template<class F>void Execute(F&& run){run();}
  template<class F>void Method(u32,u32,F){}
 };}
 '''

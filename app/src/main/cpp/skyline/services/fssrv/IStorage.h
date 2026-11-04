@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <common/diagnostic_recorder.h>
 #include <services/serviceman.h>
 #include <vfs/backing.h>
 
@@ -14,9 +16,11 @@ namespace skyline::service::fssrv {
     class IStorage : public BaseService {
       private:
         std::shared_ptr<vfs::Backing> backing;
+        const diagnostics::Id romfsTrace;
+        std::atomic<u64> lastCandidate{~u64{0}};
 
       public:
-        IStorage(std::shared_ptr<vfs::Backing> backing, const DeviceState &state, ServiceManager &manager);
+        IStorage(std::shared_ptr<vfs::Backing> backing, const DeviceState &state, ServiceManager &manager, bool traceProgramRomfs = false);
 
         /**
          * @brief Reads a buffer from a region of an IStorage

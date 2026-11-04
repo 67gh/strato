@@ -32,6 +32,7 @@ namespace skyline::soc::host1x {
 
                 if (!syncpoints.at(syncpointId).host.Wait(syncpointPayload, waitTimeout))
                     throw exception("Host1x wait timed out: syncpoint {}, threshold {}",syncpointId,syncpointPayload);
+                LOGD("Satisfied Host1x wait: syncpoint {}, threshold {}, observed {}", syncpointId, syncpointPayload, syncpoints.at(syncpointId).host.Load());
                 break;
             }
 
