@@ -56,6 +56,7 @@ namespace skyline {
     JvmManager::JvmManager(JNIEnv *environ, jobject instance)
         : instance{environ->NewGlobalRef(instance)},
           instanceClass{reinterpret_cast<jclass>(environ->NewGlobalRef(environ->GetObjectClass(instance)))},
+          observeRomfsMovieId{environ->GetMethodID(instanceClass, "observeRomfsMovie", "(J)V")},
           initializeControllersId{environ->GetMethodID(instanceClass, "initializeControllers", "()V")},
           vibrateDeviceId{environ->GetMethodID(instanceClass, "vibrateDevice", "(I[J[I)V")},
           clearVibrationDeviceId{environ->GetMethodID(instanceClass, "clearVibrationDevice", "(I)V")},
@@ -92,6 +93,14 @@ namespace skyline {
 
     bool JvmManager::CheckNull(jobject &object) {
         return env->IsSameObject(object, nullptr);
+    }
+
+    void JvmManager::ObserveRomfsMovie(u64 offset) {
+        env->CallVoidMethod(instance, observeRomfsMovieId, static_cast<jlong>(offset));
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            LOGW("RomFS movie observation unavailable");
+        }
     }
 
     void JvmManager::InitializeControllers() {

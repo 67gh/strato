@@ -4,12 +4,12 @@ Application du correctif
 Décompresser à la racine de Strato, à côté de app/ et tools/. La référence est strato.zip fourni. Les quatre sources du précédent correctif sont identiques octet par octet à celles de cette référence avant modification.
 
 Ce qui fonctionne par conception
-Le menu Diagnostic > Tester un MP4 Android (overlay) ouvre un document choisi par l’utilisateur. Le jeu conserve son exécution et son affichage derrière le lecteur. La fermeture rend la vue du jeu accessible. Ce test manuel ne fait pas avancer une cinématique invitée. Aucune validation Android n’a été réalisée.
+Le menu Diagnostic > Tester un MP4 Android (overlay) ouvre un document choisi par l’utilisateur. Une deuxième commande, « Tester le MP4 détecté dans le jeu », apparaît si le jeu a lu un en-tête reconnu. Elle relit directement la région validée du RomFS, même sans extraction préalable. Le jeu conserve son exécution et son affichage derrière le lecteur. La fermeture rend la vue du jeu accessible. Ce test manuel ne fait pas avancer une cinématique invitée. Aucune validation Android n’a été réalisée.
 
 Sources Android
 • AndroidVideoOverlay.kt — une session par lecture. MediaExtractor identifie les pistes sur le descripteur du fournisseur Android. MediaPlayer gère leur décodage et leur horloge commune. TextureView centrée avec ratio ajusté, fond noir plein écran, bouton Passer sans commandes de pause ni de recherche. Préparation, analyse et libération sur un HandlerThread. Traces de durée, MIME, erreurs et transitions sans URI.
-• EmulationActivity.kt — annulation de l’overlay en quittant le premier plan et à la destruction. Le résultat du test est local. Le menu existant reste son point d’entrée.
-• jvm.cpp et jvm.h — retrait du pont expérimental sans appelant, qui prenait seulement un chemin sur le téléphone et ne pouvait exprimer ni la session, ni la fin, ni le saut attendu. Le reste de JNI conserve ses signatures.
+• EmulationActivity.kt — annulation de l’overlay en quittant le premier plan et à la destruction. Le résultat du test est local. Le menu Diagnostic propose aussi la dernière position MP4 publiée pour cette activité.
+• jvm.cpp et jvm.h — retrait du pont expérimental sans appelant, qui prenait seulement un chemin sur le téléphone et ne pouvait exprimer ni la session, ni la fin, ni le saut attendu. Le nouveau pont transmet uniquement une position à cette activité, y compris lorsque le journal de diagnostics est désactivé.
 
 Sources du moteur
 • IFileSystemProxy.cpp — marque uniquement le RomFS ouvert par OpenDataStorageByCurrentProcess.
@@ -23,3 +23,10 @@ Sources du moteur
 
 Limite principale
 Aucun jeu n’a de contrat de lecture plein écran établi dans les sources et traces examinées. La détection automatique produit des diagnostics. Elle ne lance pas le lecteur Android. En particulier, Passer ferme le test manuel et ne saute pas l’intro de Hollow Knight. Voir AUDIT.txt pour les interfaces manquantes.
+
+Deuxième étape — source RomFS réellement raccordée au lecteur manuel
+• loader_jni.cpp mutualise la construction du chargeur avec la lecture des métadonnées, rouvre le ROM avec un descripteur indépendant et fournit au lecteur uniquement les octets du fichier validé.
+• movie_extent.h parcourt la table RomFS bornée, sans récursion, et rejette les entrées tronquées, ambiguës, chevauchantes avec la vidéo ou hors limites.
+• loader/nca.cpp expose le RomFS de la NCA programme lors du chargement direct. La version de référence ne le transmettait pas au loader de base.
+• RomfsMovie.kt fournit des vues Android MediaDataSource à accès aléatoire. Les lectures et la fermeture sont sérialisées. AndroidVideoOverlay.kt les utilise dans MediaExtractor et MediaPlayer pour cette option.
+• movie_extent_test.cpp vérifie la région exacte avec un MP4 réel et plusieurs tables invalides.

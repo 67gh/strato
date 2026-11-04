@@ -10,6 +10,7 @@ namespace skyline::loader {
     NcaLoader::NcaLoader(std::shared_ptr<vfs::Backing> backing, std::shared_ptr<crypto::KeyStore> keyStore) : nca(std::move(backing), std::move(keyStore)) {
         if (nca.exeFs == nullptr)
             throw exception("Only NCAs with an ExeFS can be loaded directly");
+        romFs = nca.romFs;
     }
 
     void *NcaLoader::LoadExeFs(Loader *loader, const std::shared_ptr<vfs::FileSystem> &exeFs, const std::shared_ptr<kernel::type::KProcess> &process, const DeviceState &state) {

@@ -153,6 +153,7 @@ namespace skyline {
          * @brief A call to EmulationActivity.initializeControllers in Kotlin
          */
         void InitializeControllers();
+        void ObserveRomfsMovie(u64 offset);
 
 
         /**
@@ -217,6 +218,7 @@ namespace skyline {
         DhcpInfo GetDhcpInfo();
 
       private:
+        jmethodID observeRomfsMovieId;
         jmethodID initializeControllersId;
         jmethodID vibrateDeviceId;
         jmethodID clearVibrationDeviceId;

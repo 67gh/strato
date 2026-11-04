@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright © 2020 Skyline Team and Contributors (https://github.com/skyline-emu/)
 
+#include <jvm.h>
 #include "mp4_probe.h"
 #include "results.h"
 #include "IStorage.h"
@@ -37,9 +38,11 @@ namespace skyline::service::fssrv {
 
         auto output = request.outputBuf.front().first(static_cast<size_t>(size));
         backing->Read(output, static_cast<size_t>(offset));
-        if (romfsTrace && diagnostics::RecorderEnabled() && IsMp4Candidate(output)
-            && lastCandidate.exchange(static_cast<u64>(offset), std::memory_order_relaxed) != static_cast<u64>(offset))
+        if (romfsTrace && IsMp4Candidate(output)
+            && lastCandidate.exchange(static_cast<u64>(offset), std::memory_order_relaxed) != static_cast<u64>(offset)) {
             diagnostics::Event("romfs_mp4_candidate", romfsTrace, offset, size, "ftyp; guest player unknown; classic path");
+            state.jvm->ObserveRomfsMovie(static_cast<u64>(offset));
+        }
         return {};
     }
 

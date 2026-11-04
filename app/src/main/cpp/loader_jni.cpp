@@ -12,36 +12,38 @@
 #include "skyline/loader/nsp.h"
 #include "skyline/jvm.h"
 
+#include "skyline/vfs/movie_extent.h"
+#include "skyline/vfs/rom_filesystem.h"
+#include "skyline/vfs/region_backing.h"
+#include "skyline/services/fssrv/mp4_probe.h"
+
+static std::unique_ptr<skyline::loader::Loader> OpenRom(JNIEnv *env, jint jformat, jint fd, jstring keyPath) {
+    const auto format = static_cast<skyline::loader::RomFormat>(jformat);
+    auto keyStore = std::make_shared<skyline::crypto::KeyStore>(skyline::JniString(env, keyPath));
+    auto backing = std::make_shared<skyline::vfs::OsBacking>(fd);
+    switch (format) {
+        case skyline::loader::RomFormat::NRO:
+            return std::make_unique<skyline::loader::NroLoader>(backing);
+        case skyline::loader::RomFormat::NSO:
+            return std::make_unique<skyline::loader::NsoLoader>(backing);
+        case skyline::loader::RomFormat::NCA:
+            return std::make_unique<skyline::loader::NcaLoader>(backing, keyStore);
+        case skyline::loader::RomFormat::XCI:
+            return std::make_unique<skyline::loader::XciLoader>(backing, keyStore);
+        case skyline::loader::RomFormat::NSP:
+            return std::make_unique<skyline::loader::NspLoader>(backing, keyStore);
+        default:
+            return {};
+    }
+}
+
 extern "C" JNIEXPORT jint JNICALL Java_org_stratoemu_strato_loader_RomFile_populate(JNIEnv *env, jobject thiz, jint jformat, jint fd, jstring appFilesPathJstring, jint systemLanguage) {
     skyline::signal::ScopedStackBlocker stackBlocker;
 
-    skyline::loader::RomFormat format{static_cast<skyline::loader::RomFormat>(jformat)};
-
-    std::shared_ptr<skyline::crypto::KeyStore> keyStore;
     std::unique_ptr<skyline::loader::Loader> loader;
     try {
-        keyStore = std::make_shared<skyline::crypto::KeyStore>(skyline::JniString(env, appFilesPathJstring));
-        auto backing{std::make_shared<skyline::vfs::OsBacking>(fd)};
-
-        switch (format) {
-            case skyline::loader::RomFormat::NRO:
-                loader = std::make_unique<skyline::loader::NroLoader>(backing);
-                break;
-            case skyline::loader::RomFormat::NSO:
-                loader = std::make_unique<skyline::loader::NsoLoader>(backing);
-                break;
-            case skyline::loader::RomFormat::NCA:
-                loader = std::make_unique<skyline::loader::NcaLoader>(backing, keyStore);
-                break;
-            case skyline::loader::RomFormat::XCI:
-                loader = std::make_unique<skyline::loader::XciLoader>(backing, keyStore);
-                break;
-            case skyline::loader::RomFormat::NSP:
-                loader = std::make_unique<skyline::loader::NspLoader>(backing, keyStore);
-                break;
-            default:
-                return static_cast<jint>(skyline::loader::LoaderResult::ParsingError);
-        }
+        loader = OpenRom(env, jformat, fd, appFilesPathJstring);
+        if (!loader) return static_cast<jint>(skyline::loader::LoaderResult::ParsingError);
     } catch (const skyline::loader::loader_exception &e) {
         return static_cast<jint>(e.error);
     } catch (const std::exception &e) {
@@ -241,4 +243,74 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_preference_FirmwareImportPre
             }
         }
     }
+}
+// The Kotlin owner holds an independently opened ROM fd until the last read returns.
+namespace {
+struct MovieReader {
+    std::shared_ptr<skyline::vfs::RegionBacking> file;
+    std::vector<skyline::u8> buffer;
+};
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_org_stratoemu_strato_emulation_RomfsMovie_openNative(
+        JNIEnv *env, jobject, jint fd, jint format, jstring keys, jlong offset) {
+    try {
+        if (offset < 0) return 0;
+        auto loader = OpenRom(env, format, fd, keys);
+        if (!loader || !loader->romFs) return 0;
+        const auto &rom = loader->romFs;
+        const auto h = rom->Read<skyline::vfs::RomFileSystem::RomFsHeader>();
+        constexpr size_t maxTable = 8 * 1024 * 1024;
+        const auto pos = static_cast<std::uint64_t>(offset);
+        if (h.headerSize != sizeof(h) || h.dataOffset < sizeof(h) || h.dataOffset > rom->size ||
+            pos < h.dataOffset || !h.fileMetaTableSize || h.fileMetaTableSize > maxTable)
+            return 0;
+        // RomFS images can put the hash/metadata tables after the file partition.
+        std::uint64_t end = rom->size;
+        for (const auto &[start, length] : {std::pair{h.dirHashTableOffset, h.dirHashTableSize},
+                std::pair{h.dirMetaTableOffset, h.dirMetaTableSize}, std::pair{h.fileHashTableOffset, h.fileHashTableSize},
+                std::pair{h.fileMetaTableOffset, h.fileMetaTableSize}}) {
+            if (!length) continue;
+            if (start < sizeof(h) || start > rom->size || length > rom->size - start) return 0;
+            if (start >= h.dataOffset) end = std::min<std::uint64_t>(end, start);
+            else if (length > h.dataOffset - start) return 0;
+        }
+        std::vector<skyline::u8> table(h.fileMetaTableSize);
+        rom->Read(skyline::span(table), h.fileMetaTableOffset);
+        const auto size = skyline::vfs::MovieExtent(table, end - h.dataOffset, pos - h.dataOffset);
+        if (!size || *size < 16) return 0;
+        auto movie = std::make_shared<skyline::vfs::RegionBacking>(rom, pos, *size);
+        std::array<skyline::u8, 256> header{};
+        auto prefix = skyline::span<skyline::u8>(header.data(), std::min(movie->size, header.size()));
+        movie->Read(prefix);
+        if (!skyline::service::fssrv::IsMp4Candidate(prefix)) return 0;
+        return reinterpret_cast<jlong>(new MovieReader{std::move(movie), {}});
+    } catch (...) { return 0; }
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_org_stratoemu_strato_emulation_RomfsMovie_sizeNative(
+        JNIEnv *, jobject, jlong handle) {
+    return static_cast<jlong>(reinterpret_cast<MovieReader *>(handle)->file->size);
+}
+
+extern "C" JNIEXPORT jint JNICALL Java_org_stratoemu_strato_emulation_RomfsMovie_readNative(
+        JNIEnv *env, jobject, jlong handle, jlong pos, jbyteArray out, jint off, jint len) {
+    try {
+        auto &reader = *reinterpret_cast<MovieReader *>(handle);
+        if (pos < 0 || !out || off < 0 || len < 0 || off > env->GetArrayLength(out) - len)
+            return -2;
+        if (!len) return 0;
+        if (static_cast<size_t>(pos) >= reader.file->size) return -1;
+        const auto count = std::min({reader.file->size - static_cast<size_t>(pos),
+                                     static_cast<size_t>(len), size_t{64 * 1024}});
+        reader.buffer.resize(count);
+        reader.file->Read(skyline::span(reader.buffer), static_cast<size_t>(pos));
+        env->SetByteArrayRegion(out, off, static_cast<jsize>(count), reinterpret_cast<const jbyte *>(reader.buffer.data()));
+        return static_cast<jint>(count);
+    } catch (...) { return -2; }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_org_stratoemu_strato_emulation_RomfsMovie_closeNative(
+        JNIEnv *, jobject, jlong handle) {
+    delete reinterpret_cast<MovieReader *>(handle);
 }

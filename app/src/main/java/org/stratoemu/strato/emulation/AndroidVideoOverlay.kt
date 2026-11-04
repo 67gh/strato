@@ -30,15 +30,17 @@ class AndroidVideoOverlay(private val activity: Activity, private val host: Fram
     private val ui = Handler(Looper.getMainLooper())
     private var active: Session? = null
 
-    fun play(uri: Uri, completion: (Result) -> Unit): Boolean {
+    data class RomCandidate(val format: Int, val offset: Long)
+
+    fun play(uri: Uri, candidate: RomCandidate? = null, completion: (Result) -> Unit): Boolean {
         if (active != null || activity.isFinishing || activity.isDestroyed) return false
-        Session(uri, completion).also { active = it }.attach()
+        Session(uri, candidate, completion).also { active = it }.attach()
         return true
     }
 
     fun stop() { active?.finish(Result.CANCELLED) }
 
-    private inner class Session(val uri: Uri, val completion: (Result) -> Unit) :
+    private inner class Session(val uri: Uri, val candidate: RomCandidate?, val completion: (Result) -> Unit) :
         TextureView.SurfaceTextureListener {
         val layer = FrameLayout(activity)
         val texture = TextureView(activity)
@@ -48,6 +50,7 @@ class AndroidVideoOverlay(private val activity: Activity, private val host: Fram
         val cancel = CancellationSignal()
         // Only the playback looper touches player and surface.
         var player: MediaPlayer? = null
+        var movie: RomfsMovie? = null
         var surface: Surface? = null
         var state = State.IDLE
         val started = SystemClock.elapsedRealtime()
@@ -116,25 +119,44 @@ class AndroidVideoOverlay(private val activity: Activity, private val host: Fram
                             } catch (e: Exception) { ui.post { fail("start ${e.javaClass.simpleName}") } }
                         }
                     }
-                    val descriptor = activity.contentResolver.openAssetFileDescriptor(uri, "r", cancel)
-                        ?: throw java.io.IOException("missing descriptor")
-                    descriptor.use { fd ->
-                        val extractor = MediaExtractor()
-                        try {
-                            extractor.setDataSource(fd)
-                            val tracks = (0 until extractor.trackCount).mapNotNull { index ->
-                                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+                    val extractor = MediaExtractor()
+                    try {
+                        if (candidate != null) {
+                            val fd = activity.contentResolver.openFileDescriptor(uri, "r", cancel)
+                                ?: throw java.io.IOException("missing ROM")
+                            val source = try {
+                                RomfsMovie(fd, candidate.format, "${activity.filesDir.canonicalPath}/keys/", candidate.offset)
+                            } catch (failure: Throwable) {
+                                fd.close()
+                                throw failure
                             }
-                            require(tracks.any { it.startsWith("video/") })
-                            Log.i("StratoMp4", "tracks=${tracks.joinToString()}")
-                        } finally {
-                            extractor.release()
+                            movie = source
+                            extractor.setDataSource(source.view())
+                            checkVideo(extractor)
+                            if (!closed.get()) media.setDataSource(source.view())
+                        } else {
+                            val descriptor = activity.contentResolver.openAssetFileDescriptor(uri, "r", cancel)
+                                ?: throw java.io.IOException("missing descriptor")
+                            descriptor.use { fd ->
+                                extractor.setDataSource(fd)
+                                checkVideo(extractor)
+                                if (!closed.get()) media.setDataSource(fd)
+                            }
                         }
-                        if (!closed.get()) media.setDataSource(fd)
+                    } finally {
+                        extractor.release()
                     }
                     if (!closed.get()) media.prepareAsync()
                 } catch (e: Exception) { ui.post { fail("prepare ${e.javaClass.simpleName}") } }
             }
+        }
+
+        fun checkVideo(extractor: MediaExtractor) {
+            val tracks = (0 until extractor.trackCount).mapNotNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+            }
+            require(tracks.any { it.startsWith("video/") })
+            Log.i("StratoMp4", "source=${if (candidate == null) "document" else "romfs"} tracks=${tracks.joinToString()}")
         }
 
         fun fit() {
@@ -176,6 +198,8 @@ class AndroidVideoOverlay(private val activity: Activity, private val host: Fram
                     Log.w("StratoMp4", "release ${e.javaClass.simpleName}")
                 } finally {
                     player = null
+                    try { movie?.close() } catch (e: java.io.IOException) { Log.w("StratoMp4", "ROM close failed") }
+                    movie = null
                     surface?.release()
                     surface = null
                     thread.quitSafely()

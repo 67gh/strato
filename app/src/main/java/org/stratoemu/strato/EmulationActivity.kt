@@ -181,8 +181,14 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
         if (uri != null) playAndroidVideoOverlay(uri)
     }
 
-    private fun playAndroidVideoOverlay(uri: Uri) {
-        if (!androidVideoOverlay.play(uri) { result ->
+    @Volatile private var lastMovieOffset = -1L
+
+    // Called by the guest I/O thread. Publication alone never starts playback.
+    @androidx.annotation.Keep
+    fun observeRomfsMovie(offset: Long) { lastMovieOffset = offset }
+
+    private fun playAndroidVideoOverlay(uri: Uri, candidate: AndroidVideoOverlay.RomCandidate? = null) {
+        if (!androidVideoOverlay.play(uri, candidate) { result ->
             Log.i(Tag, "Android MP4 overlay ended: $result; guest state unchanged")
             if (!isDestroyed && !isFinishing && result == AndroidVideoOverlay.Result.FAILED)
                 Toast.makeText(this, "Échec de lecture du MP4 de test", Toast.LENGTH_SHORT).show()
@@ -374,10 +380,16 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
         setContentView(binding.root)
         diagnosticHandler.post(diagnosticStatistics)
         binding.diagnosticCapture.setOnClickListener {
+            val movieOffset = lastMovieOffset
+            val actions = mutableListOf(getString(R.string.diagnostic_capture_now), getString(R.string.diagnostic_capture_gpu),
+                "Tester un MP4 Android (overlay)")
+            if (movieOffset >= 0) actions.add("Tester le MP4 détecté dans le jeu")
             MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.diagnostic_capture_title)
-                .setItems(arrayOf(getString(R.string.diagnostic_capture_now), getString(R.string.diagnostic_capture_gpu), "Tester un MP4 Android (overlay)")) { _, choice ->
-                    if (choice == 2) {
+                .setItems(actions.toTypedArray()) { _, choice ->
+                    if (choice == 3) {
+                        playAndroidVideoOverlay(item.uri, AndroidVideoOverlay.RomCandidate(item.format.ordinal, movieOffset))
+                    } else if (choice == 2) {
                         pickOverlayVideo.launch("video/mp4")
                     } else {
                         val request = requestDiagnosticCapture(choice == 1)
