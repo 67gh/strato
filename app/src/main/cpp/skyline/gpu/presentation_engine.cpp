@@ -170,8 +170,8 @@ namespace skyline::gpu {
             throw exception("Retrieving the next frame's ID failed with {}", result);
 
         // Intermediate timestamps precede the current real frame.
-        GenerateAndPresentIntermediateFrames(lock, frame.textureView, timestamp);
-        PresentSwapchainImage(lock, *frame.textureView, timestamp);
+        GenerateAndPresentIntermediateFrames(frame.textureView, timestamp);
+        PresentSwapchainImage(*frame.textureView, timestamp);
         skyline::diagnostics::presentedFrames.fetch_add(1, std::memory_order_relaxed);
         skyline::diagnostics::Presented();
         lastRealFrame = frame.textureView;
@@ -203,7 +203,7 @@ namespace skyline::gpu {
         }
     }
 
-    void PresentationEngine::PresentSwapchainImage(std::unique_lock<std::mutex> &lock, TextureView &view, i64 timestamp) {
+    void PresentationEngine::PresentSwapchainImage(TextureView &view, i64 timestamp) {
         auto &acquireSemaphore{acquireSemaphores[frameIndex]};
         auto &frameFence{frameFences[frameIndex]};
         if (frameFence)
@@ -211,13 +211,11 @@ namespace skyline::gpu {
 
         frameIndex = (frameIndex + 1) % swapchainImageCount;
 
-        std::pair<vk::Result, u32> nextImage;
-        while (nextImage = vkSwapchain->acquireNextImage(std::numeric_limits<u64>::max(), *acquireSemaphore, {}), nextImage.first != vk::Result::eSuccess) [[unlikely]] {
-            if (nextImage.first == vk::Result::eSuboptimalKHR)
-                surfaceCondition.wait(lock, [this]() { return vkSurface.has_value(); });
-            else
-                throw exception("vkAcquireNextImageKHR returned an unhandled result '{}'", vk::to_string(nextImage.first));
-        }
+        // SUBOPTIMAL also acquires an image and schedules the semaphore signal.
+        // Consume that acquisition exactly once, including during a surface transition.
+        const auto nextImage = vkSwapchain->acquireNextImage(std::numeric_limits<u64>::max(), *acquireSemaphore, {});
+        if (nextImage.first != vk::Result::eSuccess && nextImage.first != vk::Result::eSuboptimalKHR)
+            throw exception("vkAcquireNextImageKHR returned an unhandled result '{}'", vk::to_string(nextImage.first));
 
         auto &nextImageTexture{images.at(nextImage.second)};
         auto &presentSemaphore{presentSemaphores[nextImage.second]};
@@ -244,7 +242,7 @@ namespace skyline::gpu {
         });
     }
 
-    void PresentationEngine::GenerateAndPresentIntermediateFrames(std::unique_lock<std::mutex> &lock, const std::shared_ptr<TextureView> &currentFrame, i64 currentTimestamp) {
+    void PresentationEngine::GenerateAndPresentIntermediateFrames(const std::shared_ptr<TextureView> &currentFrame, i64 currentTimestamp) {
         auto mode{static_cast<FrameGenerator::Mode>(*state.settings->frameGenerationMode)};
         if (mode == FrameGenerator::Mode::Stable || !lastRealFrame || lastRealFrame->texture == currentFrame->texture)
             return; // Frame generation disabled, or there's no previous frame yet to interpolate from
@@ -282,7 +280,7 @@ namespace skyline::gpu {
         i64 span{currentTimestamp && lastRealFrameTimestamp ? (currentTimestamp - lastRealFrameTimestamp) : 0};
         for (u32 i{0}; i < generated.size() && i < extraFrames; i++) {
             i64 generatedTimestamp{span ? lastRealFrameTimestamp + (span * static_cast<i64>(i + 1)) / static_cast<i64>(extraFrames + 1) : 0};
-            PresentSwapchainImage(lock, *generated[i], generatedTimestamp);
+            PresentSwapchainImage(*generated[i], generatedTimestamp);
         }
     }
 

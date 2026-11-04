@@ -30,3 +30,9 @@ Deuxième étape — source RomFS réellement raccordée au lecteur manuel
 • loader/nca.cpp expose le RomFS de la NCA programme lors du chargement direct. La version de référence ne le transmettait pas au loader de base.
 • RomfsMovie.kt fournit des vues Android MediaDataSource à accès aléatoire. Les lectures et la fermeture sont sérialisées. AndroidVideoOverlay.kt les utilise dans MediaExtractor et MediaPlayer pour cette option.
 • movie_extent_test.cpp vérifie la région exacte avec un MP4 réel et plusieurs tables invalides.
+
+V3 — crash signalé dès le toucher du bouton MP4.
+• DiagnosticActivity.kt, diagnostic_activity.xml, deux ressources diagnostic_mp4.xml et DiagnosticMovieSelection.kt : choix d’un document MP4 dans Diagnostics depuis le menu principal, avant le jeu. L’application conserve l’autorisation de lecture et publie uniquement l’URI dans un fichier privé par renommage. Le contenu vidéo n’est pas recopié.
+• EmulationActivity.kt : le bouton de test du document ne lance plus d’activité externe pendant la partie. Sans document préparé, il affiche le mode d’emploi. Le lecteur est créé à la demande. L’option distincte de lecture du RomFS reste disponible après détection.
+• emu_jni.cpp : le marqueur mp4_button du recorder identifie le bouton touché (document ou romfs), avant l’ouverture du lecteur.
+• presentation_engine.cpp/.h : une acquisition Vulkan suboptimale est consommée une seule fois avec son image et son sémaphore. Cela supprime une seconde acquisition incorrecte lors d’un changement de conditions d’affichage.

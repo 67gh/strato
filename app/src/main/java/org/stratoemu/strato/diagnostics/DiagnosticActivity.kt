@@ -39,6 +39,17 @@ class DiagnosticActivity : AppCompatActivity() {
     private var selectionOpen = false
     private var selectionDialog : androidx.appcompat.app.AlertDialog? = null
 
+    private val chooseMovie = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            lifecycleScope.launch {
+                val saved = withContext(Dispatchers.IO) {
+                    DiagnosticMovieSelection.save(this@DiagnosticActivity, uri)
+                }
+                Toast.makeText(this@DiagnosticActivity, if (saved) R.string.diagnostic_mp4_ready else R.string.diagnostic_mp4_unavailable, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState : Bundle?) {
         super.onCreate(savedInstanceState)
         selectedName = savedInstanceState?.getString("selected_session")
@@ -50,6 +61,13 @@ class DiagnosticActivity : AppCompatActivity() {
         setSupportActionBar(binding.titlebar.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.setTitle(R.string.diagnostic_title)
+        binding.chooseDiagnosticMovie.setOnClickListener {
+            try {
+                chooseMovie.launch(arrayOf("video/mp4"))
+            } catch (e: android.content.ActivityNotFoundException) {
+                Toast.makeText(this, R.string.diagnostic_mp4_unavailable, Toast.LENGTH_LONG).show()
+            }
+        }
         binding.chooseSession.setOnClickListener {
             MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.diagnostic_choose_session)

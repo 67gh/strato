@@ -169,6 +169,10 @@ extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_executeApp
     close(romFd);
 }
 
+extern "C" JNIEXPORT void Java_org_stratoemu_strato_EmulationActivity_traceMovieButton(JNIEnv *, jobject, jboolean romfs) {
+    skyline::diagnostics::Event("mp4_button", 0, 0, 0, romfs ? "romfs" : "document");
+}
+
 extern "C" JNIEXPORT jlong Java_org_stratoemu_strato_EmulationActivity_requestDiagnosticCapture(JNIEnv *, jobject, jboolean gpuCapture) {
     if (!skyline::diagnostics::RecorderEnabled()) return 0;
     if (gpuCapture) skyline::diagnostics::RequestFrameCapture();

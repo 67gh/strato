@@ -59,14 +59,13 @@ namespace skyline::gpu {
         /**
          * @brief Presents a single already-composited swapchain-format texture, without any of the crop/scaling/timestamp bookkeeping done for real frames
          * @note Used both directly for generated frames and as the final step of PresentFrame for real ones
-         * @param lock The lock on 'mutex' held by the calling PresentFrame, passed through so we can wait on 'surfaceCondition' correctly if the surface is lost mid-acquire
          */
-        void PresentSwapchainImage(std::unique_lock<std::mutex> &lock, TextureView &view, i64 timestamp);
+        void PresentSwapchainImage(TextureView &view, i64 timestamp);
 
         /**
          * @brief If frame generation is enabled, generates and presents the intermediate frames between 'lastRealFrame' and 'currentFrame'
          */
-        void GenerateAndPresentIntermediateFrames(std::unique_lock<std::mutex> &lock, const std::shared_ptr<TextureView> &currentFrame, i64 currentTimestamp);
+        void GenerateAndPresentIntermediateFrames(const std::shared_ptr<TextureView> &currentFrame, i64 currentTimestamp);
 
       public:
         std::atomic<bool> skipSignal; //!< If true, the next signal will be skipped by the choreographer thread

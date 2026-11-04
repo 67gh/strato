@@ -30,7 +30,6 @@ import android.util.TypedValue
 import android.view.*
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.getSystemService
 import androidx.core.view.isGone
@@ -53,6 +52,7 @@ import org.stratoemu.strato.applet.swkbd.SoftwareKeyboardDialog
 import org.stratoemu.strato.data.AppItem
 import org.stratoemu.strato.data.AppItemTag
 import org.stratoemu.strato.databinding.EmuActivityBinding
+import org.stratoemu.strato.diagnostics.DiagnosticMovieSelection
 import org.stratoemu.strato.diagnostics.DiagnosticSession
 import org.stratoemu.strato.emulation.PipelineLoadingFragment
 import org.stratoemu.strato.emulation.AndroidVideoOverlay
@@ -176,9 +176,17 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
 
     // Android MP4 overlay: explicit opt-in while guest video interception is being developed.
     // No guest completion/syncpoint is fabricated here.
-    private val androidVideoOverlay by lazy { AndroidVideoOverlay(this, binding.root as android.widget.FrameLayout) }
-    private val pickOverlayVideo = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) playAndroidVideoOverlay(uri)
+    private var androidVideoOverlay: AndroidVideoOverlay? = null
+
+    private fun playSelectedDiagnosticMovie() {
+        lifecycleScope.launch {
+            val uri = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                DiagnosticMovieSelection.read(this@EmulationActivity)
+            }
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
+            if (uri != null) playAndroidVideoOverlay(uri)
+            else Toast.makeText(this@EmulationActivity, R.string.diagnostic_mp4_select_first, Toast.LENGTH_LONG).show()
+        }
     }
 
     @Volatile private var lastMovieOffset = -1L
@@ -188,7 +196,8 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     fun observeRomfsMovie(offset: Long) { lastMovieOffset = offset }
 
     private fun playAndroidVideoOverlay(uri: Uri, candidate: AndroidVideoOverlay.RomCandidate? = null) {
-        if (!androidVideoOverlay.play(uri, candidate) { result ->
+        val overlay = androidVideoOverlay ?: AndroidVideoOverlay(this, binding.root).also { androidVideoOverlay = it }
+        if (!overlay.play(uri, candidate) { result ->
             Log.i(Tag, "Android MP4 overlay ended: $result; guest state unchanged")
             if (!isDestroyed && !isFinishing && result == AndroidVideoOverlay.Result.FAILED)
                 Toast.makeText(this, "Échec de lecture du MP4 de test", Toast.LENGTH_SHORT).show()
@@ -240,6 +249,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
      */
     private external fun updatePerformanceStatistics()
     private external fun getDiagnosticPresentedFrames() : Long
+    private external fun traceMovieButton(romfs: Boolean)
     private external fun requestDiagnosticCapture(gpuCapture : Boolean) : Long
 
     /**
@@ -387,10 +397,11 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
             MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.diagnostic_capture_title)
                 .setItems(actions.toTypedArray()) { _, choice ->
+                    if (choice == 2 || choice == 3) traceMovieButton(choice == 3)
                     if (choice == 3) {
                         playAndroidVideoOverlay(item.uri, AndroidVideoOverlay.RomCandidate(item.format.ordinal, movieOffset))
                     } else if (choice == 2) {
-                        pickOverlayVideo.launch("video/mp4")
+                        playSelectedDiagnosticMovie()
                     } else {
                         val request = requestDiagnosticCapture(choice == 1)
                         Toast.makeText(this, if (request > 0) getString(R.string.diagnostic_capture_requested, request) else getString(R.string.diagnostic_capture_unavailable), Toast.LENGTH_LONG).show()
@@ -509,7 +520,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     }
 
     override fun onPause() {
-        androidVideoOverlay.stop()
+        androidVideoOverlay?.stop()
         super.onPause()
 
         if (emulationSettings.forceMaxGpuClocks)
@@ -654,7 +665,7 @@ class EmulationActivity : AppCompatActivity(), SurfaceHolder.Callback, View.OnTo
     }
 
     override fun onDestroy() {
-        androidVideoOverlay.stop()
+        androidVideoOverlay?.stop()
         super.onDestroy()
         diagnosticHandler.removeCallbacks(diagnosticStatistics)
         diagnosticHandler.removeCallbacks(performanceStatistics)

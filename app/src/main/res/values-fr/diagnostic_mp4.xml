@@ -1,0 +1,6 @@
+<resources>
+    <string name="diagnostic_mp4_choose">Choisir le MP4 de test</string>
+    <string name="diagnostic_mp4_select_first">Avant de lancer un jeu, ouvre Diagnostics depuis le menu principal et choisis le MP4 de test.</string>
+    <string name="diagnostic_mp4_ready">MP4 de test sélectionné.</string>
+    <string name="diagnostic_mp4_unavailable">Impossible d’ouvrir le MP4 de test. Choisis un autre fichier dans Diagnostics.</string>
+</resources>
